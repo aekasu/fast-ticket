@@ -1,2 +1,37 @@
+# Reference archives — never commit
 fitsm.zip
-notes
+notes/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+.python-version
+*.egg-info/
+dist/
+build/
+.coverage
+htmlcov/
+.pytest_cache/
+uv.lock
+
+# Env / secrets
+.env
+*.env.local
+
+# Docker generated
+mysql_data/
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# macOS
+.DS_Store
+
+# Temp extraction directories
+.src_ref/
+.tmp_extract/

@@ -1,0 +1,12 @@
+# osTicket cron — fires the osTicket 'cron' Signal every minute.
+# FastApiIntegrationPlugin::processInbox() listens on this signal to drain
+# ost_integration_inbox and execute queued FastAPI-originated commands.
+#
+# Must run via the CLI SAPI — api/cron.php refuses HTTP callers.
+# PATH is set explicitly because cron's default PATH omits /usr/local/bin
+# (where the php:8.2-apache base installs the PHP CLI binary).
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+* * * * * www-data /usr/local/bin/php /var/www/html/api/cron.php >> /var/log/osticket-cron.log 2>&1
+
+# Required trailing newline

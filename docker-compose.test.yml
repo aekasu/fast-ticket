@@ -1,0 +1,15 @@
+services:
+  tests:
+    build:
+      context: .
+      dockerfile: docker/fastapi/Dockerfile
+    command: ["uv", "run", "pytest", "tests/", "-v", "--tb=short"]
+    environment:
+      # SQLite in-memory — no real DB needed for unit/integration tests
+      DATABASE_URL: sqlite+aiosqlite:///:memory:
+      FASTAPI_INTEGRATION_KEY: test-integration-key-32-chars-long!!
+      JWT_SECRET_KEY: test-jwt-secret-key-48-chars-long-for-testing!!
+      OSTICKET_AUTH_URL: http://localhost/not-used-in-tests
+      CORS_ORIGINS: ""
+      AUTO_CREATE_SCHEMA: "false"
+      REQUIRE_JWT_SECRET: "false"

@@ -1,0 +1,42 @@
+[project]
+name = "fast-ticket"
+version = "0.1.0"
+description = "FastAPI wrapper over osTicket via PHP integration bridge"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "aiomysql>=0.2.0",
+    "aiosqlite>=0.22.0",
+    # Use plain fastapi (no [standard] extra) — fastapi[standard] pulls in
+    # fastapi-cloud-cli, fastar, sentry-sdk, agent-detector which make
+    # blocking network calls at startup.
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.29.0",
+    "httpx>=0.28.0",
+    "pydantic>=2.7.0",
+    "pydantic-settings>=2.7.0",
+    "pyjwt>=2.9.0",
+    "python-multipart>=0.0.12",
+    "slowapi>=0.1.9",
+    "sqlmodel>=0.0.22",
+    "email-validator>=2.1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.24.0",
+    "anyio>=4.7.0",
+    "coverage>=7.6.0",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.coverage.run]
+source = ["app"]
+omit = ["tests/*"]
+
+[tool.uv]
+package = false
