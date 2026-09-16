@@ -15,13 +15,13 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
-from slowapi.util import get_remote_address
 
 from app.api.router import api_router
 from app.core.config import settings
 from app.core.db import AsyncSessionLocal, create_db_and_tables
+from app.core.rate_limit import limiter
 from app.workers.events import poll_and_process_events
 
 logging.basicConfig(
@@ -31,9 +31,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-# ── Rate limiter ──────────────────────────────────────────────────────────────
-
-limiter = Limiter(key_func=get_remote_address, default_limits=["200/minute"])
+# ── Rate limiter (singleton imported from app.core.rate_limit) ───────────────
+# Imported above — do not construct a second instance here.
 
 
 # ── Background outbox worker ──────────────────────────────────────────────────
