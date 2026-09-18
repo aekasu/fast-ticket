@@ -453,6 +453,126 @@ async def get_priority(session: AsyncSession, priority_id: int) -> dict | None:
     return dict(row) if row else None
 
 
+# ── KB Categories ─────────────────────────────────────────────────────────────
+
+async def list_categories(session: AsyncSession, limit: int = 50, offset: int = 0) -> list:
+    sql = """
+        SELECT
+            c.category_id AS id,
+            c.name,
+            c.description,
+            c.ispublic AS is_public,
+            c.created,
+            c.updated
+        FROM ost_faq_category c
+        ORDER BY c.name ASC LIMIT :limit OFFSET :offset
+    """
+    result = await session.execute(text(sql), {"limit": limit, "offset": offset})
+    return list(result.mappings().all())
+
+async def get_category(session: AsyncSession, category_id: int) -> dict | None:
+    sql = """
+        SELECT
+            c.category_id AS id,
+            c.name,
+            c.description,
+            c.ispublic AS is_public,
+            c.created,
+            c.updated,
+            c.notes
+        FROM ost_faq_category c
+        WHERE c.category_id = :category_id
+    """
+    result = await session.execute(text(sql), {"category_id": category_id})
+    row = result.mappings().one_or_none()
+    return dict(row) if row else None
+
+
+# ── FAQs ──────────────────────────────────────────────────────────────────────
+
+async def list_faqs(
+    session: AsyncSession,
+    *,
+    category_id: int | None = None,
+    limit: int = 50,
+    offset: int = 0
+) -> list:
+    where_clause = " WHERE f.category_id = :category_id" if category_id else ""
+    params = {"limit": limit, "offset": offset}
+    if category_id:
+        params["category_id"] = category_id
+
+    sql = f"""
+        SELECT
+            f.faq_id AS id,
+            f.category_id,
+            f.question,
+            f.ispublished AS is_published,
+            f.created,
+            f.updated
+        FROM ost_faq f
+        {where_clause}
+        ORDER BY f.question ASC LIMIT :limit OFFSET :offset
+    """
+    result = await session.execute(text(sql), params)
+    return list(result.mappings().all())
+
+async def get_faq(session: AsyncSession, faq_id: int) -> dict | None:
+    sql = """
+        SELECT
+            f.faq_id AS id,
+            f.category_id,
+            f.question,
+            f.answer,
+            f.ispublished AS is_published,
+            f.keywords,
+            f.notes,
+            f.created,
+            f.updated
+        FROM ost_faq f
+        WHERE f.faq_id = :faq_id
+    """
+    result = await session.execute(text(sql), {"faq_id": faq_id})
+    row = result.mappings().one_or_none()
+    return dict(row) if row else None
+
+
+# ── Canned Responses ──────────────────────────────────────────────────────────
+
+async def list_canned(session: AsyncSession, limit: int = 50, offset: int = 0) -> list:
+    sql = """
+        SELECT
+            c.canned_id AS id,
+            c.title,
+            c.isenabled AS is_enabled,
+            c.dept_id,
+            c.created,
+            c.updated
+        FROM ost_canned_response c
+        ORDER BY c.title ASC LIMIT :limit OFFSET :offset
+    """
+    result = await session.execute(text(sql), {"limit": limit, "offset": offset})
+    return list(result.mappings().all())
+
+async def get_canned(session: AsyncSession, canned_id: int) -> dict | None:
+    sql = """
+        SELECT
+            c.canned_id AS id,
+            c.title,
+            c.response,
+            c.isenabled AS is_enabled,
+            c.dept_id,
+            c.notes,
+            c.created,
+            c.updated
+        FROM ost_canned_response c
+        WHERE c.canned_id = :canned_id
+    """
+    result = await session.execute(text(sql), {"canned_id": canned_id})
+    row = result.mappings().one_or_none()
+    return dict(row) if row else None
+
+
 # ── Organizations ─────────────────────────────────────────────────────────────
 
 

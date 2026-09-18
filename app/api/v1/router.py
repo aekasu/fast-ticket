@@ -3,6 +3,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from app.core.auth import authenticate_websocket
 from app.core.ws_manager import manager
 from app.modules.auth.router import router as auth_router
+from app.modules.kb.router import router as kb_router
 from app.modules.lookups.router import router as lookups_router
 from app.modules.staff.router import router as staff_router
 from app.modules.tasks.router import router as tasks_router
@@ -29,8 +30,10 @@ v1_router.include_router(staff_router)
 # ── Lookups (Topics, SLAs, Priorities) ───────────────────────────────────────
 v1_router.include_router(lookups_router)
 
+# ── Knowledgebase & Canned Responses ─────────────────────────────────────────
+v1_router.include_router(kb_router)
+
 # ── Domain routers (added per phase) ─────────────────────────────────────────
-# Phase 7: kb, canned
 # Phase 8: banlist
 # Phase 9: search
 # Phase 10: forms
