@@ -606,6 +606,57 @@ async def get_banlist_entry(session: AsyncSession, ban_id: int) -> dict | None:
     return dict(row) if row else None
 
 
+# ── Forms ─────────────────────────────────────────────────────────────────────
+
+async def list_forms(session: AsyncSession, limit: int = 50, offset: int = 0) -> list:
+    sql = """
+        SELECT
+            f.id,
+            f.title,
+            f.type,
+            f.deletable AS is_deletable,
+            f.created,
+            f.updated
+        FROM ost_form f
+        ORDER BY f.title ASC LIMIT :limit OFFSET :offset
+    """
+    result = await session.execute(text(sql), {"limit": limit, "offset": offset})
+    return list(result.mappings().all())
+
+async def get_form(session: AsyncSession, form_id: int) -> dict | None:
+    sql = """
+        SELECT
+            f.id,
+            f.title,
+            f.type,
+            f.deletable AS is_deletable,
+            f.instructions,
+            f.notes,
+            f.created,
+            f.updated
+        FROM ost_form f
+        WHERE f.id = :form_id
+    """
+    result = await session.execute(text(sql), {"form_id": form_id})
+    row = result.mappings().one_or_none()
+    return dict(row) if row else None
+
+async def get_form_fields(session: AsyncSession, form_id: int) -> list:
+    sql = """
+        SELECT
+            ff.id,
+            ff.name,
+            ff.label,
+            ff.type,
+            ff.isrequired AS is_required
+        FROM ost_form_field ff
+        WHERE ff.form_id = :form_id
+        ORDER BY ff.sort ASC
+    """
+    result = await session.execute(text(sql), {"form_id": form_id})
+    return list(result.mappings().all())
+
+
 # ── Search ────────────────────────────────────────────────────────────────────
 
 async def search_all(session: AsyncSession, query: str, limit: int = 10) -> list:
