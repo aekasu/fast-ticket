@@ -342,6 +342,117 @@ async def get_team_members(session: AsyncSession, team_id: int) -> list[int]:
     return [r["staff_id"] for r in result.mappings().all()]
 
 
+# ── Help Topics ───────────────────────────────────────────────────────────────
+
+async def list_topics(session: AsyncSession, limit: int = 50, offset: int = 0) -> list:
+    sql = """
+        SELECT
+            ht.topic_id AS id,
+            ht.topic,
+            ht.isactive AS is_active,
+            ht.ispublic AS is_public,
+            ht.created,
+            ht.updated
+        FROM ost_help_topic ht
+        ORDER BY ht.topic ASC LIMIT :limit OFFSET :offset
+    """
+    result = await session.execute(text(sql), {"limit": limit, "offset": offset})
+    return list(result.mappings().all())
+
+
+async def get_topic(session: AsyncSession, topic_id: int) -> dict | None:
+    sql = """
+        SELECT
+            ht.topic_id AS id,
+            ht.topic,
+            ht.isactive AS is_active,
+            ht.ispublic AS is_public,
+            ht.created,
+            ht.updated,
+            ht.dept_id,
+            ht.priority_id,
+            ht.sla_id,
+            ht.page_id,
+            ht.flags,
+            ht.notes
+        FROM ost_help_topic ht
+        WHERE ht.topic_id = :topic_id
+    """
+    result = await session.execute(text(sql), {"topic_id": topic_id})
+    row = result.mappings().one_or_none()
+    return dict(row) if row else None
+
+
+# ── SLAs (Service Level Agreements) ───────────────────────────────────────────
+
+async def list_slas(session: AsyncSession, limit: int = 50, offset: int = 0) -> list:
+    sql = """
+        SELECT
+            s.id,
+            s.name,
+            s.grace_period,
+            s.isactive AS is_active,
+            s.created,
+            s.updated
+        FROM ost_sla s
+        ORDER BY s.name ASC LIMIT :limit OFFSET :offset
+    """
+    result = await session.execute(text(sql), {"limit": limit, "offset": offset})
+    return list(result.mappings().all())
+
+
+async def get_sla(session: AsyncSession, sla_id: int) -> dict | None:
+    sql = """
+        SELECT
+            s.id,
+            s.name,
+            s.grace_period,
+            s.isactive AS is_active,
+            s.created,
+            s.updated,
+            s.flags,
+            s.notes
+        FROM ost_sla s
+        WHERE s.id = :sla_id
+    """
+    result = await session.execute(text(sql), {"sla_id": sla_id})
+    row = result.mappings().one_or_none()
+    return dict(row) if row else None
+
+
+# ── Priorities ────────────────────────────────────────────────────────────────
+
+async def list_priorities(session: AsyncSession, limit: int = 50, offset: int = 0) -> list:
+    sql = """
+        SELECT
+            p.priority_id AS id,
+            p.priority_desc AS name,
+            p.priority_desc AS desc,
+            p.priority_urgency AS urgency,
+            p.ispublic AS is_public
+        FROM ost_ticket_priority p
+        ORDER BY p.priority_urgency ASC LIMIT :limit OFFSET :offset
+    """
+    result = await session.execute(text(sql), {"limit": limit, "offset": offset})
+    return list(result.mappings().all())
+
+
+async def get_priority(session: AsyncSession, priority_id: int) -> dict | None:
+    sql = """
+        SELECT
+            p.priority_id AS id,
+            p.priority_desc AS name,
+            p.priority_desc AS desc,
+            p.priority_urgency AS urgency,
+            p.ispublic AS is_public
+        FROM ost_ticket_priority p
+        WHERE p.priority_id = :priority_id
+    """
+    result = await session.execute(text(sql), {"priority_id": priority_id})
+    row = result.mappings().one_or_none()
+    return dict(row) if row else None
+
+
 # ── Organizations ─────────────────────────────────────────────────────────────
 
 
