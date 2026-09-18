@@ -21,6 +21,12 @@ dev:
 	$(PYTHON) -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 # Docker targets
+init:
+	./scripts/setup_env.sh
+
+start: init
+	docker compose up --build -d
+
 up:
 	docker compose up
 

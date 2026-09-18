@@ -36,6 +36,7 @@ services:
       OSTICKET_ADMIN_LASTNAME: ${OSTICKET_ADMIN_LASTNAME:-User}
       OSTICKET_ADMIN_PASSWORD: ${OSTICKET_ADMIN_PASSWORD:-changeme-admin}
       OSTICKET_SITE_NAME: ${OSTICKET_SITE_NAME:-fast-ticket Dev}
+      OSTICKET_AUTO_SETUP: ${OSTICKET_AUTO_SETUP:-true}
       START_CRON: "0"
     depends_on:
       db:
