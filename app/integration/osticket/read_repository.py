@@ -573,6 +573,39 @@ async def get_canned(session: AsyncSession, canned_id: int) -> dict | None:
     return dict(row) if row else None
 
 
+# ── Banlist ───────────────────────────────────────────────────────────────────
+
+async def list_banlist(session: AsyncSession, limit: int = 50, offset: int = 0) -> list:
+    sql = """
+        SELECT
+            b.id,
+            b.val,
+            b.isactive AS is_active,
+            b.created,
+            b.updated
+        FROM ost_ticket_banlist b
+        ORDER BY b.val ASC LIMIT :limit OFFSET :offset
+    """
+    result = await session.execute(text(sql), {"limit": limit, "offset": offset})
+    return list(result.mappings().all())
+
+async def get_banlist_entry(session: AsyncSession, ban_id: int) -> dict | None:
+    sql = """
+        SELECT
+            b.id,
+            b.val,
+            b.isactive AS is_active,
+            b.notes,
+            b.created,
+            b.updated
+        FROM ost_ticket_banlist b
+        WHERE b.id = :ban_id
+    """
+    result = await session.execute(text(sql), {"ban_id": ban_id})
+    row = result.mappings().one_or_none()
+    return dict(row) if row else None
+
+
 # ── Organizations ─────────────────────────────────────────────────────────────
 
 
