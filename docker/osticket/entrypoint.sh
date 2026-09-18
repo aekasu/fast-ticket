@@ -36,7 +36,8 @@ if [ ! -f "$SETUP_LOCK" ]; then
     # Generate ost-config.php from sample
     if [ ! -f "$CONFIG_FILE" ]; then
         cp /var/www/html/include/ost-sampleconfig.php "$CONFIG_FILE"
-        chmod 0644 "$CONFIG_FILE"
+        chmod 0666 "$CONFIG_FILE"
+        chown www-data:www-data "$CONFIG_FILE"
     fi
 
     if [ "${OSTICKET_AUTO_SETUP:-true}" = "true" ]; then
