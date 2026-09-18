@@ -214,6 +214,134 @@ async def get_staff_permissions(
     return enabled, False
 
 
+async def list_staff(session: AsyncSession, limit: int = 50, offset: int = 0) -> list:
+    sql = """
+        SELECT
+            s.staff_id AS id,
+            s.username,
+            s.firstname,
+            s.lastname,
+            s.email,
+            s.isactive AS is_active,
+            s.isadmin AS is_admin,
+            s.dept_id,
+            s.role_id,
+            s.created,
+            s.updated
+        FROM ost_staff s
+        ORDER BY s.username ASC LIMIT :limit OFFSET :offset
+    """
+    result = await session.execute(text(sql), {"limit": limit, "offset": offset})
+    return list(result.mappings().all())
+
+
+async def get_staff(session: AsyncSession, staff_id: int) -> dict | None:
+    sql = """
+        SELECT
+            s.staff_id AS id,
+            s.username,
+            s.firstname,
+            s.lastname,
+            s.email,
+            s.isactive AS is_active,
+            s.isadmin AS is_admin,
+            s.dept_id,
+            s.role_id,
+            s.created,
+            s.updated,
+            s.phone,
+            s.mobile
+        FROM ost_staff s
+        WHERE s.staff_id = :staff_id
+    """
+    result = await session.execute(text(sql), {"staff_id": staff_id})
+    row = result.mappings().one_or_none()
+    return dict(row) if row else None
+
+
+async def get_staff_teams(session: AsyncSession, staff_id: int) -> list[int]:
+    sql = "SELECT team_id FROM ost_team_member WHERE staff_id = :staff_id"
+    result = await session.execute(text(sql), {"staff_id": staff_id})
+    return [r["team_id"] for r in result.mappings().all()]
+
+
+# ── Departments ───────────────────────────────────────────────────────────────
+
+async def list_departments(session: AsyncSession, limit: int = 50, offset: int = 0) -> list:
+    sql = """
+        SELECT
+            d.id,
+            d.name,
+            d.ispublic AS is_public,
+            d.created,
+            d.updated
+        FROM ost_department d
+        ORDER BY d.name ASC LIMIT :limit OFFSET :offset
+    """
+    result = await session.execute(text(sql), {"limit": limit, "offset": offset})
+    return list(result.mappings().all())
+
+
+async def get_department(session: AsyncSession, dept_id: int) -> dict | None:
+    sql = """
+        SELECT
+            d.id,
+            d.name,
+            d.ispublic AS is_public,
+            d.created,
+            d.updated,
+            d.manager_id,
+            d.email_id,
+            d.flags
+        FROM ost_department d
+        WHERE d.id = :dept_id
+    """
+    result = await session.execute(text(sql), {"dept_id": dept_id})
+    row = result.mappings().one_or_none()
+    return dict(row) if row else None
+
+
+# ── Teams ─────────────────────────────────────────────────────────────────────
+
+async def list_teams(session: AsyncSession, limit: int = 50, offset: int = 0) -> list:
+    sql = """
+        SELECT
+            t.team_id AS id,
+            t.name,
+            t.isenabled AS is_enabled,
+            t.created,
+            t.updated
+        FROM ost_team t
+        ORDER BY t.name ASC LIMIT :limit OFFSET :offset
+    """
+    result = await session.execute(text(sql), {"limit": limit, "offset": offset})
+    return list(result.mappings().all())
+
+
+async def get_team(session: AsyncSession, team_id: int) -> dict | None:
+    sql = """
+        SELECT
+            t.team_id AS id,
+            t.name,
+            t.isenabled AS is_enabled,
+            t.created,
+            t.updated,
+            t.lead_id,
+            t.notes
+        FROM ost_team t
+        WHERE t.team_id = :team_id
+    """
+    result = await session.execute(text(sql), {"team_id": team_id})
+    row = result.mappings().one_or_none()
+    return dict(row) if row else None
+
+
+async def get_team_members(session: AsyncSession, team_id: int) -> list[int]:
+    sql = "SELECT staff_id FROM ost_team_member WHERE team_id = :team_id"
+    result = await session.execute(text(sql), {"team_id": team_id})
+    return [r["staff_id"] for r in result.mappings().all()]
+
+
 # ── Organizations ─────────────────────────────────────────────────────────────
 
 

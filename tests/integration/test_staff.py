@@ -1,0 +1,303 @@
+"""Integration tests for staff, teams, and departments endpoints (Phase 5)."""
+
+import json
+from datetime import datetime, timezone
+from unittest.mock import AsyncMock, patch
+
+import pytest
+from httpx import ASGITransport, AsyncClient
+from sqlmodel import select
+
+from app.integration.osticket.commands import IntegrationInbox
+from app.main import app
+from tests.conftest import TestingSessionLocal
+
+_NOW = datetime(2024, 1, 15, 10, 0, 0, tzinfo=timezone.utc)
+
+MOCK_DEPT = {
+    "id": 1,
+    "name": "Support",
+    "is_public": True,
+    "created": _NOW,
+    "updated": _NOW,
+    "manager_id": 5,
+    "email_id": 1,
+    "flags": 0,
+}
+
+MOCK_TEAM = {
+    "id": 1,
+    "name": "Level 1 Support",
+    "is_enabled": True,
+    "created": _NOW,
+    "updated": _NOW,
+    "lead_id": 5,
+    "notes": "First responders",
+}
+
+MOCK_STAFF = {
+    "id": 5,
+    "username": "agent",
+    "firstname": "Test",
+    "lastname": "Agent",
+    "email": "agent@test.local",
+    "is_active": True,
+    "is_admin": False,
+    "dept_id": 1,
+    "role_id": 1,
+    "created": _NOW,
+    "updated": _NOW,
+    "phone": "555-0199",
+    "mobile": "555-0198",
+}
+
+
+def _token(permissions: list[str], is_admin: bool = False) -> str:
+    from datetime import timedelta
+    from app.core.auth import create_access_token
+    return create_access_token(
+        {"staff_id": 5, "username": "agent", "name": "Test Agent",
+         "email": "agent@test.local", "is_admin": is_admin, "permissions": permissions},
+        expires_delta=timedelta(minutes=5),
+    )
+
+def _auth(perms: list[str] | None = None, is_admin: bool = False) -> dict:
+    return {"Authorization": f"Bearer {_token(perms or [], is_admin)}"}
+
+async def _inbox_rows() -> list[IntegrationInbox]:
+    async with TestingSessionLocal() as s:
+        result = await s.execute(select(IntegrationInbox))
+        return result.scalars().all()
+
+
+# ── Departments ───────────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_list_departments_returns_200():
+    with patch("app.modules.staff.service.repo.list_departments", new=AsyncMock(return_value=[MOCK_DEPT])):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            resp = await ac.get("/api/v1/departments", headers=_auth(["dept.create"]))
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data["items"]) == 1
+    assert data["items"][0]["name"] == "Support"
+
+
+@pytest.mark.asyncio
+async def test_get_department_returns_detail():
+    with patch("app.modules.staff.service.repo.get_department", new=AsyncMock(return_value=MOCK_DEPT)):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            resp = await ac.get("/api/v1/departments/1", headers=_auth(["dept.create"]))
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["name"] == "Support"
+    assert data["manager_id"] == 5
+
+
+@pytest.mark.asyncio
+async def test_create_department_queues_command():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        resp = await ac.post(
+            "/api/v1/departments",
+            json={"name": "Sales"},
+            headers=_auth(["dept.create"]),
+        )
+    assert resp.status_code == 202
+    rows = await _inbox_rows()
+    assert rows[0].command_type == "dept.create"
+    payload = json.loads(rows[0].payload)
+    assert payload["name"] == "Sales"
+
+
+@pytest.mark.asyncio
+async def test_update_department_queues_command():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        resp = await ac.patch(
+            "/api/v1/departments/2",
+            json={"name": "IT Support"},
+            headers=_auth(["dept.edit"]),
+        )
+    assert resp.status_code == 202
+    rows = await _inbox_rows()
+    assert rows[0].command_type == "dept.update"
+    assert rows[0].aggregate_id == "2"
+
+
+@pytest.mark.asyncio
+async def test_delete_department_queues_command():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        resp = await ac.delete("/api/v1/departments/3", headers=_auth(["dept.delete"]))
+    assert resp.status_code == 202
+    rows = await _inbox_rows()
+    assert rows[0].command_type == "dept.delete"
+    assert rows[0].aggregate_id == "3"
+
+
+# ── Teams ─────────────────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_list_teams_returns_200():
+    with patch("app.modules.staff.service.repo.list_teams", new=AsyncMock(return_value=[MOCK_TEAM])):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            resp = await ac.get("/api/v1/teams", headers=_auth(["team.create"]))
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data["items"]) == 1
+    assert data["items"][0]["name"] == "Level 1 Support"
+
+
+@pytest.mark.asyncio
+async def test_get_team_returns_detail():
+    with (
+        patch("app.modules.staff.service.repo.get_team", new=AsyncMock(return_value=MOCK_TEAM)),
+        patch("app.modules.staff.service.repo.get_team_members", new=AsyncMock(return_value=[5, 6]))
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            resp = await ac.get("/api/v1/teams/1", headers=_auth(["team.create"]))
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["name"] == "Level 1 Support"
+    assert data["members"] == [5, 6]
+
+
+@pytest.mark.asyncio
+async def test_create_team_queues_command():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        resp = await ac.post(
+            "/api/v1/teams",
+            json={"name": "L2 Support", "members": [5]},
+            headers=_auth(["team.create"]),
+        )
+    assert resp.status_code == 202
+    rows = await _inbox_rows()
+    assert rows[0].command_type == "team.create"
+    payload = json.loads(rows[0].payload)
+    assert payload["name"] == "L2 Support"
+    assert payload["members"] == [5]
+
+
+@pytest.mark.asyncio
+async def test_update_team_queues_command():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        resp = await ac.patch(
+            "/api/v1/teams/2",
+            json={"name": "Updated Team"},
+            headers=_auth(["team.edit"]),
+        )
+    assert resp.status_code == 202
+    rows = await _inbox_rows()
+    assert rows[0].command_type == "team.update"
+    assert rows[0].aggregate_id == "2"
+
+
+@pytest.mark.asyncio
+async def test_delete_team_queues_command():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        resp = await ac.delete("/api/v1/teams/3", headers=_auth(["team.delete"]))
+    assert resp.status_code == 202
+    rows = await _inbox_rows()
+    assert rows[0].command_type == "team.delete"
+    assert rows[0].aggregate_id == "3"
+
+
+# ── Staff ─────────────────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_list_staff_returns_200():
+    with patch("app.modules.staff.service.repo.list_staff", new=AsyncMock(return_value=[MOCK_STAFF])):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            resp = await ac.get("/api/v1/staff", headers=_auth(["staff.create"]))
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data["items"]) == 1
+    assert data["items"][0]["username"] == "agent"
+
+
+@pytest.mark.asyncio
+async def test_get_staff_returns_detail():
+    with (
+        patch("app.modules.staff.service.repo.get_staff", new=AsyncMock(return_value=MOCK_STAFF)),
+        patch("app.modules.staff.service.repo.get_staff_teams", new=AsyncMock(return_value=[1]))
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            resp = await ac.get("/api/v1/staff/5", headers=_auth(["staff.create"]))
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["username"] == "agent"
+    assert data["teams"] == [1]
+
+
+@pytest.mark.asyncio
+async def test_create_staff_queues_command():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        resp = await ac.post(
+            "/api/v1/staff",
+            json={
+                "username": "new_agent",
+                "firstname": "New",
+                "lastname": "Agent",
+                "email": "new@test.local",
+                "dept_id": 1,
+                "role_id": 1,
+                "password": "secure_password",
+            },
+            headers=_auth(["staff.create"]),
+        )
+    assert resp.status_code == 202
+    rows = await _inbox_rows()
+    assert rows[0].command_type == "staff.create"
+    payload = json.loads(rows[0].payload)
+    assert payload["username"] == "new_agent"
+
+
+@pytest.mark.asyncio
+async def test_update_staff_queues_command():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        resp = await ac.patch(
+            "/api/v1/staff/6",
+            json={"firstname": "Updated"},
+            headers=_auth(["staff.edit"]),
+        )
+    assert resp.status_code == 202
+    rows = await _inbox_rows()
+    assert rows[0].command_type == "staff.update"
+    assert rows[0].aggregate_id == "6"
+
+
+@pytest.mark.asyncio
+async def test_delete_staff_queues_command():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        resp = await ac.delete("/api/v1/staff/7", headers=_auth(["staff.delete"]))
+    assert resp.status_code == 202
+    rows = await _inbox_rows()
+    assert rows[0].command_type == "staff.delete"
+    assert rows[0].aggregate_id == "7"
+
+
+# ── Common checks ─────────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_all_endpoints_require_auth():
+    endpoints = [
+        ("GET",    "/api/v1/departments"),
+        ("GET",    "/api/v1/departments/1"),
+        ("POST",   "/api/v1/departments"),
+        ("PATCH",  "/api/v1/departments/1"),
+        ("DELETE", "/api/v1/departments/1"),
+        ("GET",    "/api/v1/teams"),
+        ("GET",    "/api/v1/teams/1"),
+        ("POST",   "/api/v1/teams"),
+        ("PATCH",  "/api/v1/teams/1"),
+        ("DELETE", "/api/v1/teams/1"),
+        ("GET",    "/api/v1/staff"),
+        ("GET",    "/api/v1/staff/1"),
+        ("POST",   "/api/v1/staff"),
+        ("PATCH",  "/api/v1/staff/1"),
+        ("DELETE", "/api/v1/staff/1"),
+    ]
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        for method, path in endpoints:
+            func = getattr(ac, method.lower())
+            kwargs = {} if method in ("GET", "DELETE") else {"json": {}}
+            resp = await func(path, **kwargs)
+            assert resp.status_code == 401, f"{method} {path} → {resp.status_code}"
