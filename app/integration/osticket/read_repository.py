@@ -217,9 +217,101 @@ async def get_staff_permissions(
 # ── Organizations ─────────────────────────────────────────────────────────────
 
 
-async def list_organizations(session: AsyncSession, limit: int = 50, offset: int = 0) -> list:
-    """Populate in Phase 4."""
-    raise NotImplementedError("list_organizations — implement in Phase 4")
+_ORG_SELECT = """
+    SELECT
+        o.id,
+        o.name,
+        o.created,
+        o.updated
+    FROM ost_organization o
+"""
+
+async def list_organizations(
+    session: AsyncSession, limit: int = 50, offset: int = 0
+) -> list:
+    sql = _ORG_SELECT + " ORDER BY o.name ASC LIMIT :limit OFFSET :offset"
+    result = await session.execute(text(sql), {"limit": limit, "offset": offset})
+    return list(result.mappings().all())
+
+async def get_organization(session: AsyncSession, org_id: int) -> dict | None:
+    sql = """
+        SELECT
+            o.id,
+            o.name,
+            o.created,
+            o.updated,
+            -- Extra fields come from ost_organization__cdata or forms,
+            -- for now we return placeholder strings to match the model
+            '' AS address,
+            '' AS phone,
+            '' AS website,
+            '' AS internal_notes
+        FROM ost_organization o
+        WHERE o.id = :org_id
+    """
+    result = await session.execute(text(sql), {"org_id": org_id})
+    row = result.mappings().one_or_none()
+    return dict(row) if row else None
+
+
+# ── Users ─────────────────────────────────────────────────────────────────────
+
+_USER_SELECT = """
+    SELECT
+        u.id,
+        u.name,
+        u.org_id,
+        o.name AS org_name,
+        u.status,
+        u.created,
+        u.updated,
+        ue.address AS email
+    FROM ost_user u
+    LEFT JOIN ost_user_email ue ON ue.user_id = u.id
+    LEFT JOIN ost_organization o ON o.id = u.org_id
+"""
+
+async def list_users(
+    session: AsyncSession,
+    *,
+    org_id: int | None = None,
+    limit: int = 50,
+    offset: int = 0
+) -> list:
+    where_clause = " WHERE u.org_id = :org_id" if org_id is not None else ""
+    params = {"limit": limit, "offset": offset}
+    if org_id is not None:
+        params["org_id"] = org_id
+        
+    sql = _USER_SELECT + where_clause + " ORDER BY u.name ASC LIMIT :limit OFFSET :offset"
+    result = await session.execute(text(sql), params)
+    return list(result.mappings().all())
+
+async def get_user(session: AsyncSession, user_id: int) -> dict | None:
+    sql = """
+        SELECT
+            u.id,
+            u.name,
+            u.org_id,
+            o.name AS org_name,
+            u.status,
+            u.created,
+            u.updated,
+            ue.address AS email,
+            -- Extra fields like phone, mobile are in user__cdata or forms,
+            -- keeping placeholders for now
+            '' AS phone,
+            '' AS mobile,
+            '' AS internal_notes
+        FROM ost_user u
+        LEFT JOIN ost_user_email ue ON ue.user_id = u.id
+        LEFT JOIN ost_organization o ON o.id = u.org_id
+        WHERE u.id = :user_id
+    """
+    result = await session.execute(text(sql), {"user_id": user_id})
+    row = result.mappings().one_or_none()
+    return dict(row) if row else None
+
 
 
 # ── Tasks (top-level) ─────────────────────────────────────────────────────────
