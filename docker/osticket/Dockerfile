@@ -39,14 +39,14 @@ RUN curl -fsSL \
     && rm -rf /tmp/osticket /tmp/osticket.zip
 
 # ── Apache virtualhost — allow .htaccess overrides ────────────────────────────
-COPY apache.conf /etc/apache2/sites-available/000-default.conf
+COPY docker/osticket/apache.conf /etc/apache2/sites-available/000-default.conf
 
 # ── Bridge plugin ─────────────────────────────────────────────────────────────
 # Copy our PHP integration plugin into osTicket's plugin directory.
-COPY ../../bridge/ /var/www/html/include/plugins/fastapi_integration/
+COPY bridge/ /var/www/html/include/plugins/fastapi_integration/
 
 # ── Cron ──────────────────────────────────────────────────────────────────────
-COPY crontab /etc/cron.d/osticket-cron
+COPY docker/osticket/crontab /etc/cron.d/osticket-cron
 RUN chmod 0644 /etc/cron.d/osticket-cron \
     && touch /var/log/osticket-cron.log \
     && chown www-data:www-data /var/log/osticket-cron.log
@@ -55,7 +55,7 @@ RUN chmod 0644 /etc/cron.d/osticket-cron \
 RUN chown -R www-data:www-data /var/www/html \
     && chmod -R 755 /var/www/html
 
-COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+COPY docker/osticket/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
 EXPOSE 80

@@ -21,8 +21,8 @@ services:
   # ── osTicket (HTTP + PHP) ────────────────────────────────────────────────────
   osticket:
     build:
-      context: ./docker/osticket
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: docker/osticket/Dockerfile
     ports:
       - "8080:80"
     environment:
@@ -50,8 +50,8 @@ services:
   # ── osTicket cron worker (bridge command processor) ───────────────────────────
   osticket-cron:
     build:
-      context: ./docker/osticket
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: docker/osticket/Dockerfile
     environment:
       MYSQL_HOST: db
       MYSQL_USER: osticket
