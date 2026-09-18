@@ -606,6 +606,45 @@ async def get_banlist_entry(session: AsyncSession, ban_id: int) -> dict | None:
     return dict(row) if row else None
 
 
+# ── Search ────────────────────────────────────────────────────────────────────
+
+async def search_all(session: AsyncSession, query: str, limit: int = 10) -> list:
+    """Basic multi-table search using UNION ALL."""
+    sql = """
+        SELECT
+            ticket_id AS id,
+            'ticket' AS type,
+            number AS title,
+            subject AS subtitle
+        FROM ost_ticket
+        WHERE number LIKE :q OR subject LIKE :q
+        
+        UNION ALL
+        
+        SELECT
+            id,
+            'user' AS type,
+            name AS title,
+            email AS subtitle
+        FROM ost_user
+        WHERE name LIKE :q OR email LIKE :q
+        
+        UNION ALL
+        
+        SELECT
+            id,
+            'organization' AS type,
+            name AS title,
+            name AS subtitle
+        FROM ost_organization
+        WHERE name LIKE :q
+        
+        LIMIT :limit
+    """
+    result = await session.execute(text(sql), {"q": f"%{query}%", "limit": limit})
+    return list(result.mappings().all())
+
+
 # ── Organizations ─────────────────────────────────────────────────────────────
 
 

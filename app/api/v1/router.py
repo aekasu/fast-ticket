@@ -6,6 +6,7 @@ from app.modules.auth.router import router as auth_router
 from app.modules.banlist.router import router as banlist_router
 from app.modules.kb.router import router as kb_router
 from app.modules.lookups.router import router as lookups_router
+from app.modules.search.router import router as search_router
 from app.modules.staff.router import router as staff_router
 from app.modules.tasks.router import router as tasks_router
 from app.modules.tickets.router import router as tickets_router
@@ -37,8 +38,10 @@ v1_router.include_router(kb_router)
 # ── Banlist ──────────────────────────────────────────────────────────────────
 v1_router.include_router(banlist_router)
 
+# ── Search ───────────────────────────────────────────────────────────────────
+v1_router.include_router(search_router)
+
 # ── Domain routers (added per phase) ─────────────────────────────────────────
-# Phase 9: search
 # Phase 10: forms
 # Phase 11: commands, events inspection
 
