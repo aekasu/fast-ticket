@@ -3,6 +3,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from app.core.auth import authenticate_websocket
 from app.core.ws_manager import manager
 from app.modules.auth.router import router as auth_router
+from app.modules.tasks.router import router as tasks_router
 from app.modules.tickets.router import router as tickets_router
 
 v1_router = APIRouter()
@@ -13,8 +14,10 @@ v1_router.include_router(auth_router, prefix="/auth")
 # ── Tickets ───────────────────────────────────────────────────────────────────
 v1_router.include_router(tickets_router, prefix="/tickets")
 
+# ── Tasks ─────────────────────────────────────────────────────────────────────
+v1_router.include_router(tasks_router, prefix="/tasks")
+
 # ── Domain routers (added per phase) ─────────────────────────────────────────
-# Phase 3: tasks
 # Phase 4: users, organizations
 # Phase 5: staff, teams, departments
 # Phase 6: topics, sla, priorities

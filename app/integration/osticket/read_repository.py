@@ -225,8 +225,112 @@ async def list_organizations(session: AsyncSession, limit: int = 50, offset: int
 # ── Tasks (top-level) ─────────────────────────────────────────────────────────
 
 
+# ── Tasks (top-level) ─────────────────────────────────────────────────────────
+
+
+_TASK_SELECT = """
+    SELECT
+        t.id                             AS task_id,
+        t.number,
+        t.title,
+        ts.id                            AS status_id,
+        ts.name                          AS status_name,
+        ts.state                         AS status_state,
+        d.id                             AS dept_id,
+        d.name                           AS dept_name,
+        IF(t.staff_id > 0, t.staff_id, NULL)                           AS assignee_staff_id,
+        IF(t.staff_id > 0, CONCAT(s.firstname, ' ', s.lastname), NULL) AS assignee_name,
+        IF(t.team_id > 0, t.team_id, NULL)   AS team_id,
+        IF(t.team_id > 0, tm.name, NULL)     AS team_name,
+        tl.object_id                     AS ticket_id,
+        t.created,
+        t.updated,
+        t.closed,
+        t.duedate                        AS due_date
+    FROM ost_task t
+    LEFT JOIN ost_task_status ts  ON t.status_id  = ts.id
+    LEFT JOIN ost_department d    ON t.dept_id     = d.id
+    LEFT JOIN ost_staff s         ON t.staff_id    = s.staff_id AND t.staff_id > 0
+    LEFT JOIN ost_team tm         ON t.team_id     = tm.team_id AND t.team_id > 0
+    -- ost_task_link maps tasks to parent objects (tickets, etc.)
+    LEFT JOIN ost_task_link tl    ON tl.task_id    = t.id AND tl.object_type = 'T'
+"""
+
+
+async def list_tasks(
+    session: AsyncSession,
+    *,
+    status_id: int | None = None,
+    dept_id: int | None = None,
+    assignee_staff_id: int | None = None,
+    ticket_id: int | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> list:
+    where_clauses = ["1=1"]
+    params: dict = {"limit": limit, "offset": offset}
+
+    if status_id is not None:
+        where_clauses.append("t.status_id = :status_id")
+        params["status_id"] = status_id
+    if dept_id is not None:
+        where_clauses.append("t.dept_id = :dept_id")
+        params["dept_id"] = dept_id
+    if assignee_staff_id is not None:
+        where_clauses.append("t.staff_id = :assignee_staff_id")
+        params["assignee_staff_id"] = assignee_staff_id
+    if ticket_id is not None:
+        where_clauses.append("tl.object_id = :ticket_id")
+        params["ticket_id"] = ticket_id
+
+    sql = (
+        _TASK_SELECT
+        + " WHERE " + " AND ".join(where_clauses)
+        + " ORDER BY t.updated DESC"
+        + " LIMIT :limit OFFSET :offset"
+    )
+    result = await session.execute(text(sql), params)
+    return list(result.mappings().all())
+
+
+async def get_task(session: AsyncSession, task_id: int) -> dict | None:
+    sql = _TASK_SELECT + " WHERE t.id = :task_id"
+    result = await session.execute(text(sql), {"task_id": task_id})
+    row = result.mappings().one_or_none()
+    return dict(row) if row else None
+
+
+async def get_task_thread(session: AsyncSession, task_id: int) -> list:
+    """Return thread entries for a task ordered by creation time."""
+    sql = """
+        SELECT
+            te.id,
+            te.type,
+            te.title,
+            te.body,
+            te.staff_id,
+            te.user_id,
+            te.ip_address,
+            te.created,
+            CASE
+                WHEN te.staff_id > 0 THEN CONCAT(s.firstname, ' ', s.lastname)
+                WHEN te.user_id  > 0 THEN u.name
+                ELSE NULL
+            END AS poster
+        FROM ost_task t
+        JOIN ost_thread_entry te ON te.thread_id = t.thread_id
+        LEFT JOIN ost_staff s ON te.staff_id = s.staff_id AND te.staff_id > 0
+        LEFT JOIN ost_user  u ON te.user_id  = u.id       AND te.user_id  > 0
+        WHERE t.id = :task_id
+        ORDER BY te.created ASC, te.id ASC
+    """
+    result = await session.execute(text(sql), {"task_id": task_id})
+    return list(result.mappings().all())
+
+
 async def list_tasks_from_osticket(
     session: AsyncSession, limit: int = 50, offset: int = 0
 ) -> list:
-    """Populate in Phase 3."""
-    raise NotImplementedError("list_tasks_from_osticket — implement in Phase 3")
+    """Backward-compat alias; prefer list_tasks() directly."""
+    return await list_tasks(session, limit=limit, offset=offset)
+
