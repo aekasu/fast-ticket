@@ -43,7 +43,7 @@ $SED_INPLACE "s/^JWT_SECRET_KEY=.*/JWT_SECRET_KEY=${JWT_SECRET}/" "$ENV_FILE"
 if ! grep -q "OSTICKET_AUTO_SETUP" "$ENV_FILE"; then
     echo "" >> "$ENV_FILE"
     echo "# Set to 'false' if you want to manually run the osTicket web installation wizard" >> "$ENV_FILE"
-    echo "OSTICKET_AUTO_SETUP=true" >> "$ENV_FILE"
+    echo "OSTICKET_AUTO_SETUP=false" >> "$ENV_FILE"
 fi
 
 echo "Successfully generated $ENV_FILE with randomized secrets!"
