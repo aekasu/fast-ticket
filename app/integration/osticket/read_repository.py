@@ -657,6 +657,48 @@ async def get_form_fields(session: AsyncSession, form_id: int) -> list:
     return list(result.mappings().all())
 
 
+# ── Commands ──────────────────────────────────────────────────────────────────
+
+async def list_commands(session: AsyncSession, limit: int = 50, offset: int = 0) -> list:
+    sql = """
+        SELECT
+            id,
+            command_type,
+            aggregate_type,
+            aggregate_id,
+            status,
+            requested_by_staff_id,
+            created_at,
+            processed_at
+        FROM ost_integration_inbox
+        ORDER BY created_at DESC LIMIT :limit OFFSET :offset
+    """
+    result = await session.execute(text(sql), {"limit": limit, "offset": offset})
+    return list(result.mappings().all())
+
+async def get_command(session: AsyncSession, command_id: int) -> dict | None:
+    sql = """
+        SELECT
+            id,
+            command_type,
+            aggregate_type,
+            aggregate_id,
+            payload,
+            idempotency_key,
+            status,
+            requested_by_staff_id,
+            result_payload,
+            error_message,
+            created_at,
+            processed_at
+        FROM ost_integration_inbox
+        WHERE id = :command_id
+    """
+    result = await session.execute(text(sql), {"command_id": command_id})
+    row = result.mappings().one_or_none()
+    return dict(row) if row else None
+
+
 # ── Search ────────────────────────────────────────────────────────────────────
 
 async def search_all(session: AsyncSession, query: str, limit: int = 10) -> list:

@@ -4,6 +4,7 @@ from app.core.auth import authenticate_websocket
 from app.core.ws_manager import manager
 from app.modules.auth.router import router as auth_router
 from app.modules.banlist.router import router as banlist_router
+from app.modules.commands.router import router as commands_router
 from app.modules.forms.router import router as forms_router
 from app.modules.kb.router import router as kb_router
 from app.modules.lookups.router import router as lookups_router
@@ -45,8 +46,8 @@ v1_router.include_router(search_router)
 # ── Forms ────────────────────────────────────────────────────────────────────
 v1_router.include_router(forms_router)
 
-# ── Domain routers (added per phase) ─────────────────────────────────────────
-# Phase 11: commands, events inspection
+# ── Commands & Events Inspection ───────────────────────────────────────────
+v1_router.include_router(commands_router)
 
 
 # ── WebSocket ─────────────────────────────────────────────────────────────────
