@@ -25,6 +25,8 @@ services:
       dockerfile: docker/osticket/Dockerfile
     ports:
       - "8080:80"
+    volumes:
+      - ./docker/osticket/ost-config.php:/var/www/html/include/ost-config.php
     environment:
       MYSQL_HOST: db
       MYSQL_USER: osticket
@@ -53,6 +55,8 @@ services:
     build:
       context: .
       dockerfile: docker/osticket/Dockerfile
+    volumes:
+      - ./docker/osticket/ost-config.php:/var/www/html/include/ost-config.php
     environment:
       MYSQL_HOST: db
       MYSQL_USER: osticket

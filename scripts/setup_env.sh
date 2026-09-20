@@ -47,4 +47,12 @@ if ! grep -q "OSTICKET_AUTO_SETUP" "$ENV_FILE"; then
 fi
 
 echo "Successfully generated $ENV_FILE with randomized secrets!"
+
+CONFIG_FILE="docker/osticket/ost-config.php"
+if [ ! -f "$CONFIG_FILE" ]; then
+    echo "Creating empty $CONFIG_FILE to persist osTicket configuration..."
+    touch "$CONFIG_FILE"
+    chmod 0666 "$CONFIG_FILE"
+fi
+
 echo "You can now run 'make start' to boot up the stack."

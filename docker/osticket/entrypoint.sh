@@ -33,11 +33,17 @@ if [ ! -f "$SETUP_LOCK" ]; then
         sleep 2
     done
 
-    # Generate ost-config.php from sample
-    if [ ! -f "$CONFIG_FILE" ]; then
+    # Generate ost-config.php from sample if it's completely empty
+    if [ ! -s "$CONFIG_FILE" ]; then
         cp /var/www/html/include/ost-sampleconfig.php "$CONFIG_FILE"
         chmod 0666 "$CONFIG_FILE"
         chown www-data:www-data "$CONFIG_FILE"
+    fi
+
+    # Automatically clean up the setup directory if already installed
+    if grep -q "define('OSTINSTALLED',TRUE);" "$CONFIG_FILE"; then
+        echo "[entrypoint] osTicket is installed. Removing setup/ directory."
+        rm -rf /var/www/html/setup/
     fi
 
     if [ "${OSTICKET_AUTO_SETUP:-true}" = "true" ]; then
