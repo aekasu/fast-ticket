@@ -175,6 +175,58 @@ class FastApiIntegrationPlugin extends Plugin {
                     $result = FastApiUserHandler::delete($payload, $row['requested_by_staff_id']);
                     break;
 
+                // ── Organizations ──────────────────────────────────────────
+                case 'org.create':
+                    require_once dirname(__FILE__) . '/handlers/orgs.php';
+                    $result = FastApiOrgHandler::create($payload, $row['requested_by_staff_id']);
+                    break;
+                case 'org.update':
+                    require_once dirname(__FILE__) . '/handlers/orgs.php';
+                    $result = FastApiOrgHandler::update($payload, $row['requested_by_staff_id']);
+                    break;
+                case 'org.delete':
+                    require_once dirname(__FILE__) . '/handlers/orgs.php';
+                    $result = FastApiOrgHandler::delete($payload, $row['requested_by_staff_id']);
+                    break;
+
+                // ── Knowledgebase ──────────────────────────────────────────
+                case 'kb.category.create':
+                    require_once dirname(__FILE__) . '/handlers/kb.php';
+                    $result = FastApiKbHandler::createCategory($payload, $row['requested_by_staff_id']);
+                    break;
+                case 'kb.category.update':
+                    require_once dirname(__FILE__) . '/handlers/kb.php';
+                    $result = FastApiKbHandler::updateCategory($payload, $row['requested_by_staff_id']);
+                    break;
+                case 'kb.category.delete':
+                    require_once dirname(__FILE__) . '/handlers/kb.php';
+                    $result = FastApiKbHandler::deleteCategory($payload, $row['requested_by_staff_id']);
+                    break;
+                case 'kb.faq.create':
+                    require_once dirname(__FILE__) . '/handlers/kb.php';
+                    $result = FastApiKbHandler::createFaq($payload, $row['requested_by_staff_id']);
+                    break;
+                case 'kb.faq.update':
+                    require_once dirname(__FILE__) . '/handlers/kb.php';
+                    $result = FastApiKbHandler::updateFaq($payload, $row['requested_by_staff_id']);
+                    break;
+                case 'kb.faq.delete':
+                    require_once dirname(__FILE__) . '/handlers/kb.php';
+                    $result = FastApiKbHandler::deleteFaq($payload, $row['requested_by_staff_id']);
+                    break;
+                case 'kb.canned.create':
+                    require_once dirname(__FILE__) . '/handlers/kb.php';
+                    $result = FastApiKbHandler::createCanned($payload, $row['requested_by_staff_id']);
+                    break;
+                case 'kb.canned.update':
+                    require_once dirname(__FILE__) . '/handlers/kb.php';
+                    $result = FastApiKbHandler::updateCanned($payload, $row['requested_by_staff_id']);
+                    break;
+                case 'kb.canned.delete':
+                    require_once dirname(__FILE__) . '/handlers/kb.php';
+                    $result = FastApiKbHandler::deleteCanned($payload, $row['requested_by_staff_id']);
+                    break;
+
                 // ── Staff ──────────────────────────────────────────────────
                 case 'staff.create':
                     require_once dirname(__FILE__) . '/handlers/staff.php';
