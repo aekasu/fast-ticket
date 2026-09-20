@@ -19,12 +19,9 @@ require_once INCLUDE_DIR . 'class.staff.php';
 
 // ── Integration key validation ─────────────────────────────────────────────
 
-$config_sql = "SELECT value FROM ost_config WHERE namespace='fastapi_integration' AND `key`='integration_key' LIMIT 1";
-$cfg_result = db_query($config_sql);
-$cfg_row    = db_fetch_array($cfg_result);
-$expected_key = $cfg_row ? $cfg_row['value'] : '';
-
+$expected_key = $_SERVER['FASTAPI_INTEGRATION_KEY'] ?? '';
 $provided_key = $_SERVER['HTTP_X_INTEGRATION_KEY'] ?? '';
+
 if (empty($expected_key) || !hash_equals($expected_key, $provided_key)) {
     http_response_code(403);
     header('Content-Type: application/json');

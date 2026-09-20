@@ -17,14 +17,26 @@
 require_once INCLUDE_DIR . 'class.plugin.php';
 
 class FastApiIntegrationPlugin extends Plugin {
-    var $config_class = 'FastApiIntegrationConfig';
+
+
+    function __construct($id=0) {
+        parent::__construct($id);
+        error_log("FastApiIntegrationPlugin __construct CALLED!");
+        Signal::connect('cron', array($this, 'processInbox'));
+        Signal::connect('api', array($this, 'registerApiEndpoints'));
+        
+        // Outbound event synchronization
+        Signal::connect('model.created', array($this, 'onModelCreated'));
+        Signal::connect('model.updated', array($this, 'onModelUpdated'));
+        Signal::connect('model.deleted', array($this, 'onModelDeleted'));
+
+        Signal::connect('object.created', array($this, 'onObjectCreated'));
+        Signal::connect('object.edited', array($this, 'onObjectEdited'));
+        Signal::connect('object.deleted', array($this, 'onObjectDeleted'));
+    }
 
     function bootstrap() {
-        // Hook into the cron signal fired by api/cron.php
-        Signal::connect('cron', array($this, 'processInbox'));
-
-        // Register the auth endpoint for FastAPI credential validation
-        Signal::connect('api', array($this, 'registerApiEndpoints'));
+        // Nothing here. Signals moved to constructor.
     }
 
     /**
@@ -218,6 +230,72 @@ class FastApiIntegrationPlugin extends Plugin {
         ));
     }
 
+    // ── Outbound Event Listeners ───────────────────────────────────────────
+
+    function onModelCreated($object, $data=null) {
+        $this->handleModelEvent('created', $object);
+    }
+
+    function onModelUpdated($object, $data=null) {
+        $this->handleModelEvent('updated', $object);
+    }
+
+    function onModelDeleted($object, $data=null) {
+        $this->handleModelEvent('deleted', $object);
+    }
+
+    function onObjectCreated($object, $data=null) {
+        $this->handleModelEvent('created', $object);
+    }
+
+    function onObjectEdited($object, $data=null) {
+        $this->handleModelEvent('updated', $object);
+    }
+
+    function onObjectDeleted($object, $data=null) {
+        $this->handleModelEvent('deleted', $object);
+    }
+
+    private function handleModelEvent($action, $object) {
+        if (!is_object($object)) return;
+        
+        $class = get_class($object);
+        $typeMap = [
+            'Ticket' => 'ticket',
+            'Task' => 'task',
+            'User' => 'user',
+            'Organization' => 'org',
+            'Staff' => 'staff',
+            'Team' => 'team',
+            'Dept' => 'dept',
+            'Category' => 'kb.category',
+            'FAQ' => 'kb.faq',
+            'Canned' => 'kb.canned',
+            'DynamicForm' => 'form',
+            'Banlist' => 'banlist'
+        ];
+
+        if (!isset($typeMap[$class])) {
+            return;
+        }
+
+        $aggregate_type = $typeMap[$class];
+        $event_type = "{$aggregate_type}.{$action}";
+        
+        // Extract aggregate ID (most ORM models use getId())
+        $aggregate_id = method_exists($object, 'getId') ? $object->getId() : 0;
+        if (!$aggregate_id && isset($object->id)) {
+            $aggregate_id = $object->id;
+        }
+
+        if (!$aggregate_id) return;
+
+        // Serialize full model state for payload
+        $payload = method_exists($object, 'ht') ? $object->ht : (array)$object;
+        
+        $this->emitOutboxEvent($event_type, $aggregate_type, $aggregate_id, $payload);
+    }
+
     /**
      * Map a command type to its corresponding outbox event type.
      */
@@ -254,8 +332,15 @@ class FastApiIntegrationPlugin extends Plugin {
     /**
      * Register the auth API endpoint.
      */
-    function registerApiEndpoints() {
-        // Handled via separate auth.php file — see bridge/auth.php
+    function registerApiEndpoints($dispatcher) {
+        error_log("FastApiIntegrationPlugin registerApiEndpoints CALLED! " . get_class($dispatcher));
+        $dispatcher->append(
+            url_post("^/auth/integration", array($this, 'authenticateForFastApi'))
+        );
+    }
+
+    function authenticateForFastApi() {
+        require_once dirname(__FILE__) . '/auth.php';
     }
 }
 
