@@ -38,7 +38,7 @@ fast-ticket/
 ├── docker-compose.test.yml           # Isolated test environment (no real osTicket needed)
 ├── .env.example                      # All required env vars documented
 ├── notes/
-│   └── OSTICKET_CAPABILITIES.md      # Capability inventory — read before adding any endpoint
+│   └── INTEGRATION_CAPABILITIES.md  # Capability inventory — read before adding any endpoint
 └── pyproject.toml                    # uv-managed dependencies
 ```
 
@@ -117,7 +117,7 @@ Security is implemented **in tandem** with each domain, not as a later layer.
 
 ## osTicket capability reference
 
-`notes/OSTICKET_CAPABILITIES.md` is the authoritative map of every PHP model operation, its API suitability rating, permissions, and relationships. **Read the relevant section before implementing any new endpoint.** Summary matrix in §2; per-domain details from §3 onward.
+`notes/INTEGRATION_CAPABILITIES.md` is the authoritative map of every PHP model operation, its API suitability rating, permissions, and relationships. **Read the relevant section before implementing any new endpoint.** Summary matrix in §2; per-domain details from §3 onward.
 
 Implementation priority order:
 

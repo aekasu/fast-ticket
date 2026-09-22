@@ -14,12 +14,14 @@ CREATE TABLE IF NOT EXISTS `ost_integration_inbox` (
     `status`                ENUM('pending','processing','done','failed')
                                             NOT NULL DEFAULT 'pending',
     `requested_by_staff_id` INT UNSIGNED    NULL,
+    `claimed_by`            VARCHAR(32)     NULL COMMENT 'Run ID set during atomic claim to prevent double-processing',
     `result_payload`        MEDIUMTEXT      NULL COMMENT 'JSON response from PHP side',
     `error_message`         TEXT            NULL,
     `created_at`            DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `processed_at`          DATETIME        NULL,
     PRIMARY KEY (`id`),
     INDEX `idx_inbox_status` (`status`),
+    INDEX `idx_inbox_claimed_by` (`claimed_by`),
     INDEX `idx_inbox_command_type` (`command_type`),
     INDEX `idx_inbox_aggregate` (`aggregate_type`, `aggregate_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

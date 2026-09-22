@@ -1,6 +1,8 @@
 # Reference archives — never commit
 fitsm.zip
-notes/
+
+# Only ignore scratch/extraction output inside notes/, keep docs tracked
+notes/.scratch/
 
 # Python
 __pycache__/

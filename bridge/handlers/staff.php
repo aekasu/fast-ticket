@@ -55,4 +55,12 @@ class FastApiStaffHandler {
         }
         return ['staff_id' => $staff->getId()];
     }
+
+    public static function delete($payload, $requester_staff_id) {
+        $staff = self::requireStaff($payload['staff_id'] ?? 0);
+        if (!$staff->delete()) {
+            throw new Exception('Staff::delete() failed.');
+        }
+        return ['staff_id' => (int) ($payload['staff_id'] ?? 0)];
+    }
 }

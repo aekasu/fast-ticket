@@ -63,6 +63,47 @@ class FastApiTaskHandler {
         return ['task_id' => $task->getId(), 'status' => 'closed'];
     }
 
+    public static function reopen($payload, $staff_id) {
+        $task = self::requireTask($payload['task_id'] ?? 0);
+        if (!$task->reopen()) {
+            throw new Exception('Task::reopen() failed.');
+        }
+        return ['task_id' => $task->getId(), 'status' => 'open'];
+    }
+
+    public static function addNote($payload, $staff_id) {
+        $task = self::requireTask($payload['task_id'] ?? 0);
+        $vars = [
+            'title'   => $payload['title'] ?? '',
+            'message' => $payload['message'] ?? '',
+        ];
+        $errors = [];
+        $note = $task->postNote($vars, $errors);
+        if (!$note) {
+            throw new Exception('Task::postNote() failed: ' . implode(', ', $errors));
+        }
+        return ['task_id' => $task->getId(), 'entry_id' => $note->getId()];
+    }
+
+    public static function edit($payload, $staff_id) {
+        $task = self::requireTask($payload['task_id'] ?? 0);
+        $vars = [];
+        foreach (['title', 'description', 'dept_id', 'duedate'] as $field) {
+            if (isset($payload[$field])) {
+                $vars[$field] = $payload[$field];
+            }
+        }
+        // Map dept_id → deptId if the PHP model expects it
+        if (isset($payload['dept_id']) && !isset($vars['deptId'])) {
+            $vars['deptId'] = $payload['dept_id'];
+        }
+        $errors = [];
+        if (!$task->update($vars, $errors)) {
+            throw new Exception('Task::update() failed: ' . implode(', ', $errors));
+        }
+        return ['task_id' => $task->getId()];
+    }
+
     public static function delete($payload, $staff_id) {
         $task = self::requireTask($payload['task_id'] ?? 0);
         if (!$task->delete()) {
