@@ -1,4 +1,7 @@
 <?php
+error_reporting(E_ALL);
+ini_set('display_errors', 1);
+
 /**
  * PHP bridge plugin installer.
  * Called by the Docker entrypoint on first boot.
@@ -24,10 +27,17 @@ if (empty($integration_key)) {
     exit(1);
 }
 
-// Bootstrap osTicket
+// Bootstrap osTicket for CLI use.
+// bootstrap.php only runs Bootstrap::init() — for CLI scripts we must
+// also call connect() (opens the DB) and loadCode() (loads ORM/models).
+// This is the same pattern used by all osTicket CLI modules (cron, export, etc).
 define('OSTAPI', TRUE);
 $webroot = dirname(dirname(dirname(dirname(__FILE__))));
 require_once $webroot . '/bootstrap.php';
+Bootstrap::loadConfig();
+Bootstrap::defineTables(TABLE_PREFIX);
+Bootstrap::loadCode();
+Bootstrap::connect();
 require_once INCLUDE_DIR . 'class.plugin.php';
 
 $plugin_id = 'fastapi_integration';

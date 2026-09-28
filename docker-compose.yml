@@ -39,15 +39,24 @@ services:
       OSTICKET_ADMIN_PASSWORD: ${OSTICKET_ADMIN_PASSWORD:-changeme-admin}
       OSTICKET_SITE_NAME: ${OSTICKET_SITE_NAME:-fast-ticket Dev}
       OSTICKET_AUTO_SETUP: ${OSTICKET_AUTO_SETUP:-true}
+      # Must NOT be 'admin', 'admins', 'username', or 'osticket' (installer blocks them)
+      OSTICKET_ADMIN_USERNAME: ${OSTICKET_ADMIN_USERNAME:-helpdesk}
+      # Must differ from OSTICKET_ADMIN_EMAIL
+      OSTICKET_SYSTEM_EMAIL: ${OSTICKET_SYSTEM_EMAIL:-support@example.local}
       START_CRON: "0"
     depends_on:
       db:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost/index.php"]
-      interval: 10s
+      # Check the bridge auth endpoint — it only returns non-error when osTicket is
+      # fully installed AND the integration.php file was successfully placed by bridge/install.php.
+      # (index.php would 302 to the setup wizard even on a broken install, giving a false positive)
+      test: ["CMD", "curl", "-sf", "-o", "/dev/null",
+             "http://localhost/api/auth/integration"]
+      interval: 15s
       timeout: 5s
-      retries: 15
+      retries: 20
+      start_period: 120s
     restart: unless-stopped
 
   # ── osTicket cron worker (bridge command processor) ───────────────────────────

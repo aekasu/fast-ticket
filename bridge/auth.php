@@ -11,10 +11,15 @@
  *   - Returns HTTP 401 on bad credentials, 403 on bad integration key.
  */
 
-// Bootstrap osTicket — we need the full osTicket context for Staff::lookup
+// Bootstrap osTicket — we need the full osTicket context for Staff::lookup.
+// auth.php is installed at api/auth/integration.php. The osTicket API bootstrap
+// file is at api/api.inc.php (NOT include/api.inc.php). api.inc.php includes
+// main.inc.php which calls Bootstrap::connect() + Bootstrap::loadCode().
 define('OSTAPI', TRUE);
-require_once dirname(dirname(dirname(dirname(__FILE__)))) . '/bootstrap.php';
-require_once INCLUDE_DIR . 'api.inc.php';
+$__webroot = dirname(dirname(dirname(__FILE__)));
+define('API_SESSION', true);
+chdir($__webroot);
+require_once $__webroot . '/main.inc.php';
 require_once INCLUDE_DIR . 'class.staff.php';
 
 // ── Integration key validation ─────────────────────────────────────────────
