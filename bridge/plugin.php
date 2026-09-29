@@ -79,13 +79,17 @@ class FastApiIntegrationPlugin extends Plugin {
         $batch_size = 50;
 
         // ── Stuck-row recovery ───────────────────────────────────────────────
-        // Reset any row that was claimed but never completed (PHP fatal, OOM, etc.)
-        // back to pending after 5 minutes so it gets retried exactly once.
+        // A row is 'processing' only while a run holds it, and processed_at doubles as
+        // the claim time until the row finishes (see the claim below). One held for over
+        // 5 minutes belongs to a run that died (fatal, OOM, killed). Fail it rather than
+        // retry: it may have partly executed, and re-running a non-idempotent command
+        // (ticket.create, ...) would duplicate work — and a handler that always crashes
+        // would otherwise be retried forever.
         db_query("UPDATE ost_integration_inbox
-                   SET status='pending', claimed_by=NULL
+                   SET status='failed', processed_at=NOW(),
+                       error_message='Timed out while processing (the handler crashed or the run was killed); not retried automatically.'
                    WHERE status='processing'
-                     AND processed_at IS NULL
-                     AND created_at < DATE_SUB(NOW(), INTERVAL 5 MINUTE)");
+                     AND COALESCE(processed_at, created_at) < DATE_SUB(NOW(), INTERVAL 5 MINUTE)");
 
         // ── Atomic claim ─────────────────────────────────────────────────────
         // Generate a unique run ID for this invocation so concurrent cron runs
@@ -93,7 +97,7 @@ class FastApiIntegrationPlugin extends Plugin {
         $run_id = db_input(bin2hex(random_bytes(8)));
 
         db_query("UPDATE ost_integration_inbox
-                   SET status='processing', claimed_by={$run_id}, processed_at=NULL
+                   SET status='processing', claimed_by={$run_id}, processed_at=NOW()
                    WHERE status='pending'
                    ORDER BY id ASC
                    LIMIT {$batch_size}");
@@ -119,6 +123,25 @@ class FastApiIntegrationPlugin extends Plugin {
         error_log("[FastAPI Integration] Processing command #{$inbox_id}: {$command_type}");
 
         try {
+            // Act as the staff member who made the API request. osTicket's models read the
+            // global $thisstaff for permission checks and to attribute replies, notes and
+            // assignments (Ticket, Task, Thread) — and some refuse outright without it
+            // (e.g. Team::delete() returns false). There is no session under cron, so it
+            // would otherwise be null.
+            // Each command must see the database as it is now, not the entities an earlier command
+            // in this same cron run left in osTicket's ORM identity cache.
+            if (class_exists('ModelInstanceManager'))
+                ModelInstanceManager::flushCache();
+
+            global $thisstaff;
+            $thisstaff = null;
+            if ($row['requested_by_staff_id']) {
+                $thisstaff = Staff::lookup((int) $row['requested_by_staff_id']);
+                if (!$thisstaff || !$thisstaff->isActive()) {
+                    throw new Exception("Requesting staff #{$row['requested_by_staff_id']} does not exist or is not active.");
+                }
+            }
+
             switch ($command_type) {
                 // ── Tickets ────────────────────────────────────────────────
                 case 'ticket.create':
@@ -213,10 +236,6 @@ class FastApiIntegrationPlugin extends Plugin {
                 case 'user.update':
                     require_once dirname(__FILE__) . '/handlers/users.php';
                     $result = FastApiUserHandler::update($payload, $row['requested_by_staff_id']);
-                    break;
-                case 'user.set_org':
-                    require_once dirname(__FILE__) . '/handlers/users.php';
-                    $result = FastApiUserHandler::setOrg($payload, $row['requested_by_staff_id']);
                     break;
                 case 'user.delete':
                     require_once dirname(__FILE__) . '/handlers/users.php';
@@ -391,6 +410,8 @@ class FastApiIntegrationPlugin extends Plugin {
                     throw new Exception("Unknown command type: {$command_type}");
             }
 
+            $this->assertCreateReturnedId($command_type, $result);
+
             // Mark inbox row as done
             db_query(sprintf(
                 "UPDATE ost_integration_inbox SET status='done', result_payload=%s, processed_at=NOW() WHERE id=%d",
@@ -408,7 +429,9 @@ class FastApiIntegrationPlugin extends Plugin {
 
             error_log("[FastAPI Integration] Command #{$inbox_id} ({$command_type}) completed.");
 
-        } catch (Exception $e) {
+        } catch (Throwable $e) {
+            // Throwable, not Exception: a handler calling a method osTicket doesn't have raises
+            // an Error, which must fail this row instead of wedging it in 'processing'.
             error_log("[FastAPI Integration] Command #{$inbox_id} ({$command_type}) failed: " . $e->getMessage());
             db_query(sprintf(
                 "UPDATE ost_integration_inbox SET status='failed', error_message=%s, processed_at=NOW() WHERE id=%d",
@@ -416,6 +439,21 @@ class FastApiIntegrationPlugin extends Plugin {
                 $inbox_id
             ));
         }
+    }
+
+    /**
+     * A ".create" handler that reports success without an id did not persist anything
+     * (osTicket's Model::create() only instantiates; the row exists once save()/update()
+     * succeeds). Fail the command instead of reporting a phantom "done".
+     */
+    private function assertCreateReturnedId($command_type, $result) {
+        if (substr($command_type, -7) !== '.create')
+            return;
+        foreach ((array) $result as $key => $value) {
+            if (substr($key, -2) === 'id' && $value)
+                return;
+        }
+        throw new Exception("Handler reported success but returned no id — nothing was created: " . json_encode($result));
     }
 
     /**
@@ -526,7 +564,6 @@ class FastApiIntegrationPlugin extends Plugin {
             'task.edit'               => 'task.edited',
             'user.create'             => 'user.created',
             'user.update'             => 'user.updated',
-            'user.set_org'            => 'user.org_set',
             'user.delete'             => 'user.deleted',
             'staff.create'            => 'staff.created',
             'staff.update'            => 'staff.updated',
