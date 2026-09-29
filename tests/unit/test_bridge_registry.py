@@ -31,9 +31,17 @@ EVENT_MAP = dict(re.findall(r"'([a-z_.]+)'\s*=>\s*'([a-z_.]+)'", EVENT_MAP_BODY)
 
 
 def _python_command_types() -> set[str]:
+    """Every command type a Python service can dispatch.
+
+    Two spellings exist: ``command_type="x"`` in the call, and a variable chosen beforehand
+    (``cmd_type = "a" if flag else "b"``) — matching only the first hid ticket.answered/unanswered.
+    """
     found: set[str] = set()
     for path in (ROOT / "app").rglob("*.py"):
-        found |= set(re.findall(r'command_type\s*=\s*"([a-z_.]+)"', path.read_text()))
+        text = path.read_text()
+        found |= set(re.findall(r'command_type\s*=\s*"([a-z_.]+)"', text))
+        for match in re.finditer(r'cmd_type\s*=\s*"([a-z_.]+)"(?:\s+if\s+\w+\s+else\s+"([a-z_.]+)")?', text):
+            found |= {g for g in match.groups() if g}
     return found
 
 
@@ -47,6 +55,12 @@ def test_registry_was_parsed():
 def test_every_python_command_has_a_bridge_case():
     missing = _python_command_types() - BRIDGE_CASES
     assert not missing, f"dispatched by Python but no case in dispatchCommand(): {sorted(missing)}"
+
+
+def test_no_bridge_command_is_unreachable_from_the_api():
+    """A bridge case nothing dispatches is dead code (user.set_org was one for a long time)."""
+    dead = BRIDGE_CASES - _python_command_types()
+    assert not dead, f"cases in dispatchCommand() that no Python service dispatches: {sorted(dead)}"
 
 
 def test_every_bridge_case_has_an_event_mapping():
