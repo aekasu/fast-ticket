@@ -31,7 +31,7 @@ _TICKET_SELECT = """
     SELECT
         t.ticket_id,
         t.number,
-        COALESCE(te_first.title, '') AS subject,
+        COALESCE(c.subject, '')      AS subject,
         ts.id                        AS status_id,
         ts.name                      AS status_name,
         ts.state                     AS status_state,
@@ -55,13 +55,8 @@ _TICKET_SELECT = """
         t.duedate                    AS due_date
     FROM ost_ticket t
     LEFT JOIN ost_ticket_status ts ON t.status_id = ts.id
-    LEFT JOIN (
-        SELECT thread_id, MIN(id) AS first_id
-        FROM ost_thread_entry
-        WHERE type = 'M'
-        GROUP BY thread_id
-    ) te_min ON te_min.thread_id = t.thread_id
-    LEFT JOIN ost_thread_entry te_first ON te_first.id = te_min.first_id
+    -- the subject is an answer of the ticket form, mirrored in ost_ticket__cdata
+    LEFT JOIN ost_ticket__cdata c ON c.ticket_id = t.ticket_id
     LEFT JOIN ost_department d   ON t.dept_id  = d.id
     LEFT JOIN ost_staff s        ON t.staff_id = s.staff_id AND t.staff_id > 0
     LEFT JOIN ost_team tm        ON t.team_id  = tm.team_id AND t.team_id > 0
@@ -135,7 +130,7 @@ async def get_ticket_thread(session: AsyncSession, ticket_id: int) -> list:
             te.id,
             te.type,
             te.title,
-            te.body,
+            COALESCE(te.body, '') AS body,
             te.staff_id,
             te.user_id,
             te.ip_address,
@@ -145,11 +140,11 @@ async def get_ticket_thread(session: AsyncSession, ticket_id: int) -> list:
                 WHEN te.user_id  > 0 THEN u.name
                 ELSE NULL
             END AS poster
-        FROM ost_ticket t
-        JOIN ost_thread_entry te ON te.thread_id = t.thread_id
+        FROM ost_thread th
+        JOIN ost_thread_entry te ON te.thread_id = th.id
         LEFT JOIN ost_staff s ON te.staff_id = s.staff_id AND te.staff_id > 0
         LEFT JOIN ost_user  u ON te.user_id  = u.id       AND te.user_id  > 0
-        WHERE t.ticket_id = :ticket_id
+        WHERE th.object_type = 'T' AND th.object_id = :ticket_id
         ORDER BY te.created ASC, te.id ASC
     """
     result = await session.execute(text(sql), {"ticket_id": ticket_id})
@@ -163,12 +158,12 @@ async def get_ticket_collaborators(session: AsyncSession, ticket_id: int) -> lis
             c.id,
             c.user_id,
             u.name,
-            ue.address AS email
-        FROM ost_collaborator c
-        JOIN ost_ticket t ON t.thread_id = c.thread_id
+            COALESCE(ue.address, '') AS email
+        FROM ost_thread_collaborator c
+        JOIN ost_thread th ON th.id = c.thread_id AND th.object_type = 'T'
         JOIN ost_user u ON c.user_id = u.id
-        LEFT JOIN ost_user_email ue ON ue.user_id = u.id
-        WHERE t.ticket_id = :ticket_id
+        LEFT JOIN ost_user_email ue ON ue.id = u.default_email_id
+        WHERE th.object_id = :ticket_id
         ORDER BY c.id ASC
     """
     result = await session.execute(text(sql), {"ticket_id": ticket_id})
@@ -308,7 +303,7 @@ async def list_teams(session: AsyncSession, limit: int = 50, offset: int = 0) ->
         SELECT
             t.team_id AS id,
             t.name,
-            t.isenabled AS is_enabled,
+            (t.flags & 1) > 0 AS is_enabled,   -- Team::FLAG_ENABLED
             t.created,
             t.updated
         FROM ost_team t
@@ -323,11 +318,11 @@ async def get_team(session: AsyncSession, team_id: int) -> dict | None:
         SELECT
             t.team_id AS id,
             t.name,
-            t.isenabled AS is_enabled,
+            (t.flags & 1) > 0 AS is_enabled,   -- Team::FLAG_ENABLED
             t.created,
             t.updated,
-            t.lead_id,
-            t.notes
+            IF(t.lead_id > 0, t.lead_id, NULL) AS lead_id,
+            COALESCE(t.notes, '') AS notes
         FROM ost_team t
         WHERE t.team_id = :team_id
     """
@@ -349,8 +344,8 @@ async def list_topics(session: AsyncSession, limit: int = 50, offset: int = 0) -
         SELECT
             ht.topic_id AS id,
             ht.topic,
-            ht.isactive AS is_active,
-            ht.ispublic AS is_public,
+            (COALESCE(ht.flags, 0) & 2) > 0 AS is_active,   -- Topic::FLAG_ACTIVE
+            ht.ispublic > 0 AS is_public,
             ht.created,
             ht.updated
         FROM ost_help_topic ht
@@ -365,16 +360,16 @@ async def get_topic(session: AsyncSession, topic_id: int) -> dict | None:
         SELECT
             ht.topic_id AS id,
             ht.topic,
-            ht.isactive AS is_active,
-            ht.ispublic AS is_public,
+            (COALESCE(ht.flags, 0) & 2) > 0 AS is_active,   -- Topic::FLAG_ACTIVE
+            ht.ispublic > 0 AS is_public,
             ht.created,
             ht.updated,
             ht.dept_id,
             ht.priority_id,
             ht.sla_id,
             ht.page_id,
-            ht.flags,
-            ht.notes
+            COALESCE(ht.flags, 0) AS flags,
+            COALESCE(ht.notes, '') AS notes
         FROM ost_help_topic ht
         WHERE ht.topic_id = :topic_id
     """
@@ -391,7 +386,7 @@ async def list_slas(session: AsyncSession, limit: int = 50, offset: int = 0) -> 
             s.id,
             s.name,
             s.grace_period,
-            s.isactive AS is_active,
+            (s.flags & 1) > 0 AS is_active,   -- SLA::FLAG_ACTIVE
             s.created,
             s.updated
         FROM ost_sla s
@@ -407,11 +402,11 @@ async def get_sla(session: AsyncSession, sla_id: int) -> dict | None:
             s.id,
             s.name,
             s.grace_period,
-            s.isactive AS is_active,
+            (s.flags & 1) > 0 AS is_active,   -- SLA::FLAG_ACTIVE
             s.created,
             s.updated,
             s.flags,
-            s.notes
+            COALESCE(s.notes, '') AS notes
         FROM ost_sla s
         WHERE s.id = :sla_id
     """
@@ -426,10 +421,10 @@ async def list_priorities(session: AsyncSession, limit: int = 50, offset: int = 
     sql = """
         SELECT
             p.priority_id AS id,
-            p.priority_desc AS name,
-            p.priority_desc AS desc,
+            p.priority AS name,
+            p.priority_desc AS `desc`,
             p.priority_urgency AS urgency,
-            p.ispublic AS is_public
+            p.ispublic > 0 AS is_public
         FROM ost_ticket_priority p
         ORDER BY p.priority_urgency ASC LIMIT :limit OFFSET :offset
     """
@@ -441,10 +436,10 @@ async def get_priority(session: AsyncSession, priority_id: int) -> dict | None:
     sql = """
         SELECT
             p.priority_id AS id,
-            p.priority_desc AS name,
-            p.priority_desc AS desc,
+            p.priority AS name,
+            p.priority_desc AS `desc`,
             p.priority_urgency AS urgency,
-            p.ispublic AS is_public
+            p.ispublic > 0 AS is_public
         FROM ost_ticket_priority p
         WHERE p.priority_id = :priority_id
     """
@@ -460,8 +455,8 @@ async def list_categories(session: AsyncSession, limit: int = 50, offset: int = 
         SELECT
             c.category_id AS id,
             c.name,
-            c.description,
-            c.ispublic AS is_public,
+            COALESCE(c.description, '') AS description,
+            (c.ispublic > 0) AS is_public,   -- 2 = featured
             c.created,
             c.updated
         FROM ost_faq_category c
@@ -475,11 +470,11 @@ async def get_category(session: AsyncSession, category_id: int) -> dict | None:
         SELECT
             c.category_id AS id,
             c.name,
-            c.description,
-            c.ispublic AS is_public,
+            COALESCE(c.description, '') AS description,
+            (c.ispublic > 0) AS is_public,   -- 2 = featured
             c.created,
             c.updated,
-            c.notes
+            COALESCE(c.notes, '') AS notes
         FROM ost_faq_category c
         WHERE c.category_id = :category_id
     """
@@ -507,7 +502,7 @@ async def list_faqs(
             f.faq_id AS id,
             f.category_id,
             f.question,
-            f.ispublished AS is_published,
+            (f.ispublished > 0) AS is_published,   -- 2 = featured
             f.created,
             f.updated
         FROM ost_faq f
@@ -523,10 +518,10 @@ async def get_faq(session: AsyncSession, faq_id: int) -> dict | None:
             f.faq_id AS id,
             f.category_id,
             f.question,
-            f.answer,
-            f.ispublished AS is_published,
-            f.keywords,
-            f.notes,
+            COALESCE(f.answer, '') AS answer,
+            (f.ispublished > 0) AS is_published,   -- 2 = featured
+            COALESCE(f.keywords, '') AS keywords,
+            COALESCE(f.notes, '') AS notes,
             f.created,
             f.updated
         FROM ost_faq f
@@ -575,32 +570,33 @@ async def get_canned(session: AsyncSession, canned_id: int) -> dict | None:
 
 # ── Banlist ───────────────────────────────────────────────────────────────────
 
+# osTicket has no banlist table: the ban list is the "SYSTEM BAN LIST" ticket filter and each
+# banned address is one of its email rules (what='email'). `id` is the filter rule id.
+# osTicket's own installer sample rule has created = '0000-00-00 00:00:00', which is not a
+# parseable datetime; fall back to `updated`.
+_BAN_CREATED = "COALESCE(NULLIF(r.created, '0000-00-00 00:00:00'), r.updated)"
+
+_BAN_RULES = """
+    FROM ost_filter_rule r
+    JOIN ost_filter f ON f.id = r.filter_id AND f.name = 'SYSTEM BAN LIST'
+    WHERE r.what = 'email'
+"""
+
 async def list_banlist(session: AsyncSession, limit: int = 50, offset: int = 0) -> list:
-    sql = """
-        SELECT
-            b.id,
-            b.val,
-            b.isactive AS is_active,
-            b.created,
-            b.updated
-        FROM ost_ticket_banlist b
-        ORDER BY b.val ASC LIMIT :limit OFFSET :offset
-    """
+    sql = (
+        "SELECT r.id, r.val, r.isactive > 0 AS is_active, " + _BAN_CREATED + " AS created, r.updated"
+        + _BAN_RULES
+        + " ORDER BY r.val ASC LIMIT :limit OFFSET :offset"
+    )
     result = await session.execute(text(sql), {"limit": limit, "offset": offset})
     return list(result.mappings().all())
 
 async def get_banlist_entry(session: AsyncSession, ban_id: int) -> dict | None:
-    sql = """
-        SELECT
-            b.id,
-            b.val,
-            b.isactive AS is_active,
-            b.notes,
-            b.created,
-            b.updated
-        FROM ost_ticket_banlist b
-        WHERE b.id = :ban_id
-    """
+    sql = (
+        "SELECT r.id, r.val, r.isactive > 0 AS is_active, COALESCE(r.notes, '') AS notes, " + _BAN_CREATED + " AS created, r.updated"
+        + _BAN_RULES
+        + " AND r.id = :ban_id"
+    )
     result = await session.execute(text(sql), {"ban_id": ban_id})
     row = result.mappings().one_or_none()
     return dict(row) if row else None
@@ -614,10 +610,11 @@ async def list_forms(session: AsyncSession, limit: int = 50, offset: int = 0) ->
             f.id,
             f.title,
             f.type,
-            f.deletable AS is_deletable,
+            (f.flags & 1) > 0 AS is_deletable,   -- DynamicForm::FLAG_DELETABLE
             f.created,
             f.updated
         FROM ost_form f
+        WHERE (f.flags & 2) = 0                  -- DynamicForm::FLAG_DELETED is a soft delete
         ORDER BY f.title ASC LIMIT :limit OFFSET :offset
     """
     result = await session.execute(text(sql), {"limit": limit, "offset": offset})
@@ -629,13 +626,13 @@ async def get_form(session: AsyncSession, form_id: int) -> dict | None:
             f.id,
             f.title,
             f.type,
-            f.deletable AS is_deletable,
-            f.instructions,
-            f.notes,
+            (f.flags & 1) > 0 AS is_deletable,   -- DynamicForm::FLAG_DELETABLE
+            COALESCE(f.instructions, '') AS instructions,
+            COALESCE(f.notes, '') AS notes,
             f.created,
             f.updated
         FROM ost_form f
-        WHERE f.id = :form_id
+        WHERE f.id = :form_id AND (f.flags & 2) = 0
     """
     result = await session.execute(text(sql), {"form_id": form_id})
     row = result.mappings().one_or_none()
@@ -648,7 +645,7 @@ async def get_form_fields(session: AsyncSession, form_id: int) -> list:
             ff.name,
             ff.label,
             ff.type,
-            ff.isrequired AS is_required
+            (COALESCE(ff.flags, 0) & (0x4000 | 0x400)) > 0 AS is_required   -- agent or client required
         FROM ost_form_field ff
         WHERE ff.form_id = :form_id
         ORDER BY ff.sort ASC
@@ -705,25 +702,28 @@ async def search_all(session: AsyncSession, query: str, limit: int = 10) -> list
     """Basic multi-table search using UNION ALL."""
     sql = """
         SELECT
-            ticket_id AS id,
+            t.ticket_id AS id,
             'ticket' AS type,
-            number AS title,
-            subject AS subtitle
-        FROM ost_ticket
-        WHERE number LIKE :q OR subject LIKE :q
-        
+            t.number AS title,
+            COALESCE(c.subject, '') AS subtitle
+        FROM ost_ticket t
+        -- the subject is an answer of the ticket form, mirrored in ost_ticket__cdata
+        LEFT JOIN ost_ticket__cdata c ON c.ticket_id = t.ticket_id
+        WHERE t.number LIKE :q OR c.subject LIKE :q
+
         UNION ALL
-        
+
         SELECT
-            id,
+            u.id,
             'user' AS type,
-            name AS title,
-            email AS subtitle
-        FROM ost_user
-        WHERE name LIKE :q OR email LIKE :q
-        
+            u.name AS title,
+            COALESCE(ue.address, '') AS subtitle
+        FROM ost_user u
+        LEFT JOIN ost_user_email ue ON ue.id = u.default_email_id
+        WHERE u.name LIKE :q OR ue.address LIKE :q
+
         UNION ALL
-        
+
         SELECT
             id,
             'organization' AS type,
@@ -731,7 +731,7 @@ async def search_all(session: AsyncSession, query: str, limit: int = 10) -> list
             name AS subtitle
         FROM ost_organization
         WHERE name LIKE :q
-        
+
         LIMIT :limit
     """
     result = await session.execute(text(sql), {"q": f"%{query}%", "limit": limit})
@@ -746,7 +746,7 @@ _ORG_SELECT = """
         o.id,
         o.name,
         o.created,
-        o.updated
+        COALESCE(o.updated, o.created) AS updated
     FROM ost_organization o
 """
 
@@ -758,19 +758,20 @@ async def list_organizations(
     return list(result.mappings().all())
 
 async def get_organization(session: AsyncSession, org_id: int) -> dict | None:
+    # address / phone / website / notes are answers of the organization dynamic form;
+    # osTicket keeps a denormalised copy of them in ost_organization__cdata.
     sql = """
         SELECT
             o.id,
             o.name,
             o.created,
-            o.updated,
-            -- Extra fields come from ost_organization__cdata or forms,
-            -- for now we return placeholder strings to match the model
-            '' AS address,
-            '' AS phone,
-            '' AS website,
-            '' AS internal_notes
+            COALESCE(o.updated, o.created) AS updated,
+            COALESCE(c.address, '') AS address,
+            COALESCE(c.phone, '')   AS phone,
+            COALESCE(c.website, '') AS website,
+            COALESCE(c.notes, '')   AS internal_notes
         FROM ost_organization o
+        LEFT JOIN ost_organization__cdata c ON c.org_id = o.id
         WHERE o.id = :org_id
     """
     result = await session.execute(text(sql), {"org_id": org_id})
@@ -812,6 +813,8 @@ async def list_users(
     return list(result.mappings().all())
 
 async def get_user(session: AsyncSession, user_id: int) -> dict | None:
+    # phone / notes are answers of the user dynamic form, mirrored by osTicket in
+    # ost_user__cdata. The form has no mobile field, so that stays empty.
     sql = """
         SELECT
             u.id,
@@ -822,14 +825,13 @@ async def get_user(session: AsyncSession, user_id: int) -> dict | None:
             u.created,
             u.updated,
             ue.address AS email,
-            -- Extra fields like phone, mobile are in user__cdata or forms,
-            -- keeping placeholders for now
-            '' AS phone,
-            '' AS mobile,
-            '' AS internal_notes
+            COALESCE(c.phone, '') AS phone,
+            ''                    AS mobile,
+            COALESCE(c.notes, '') AS internal_notes
         FROM ost_user u
         LEFT JOIN ost_user_email ue ON ue.user_id = u.id
         LEFT JOIN ost_organization o ON o.id = u.org_id
+        LEFT JOIN ost_user__cdata c ON c.user_id = u.id
         WHERE u.id = :user_id
     """
     result = await session.execute(text(sql), {"user_id": user_id})
@@ -848,28 +850,29 @@ _TASK_SELECT = """
     SELECT
         t.id                             AS task_id,
         t.number,
-        t.title,
-        ts.id                            AS status_id,
-        ts.name                          AS status_name,
-        ts.state                         AS status_state,
+        COALESCE(c.title, '')            AS title,
+        -- osTicket has no task status table: a task is open while flags bit 0x1 is set.
+        -- Ids are synthetic (1 = open, 2 = closed) so the API model keeps its shape.
+        IF(t.flags & 1, 1, 2)                AS status_id,
+        IF(t.flags & 1, 'Open', 'Closed')    AS status_name,
+        IF(t.flags & 1, 'open', 'closed')    AS status_state,
         d.id                             AS dept_id,
         d.name                           AS dept_name,
         IF(t.staff_id > 0, t.staff_id, NULL)                           AS assignee_staff_id,
         IF(t.staff_id > 0, CONCAT(s.firstname, ' ', s.lastname), NULL) AS assignee_name,
         IF(t.team_id > 0, t.team_id, NULL)   AS team_id,
         IF(t.team_id > 0, tm.name, NULL)     AS team_name,
-        tl.object_id                     AS ticket_id,
+        -- a task linked to a ticket carries the ticket as its parent object
+        IF(t.object_type = 'T', t.object_id, NULL) AS ticket_id,
         t.created,
         t.updated,
         t.closed,
         t.duedate                        AS due_date
     FROM ost_task t
-    LEFT JOIN ost_task_status ts  ON t.status_id  = ts.id
+    LEFT JOIN ost_task__cdata c   ON c.task_id     = t.id
     LEFT JOIN ost_department d    ON t.dept_id     = d.id
     LEFT JOIN ost_staff s         ON t.staff_id    = s.staff_id AND t.staff_id > 0
     LEFT JOIN ost_team tm         ON t.team_id     = tm.team_id AND t.team_id > 0
-    -- ost_task_link maps tasks to parent objects (tickets, etc.)
-    LEFT JOIN ost_task_link tl    ON tl.task_id    = t.id AND tl.object_type = 'T'
 """
 
 
@@ -886,9 +889,9 @@ async def list_tasks(
     where_clauses = ["1=1"]
     params: dict = {"limit": limit, "offset": offset}
 
-    if status_id is not None:
-        where_clauses.append("t.status_id = :status_id")
-        params["status_id"] = status_id
+    if status_id is not None:  # synthetic: 1 = open, anything else = closed
+        where_clauses.append("(t.flags & 1) = :is_open")
+        params["is_open"] = 1 if status_id == 1 else 0
     if dept_id is not None:
         where_clauses.append("t.dept_id = :dept_id")
         params["dept_id"] = dept_id
@@ -896,7 +899,7 @@ async def list_tasks(
         where_clauses.append("t.staff_id = :assignee_staff_id")
         params["assignee_staff_id"] = assignee_staff_id
     if ticket_id is not None:
-        where_clauses.append("tl.object_id = :ticket_id")
+        where_clauses.append("t.object_type = 'T' AND t.object_id = :ticket_id")
         params["ticket_id"] = ticket_id
 
     sql = (
@@ -923,7 +926,7 @@ async def get_task_thread(session: AsyncSession, task_id: int) -> list:
             te.id,
             te.type,
             te.title,
-            te.body,
+            COALESCE(te.body, '') AS body,
             te.staff_id,
             te.user_id,
             te.ip_address,
@@ -933,11 +936,11 @@ async def get_task_thread(session: AsyncSession, task_id: int) -> list:
                 WHEN te.user_id  > 0 THEN u.name
                 ELSE NULL
             END AS poster
-        FROM ost_task t
-        JOIN ost_thread_entry te ON te.thread_id = t.thread_id
+        FROM ost_thread th
+        JOIN ost_thread_entry te ON te.thread_id = th.id
         LEFT JOIN ost_staff s ON te.staff_id = s.staff_id AND te.staff_id > 0
         LEFT JOIN ost_user  u ON te.user_id  = u.id       AND te.user_id  > 0
-        WHERE t.id = :task_id
+        WHERE th.object_type = 'A' AND th.object_id = :task_id
         ORDER BY te.created ASC, te.id ASC
     """
     result = await session.execute(text(sql), {"task_id": task_id})
