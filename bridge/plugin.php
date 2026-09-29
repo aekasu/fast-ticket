@@ -552,6 +552,18 @@ class FastApiIntegrationPlugin extends Plugin {
             'banlist.create'          => 'banlist.created',
             'banlist.update'          => 'banlist.updated',
             'banlist.delete'          => 'banlist.deleted',
+            'org.create'              => 'org.created',
+            'org.update'              => 'org.updated',
+            'org.delete'              => 'org.deleted',
+            'kb.category.create'      => 'kb.category.created',
+            'kb.category.update'      => 'kb.category.updated',
+            'kb.category.delete'      => 'kb.category.deleted',
+            'kb.faq.create'           => 'kb.faq.created',
+            'kb.faq.update'           => 'kb.faq.updated',
+            'kb.faq.delete'           => 'kb.faq.deleted',
+            'kb.canned.create'        => 'kb.canned.created',
+            'kb.canned.update'        => 'kb.canned.updated',
+            'kb.canned.delete'        => 'kb.canned.deleted',
         ];
         return $map[$command_type] ?? ($command_type . '.executed');
     }

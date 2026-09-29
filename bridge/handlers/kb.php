@@ -142,17 +142,27 @@ class FastApiKbHandler {
         $vars = array(
             'title' => $payload['title'],
             'response' => $payload['response'],
-            'dept_id' => isset($payload['dept_id']) ? $payload['dept_id'] : 0,
-            'isenabled' => isset($payload['isenabled']) ? (int)$payload['isenabled'] : 1,
+            'dept_id' => isset($payload['dept_id']) ? (int)$payload['dept_id'] : 0,
+            'isenabled' => isset($payload['is_enabled']) ? (int)$payload['is_enabled'] : 1,
             'notes' => isset($payload['notes']) ? $payload['notes'] : ''
         );
 
+        // Canned::create() only instantiates an unsaved model; update() validates and
+        // saves it. update() can return true while filling $errors, so check both.
         $errors = array();
-        $canned = Canned::create($vars, $errors);
-        
-        if (!$canned || !empty($errors)) {
+        $canned = Canned::create();
+        if (!$canned->update($vars, $errors) || !empty($errors) || !$canned->getId()) {
             $error_msg = !empty($errors) ? json_encode($errors) : 'Unknown error creating Canned Response.';
             throw new Exception("Failed to create Canned Response: " . $error_msg);
+        }
+
+        // osTicket's ORM only marks a field dirty when its value changes, and an unset
+        // field assigned 0 compares equal to null — so a new row created with
+        // isenabled=0 is inserted with the column default (1). Re-apply it now that the
+        // row exists so "disabled" sticks.
+        if ((int)$canned->isenabled !== $vars['isenabled']) {
+            $canned->isenabled = $vars['isenabled'];
+            $canned->save();
         }
 
         return array('canned_id' => $canned->getId());
@@ -168,10 +178,19 @@ class FastApiKbHandler {
             throw new Exception("Canned Response not found.");
         }
 
-        $vars = $payload;
+        // Canned::update() overwrites every field, but the API sends partial updates:
+        // start from the stored values and overlay whatever the payload provides.
+        $vars = array(
+            'id' => $canned->getId(),
+            'title' => isset($payload['title']) ? $payload['title'] : $canned->title,
+            'response' => isset($payload['response']) ? $payload['response'] : $canned->response,
+            'dept_id' => isset($payload['dept_id']) ? (int)$payload['dept_id'] : $canned->dept_id,
+            'isenabled' => isset($payload['is_enabled']) ? (int)$payload['is_enabled'] : $canned->isenabled,
+            'notes' => isset($payload['notes']) ? $payload['notes'] : $canned->notes
+        );
         $errors = array();
-        
-        if (!$canned->update($vars, $errors)) {
+
+        if (!$canned->update($vars, $errors) || !empty($errors)) {
             $error_msg = !empty($errors) ? json_encode($errors) : 'Unknown error updating Canned Response.';
             throw new Exception("Failed to update Canned Response: " . $error_msg);
         }
