@@ -37,3 +37,5 @@ mysql_data/
 # Temp extraction directories
 .src_ref/
 .tmp_extract/
+# Claude Code per-user settings
+.claude/settings.local.json
