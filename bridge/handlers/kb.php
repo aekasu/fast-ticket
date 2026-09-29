@@ -2,134 +2,143 @@
 
 require_once INCLUDE_DIR . 'class.faq.php';
 require_once INCLUDE_DIR . 'class.canned.php';
+require_once dirname(__FILE__) . '/common.php';
 
 class FastApiKbHandler {
     
     // ── Categories ─────────────────────────────────────────────────────────
+    //
+    // Category::create() only instantiates; Category::update($vars, &$errors) validates and
+    // saves and OVERWRITES every field, so updates start from the stored state. osTicket
+    // requires a name of 3+ characters and a non-empty description. `is_public` maps to
+    // Category::VISIBILITY_PUBLIC / _PRIVATE; a featured category stays featured.
+
+    private static function requireCategory($category_id) {
+        $category = Category::lookup((int) $category_id);
+        if (!$category) {
+            throw new Exception("Category not found: {$category_id}");
+        }
+        return $category;
+    }
+
+    private static function categoryVisibility($is_public, $stored) {
+        if ($is_public === null) {
+            return (int) $stored;
+        }
+        if (!$is_public) {
+            return Category::VISIBILITY_PRIVATE;
+        }
+        return ((int) $stored === Category::VISIBILITY_FEATURED) ? Category::VISIBILITY_FEATURED : Category::VISIBILITY_PUBLIC;
+    }
 
     public static function createCategory($payload, $staff_id) {
-        if (!isset($payload['name']) || trim($payload['name']) === '') {
-            throw new Exception("Category 'name' is required.");
-        }
-
         $vars = array(
-            'name' => trim($payload['name']),
+            'name' => isset($payload['name']) ? trim($payload['name']) : '',
             'description' => isset($payload['description']) ? $payload['description'] : '',
-            'ispublic' => isset($payload['ispublic']) ? (int)$payload['ispublic'] : 0,
-            'notes' => isset($payload['notes']) ? $payload['notes'] : ''
+            'ispublic' => self::categoryVisibility(isset($payload['is_public']) ? (bool) $payload['is_public'] : true, 0),
+            'pid' => 0,
+            'notes' => isset($payload['notes']) ? $payload['notes'] : '',
         );
-
-        $errors = array();
-        $category = Category::create($vars, $errors);
-        
-        if (!$category || !empty($errors)) {
-            $error_msg = !empty($errors) ? json_encode($errors) : 'Unknown error creating category.';
-            throw new Exception("Failed to create category: " . $error_msg);
-        }
-
-        return array('category_id' => $category->getId());
+        $category = Category::create();
+        FastApiModel::saveViaUpdate($category, $vars, 'Category');
+        return array('category_id' => $category->getId(), 'name' => $category->name);
     }
 
     public static function updateCategory($payload, $staff_id) {
-        if (!isset($payload['category_id'])) {
-            throw new Exception("Category ID ('category_id') is required.");
-        }
-
-        $category = Category::lookup($payload['category_id']);
-        if (!$category) {
-            throw new Exception("Category not found.");
-        }
-
-        $vars = $payload;
-        $errors = array();
-        
-        if (!$category->update($vars, $errors)) {
-            $error_msg = !empty($errors) ? json_encode($errors) : 'Unknown error updating category.';
-            throw new Exception("Failed to update category: " . $error_msg);
-        }
-
+        $category = self::requireCategory($payload['category_id'] ?? 0);
+        $vars = array(
+            'id' => $category->getId(),
+            'name' => isset($payload['name']) ? trim($payload['name']) : $category->name,
+            'description' => isset($payload['description']) ? $payload['description'] : $category->description,
+            'ispublic' => self::categoryVisibility(isset($payload['is_public']) ? (bool) $payload['is_public'] : null, $category->ispublic),
+            'pid' => $category->category_pid,
+            'notes' => isset($payload['notes']) ? $payload['notes'] : $category->notes,
+        );
+        FastApiModel::saveViaUpdate($category, $vars, 'Category');
         return array('category_id' => $category->getId());
     }
 
     public static function deleteCategory($payload, $staff_id) {
-        if (!isset($payload['category_id'])) {
-            throw new Exception("Category ID ('category_id') is required.");
-        }
-
-        $category = Category::lookup($payload['category_id']);
-        if (!$category) {
-            throw new Exception("Category not found.");
-        }
-
+        $category = self::requireCategory($payload['category_id'] ?? 0);
         if (!$category->delete()) {
-            throw new Exception("Failed to delete category.");
+            throw new Exception('Category could not be deleted (it may still contain FAQs).');
         }
-
-        return array('success' => true);
+        return array('category_id' => (int) ($payload['category_id'] ?? 0));
     }
 
     // ── FAQs ───────────────────────────────────────────────────────────────
+    //
+    // FAQ::create() only instantiates; FAQ::update($vars, &$errors) validates and saves
+    // and OVERWRITES every field (and unlinks help topics when `topics` is absent), so
+    // updates start from the stored state. `is_published` maps to FAQ::VISIBILITY_PUBLIC /
+    // _PRIVATE; a featured FAQ stays featured. FAQ::update() forces the deprecated
+    // `keywords` column to ' ', so keywords are written afterwards to honour the API.
+
+    private static function requireFaq($faq_id) {
+        $faq = FAQ::lookup((int) $faq_id);
+        if (!$faq) {
+            throw new Exception("FAQ not found: {$faq_id}");
+        }
+        return $faq;
+    }
+
+    private static function faqVisibility($is_published, $stored) {
+        if ($is_published === null) {
+            return (int) $stored;
+        }
+        if (!$is_published) {
+            return FAQ::VISIBILITY_PRIVATE;
+        }
+        return ((int) $stored === FAQ::VISIBILITY_FEATURED) ? FAQ::VISIBILITY_FEATURED : FAQ::VISIBILITY_PUBLIC;
+    }
+
+    private static function saveFaq(FAQ $faq, array $vars, $keywords) {
+        FastApiModel::saveViaUpdate($faq, $vars, 'FAQ');
+        if ($keywords !== null && $faq->keywords !== $keywords) {
+            $faq->keywords = $keywords;
+            $faq->save();
+        }
+    }
 
     public static function createFaq($payload, $staff_id) {
-        if (!isset($payload['category_id']) || !isset($payload['question']) || !isset($payload['answer'])) {
-            throw new Exception("category_id, question, and answer are required.");
-        }
-
         $vars = array(
-            'category_id' => $payload['category_id'],
-            'question' => $payload['question'],
-            'answer' => $payload['answer'],
-            'ispublished' => isset($payload['ispublished']) ? (int)$payload['ispublished'] : 0,
-            'notes' => isset($payload['notes']) ? $payload['notes'] : ''
+            'category_id' => isset($payload['category_id']) ? (int) $payload['category_id'] : 0,
+            'question' => isset($payload['question']) ? trim($payload['question']) : '',
+            'answer' => isset($payload['answer']) ? $payload['answer'] : '',
+            'ispublished' => self::faqVisibility(isset($payload['is_published']) ? (bool) $payload['is_published'] : false, 0),
+            'notes' => isset($payload['notes']) ? $payload['notes'] : '',
+            'topics' => array(),
         );
-
-        $errors = array();
-        $faq = FAQ::create($vars, $errors);
-        
-        if (!$faq || !empty($errors)) {
-            $error_msg = !empty($errors) ? json_encode($errors) : 'Unknown error creating FAQ.';
-            throw new Exception("Failed to create FAQ: " . $error_msg);
-        }
-
-        return array('faq_id' => $faq->getId());
+        $faq = FAQ::create();
+        self::saveFaq($faq, $vars, isset($payload['keywords']) ? $payload['keywords'] : null);
+        return array('faq_id' => $faq->getId(), 'question' => $faq->question);
     }
 
     public static function updateFaq($payload, $staff_id) {
-        if (!isset($payload['faq_id'])) {
-            throw new Exception("FAQ ID ('faq_id') is required.");
+        $faq = self::requireFaq($payload['faq_id'] ?? 0);
+        $topics = array();
+        foreach ($faq->topics as $link) {
+            $topics[] = $link->topic_id;   // update() would unlink all of them if omitted
         }
-
-        $faq = FAQ::lookup($payload['faq_id']);
-        if (!$faq) {
-            throw new Exception("FAQ not found.");
-        }
-
-        $vars = $payload;
-        $errors = array();
-        
-        if (!$faq->update($vars, $errors)) {
-            $error_msg = !empty($errors) ? json_encode($errors) : 'Unknown error updating FAQ.';
-            throw new Exception("Failed to update FAQ: " . $error_msg);
-        }
-
+        $vars = array(
+            'id' => $faq->getId(),
+            'category_id' => isset($payload['category_id']) ? (int) $payload['category_id'] : $faq->category_id,
+            'question' => isset($payload['question']) ? trim($payload['question']) : $faq->question,
+            'answer' => isset($payload['answer']) ? $payload['answer'] : $faq->answer,
+            'ispublished' => self::faqVisibility(isset($payload['is_published']) ? (bool) $payload['is_published'] : null, $faq->ispublished),
+            'notes' => isset($payload['notes']) ? $payload['notes'] : $faq->notes,
+            'topics' => $topics,
+        );
+        self::saveFaq($faq, $vars, isset($payload['keywords']) ? $payload['keywords'] : null);
         return array('faq_id' => $faq->getId());
     }
 
     public static function deleteFaq($payload, $staff_id) {
-        if (!isset($payload['faq_id'])) {
-            throw new Exception("FAQ ID ('faq_id') is required.");
-        }
-
-        $faq = FAQ::lookup($payload['faq_id']);
-        if (!$faq) {
-            throw new Exception("FAQ not found.");
-        }
-
+        $faq = self::requireFaq($payload['faq_id'] ?? 0);
         if (!$faq->delete()) {
-            throw new Exception("Failed to delete FAQ.");
+            throw new Exception('FAQ could not be deleted.');
         }
-
-        return array('success' => true);
+        return array('faq_id' => (int) ($payload['faq_id'] ?? 0));
     }
 
     // ── Canned Responses ───────────────────────────────────────────────────
