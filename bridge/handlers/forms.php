@@ -9,7 +9,8 @@
  * That permission is enforced at the FastAPI layer; the bridge trusts it.
  *
  * DynamicForm::delete() is a *soft* delete — it sets FLAG_DELETED and keeps the
- * row — and refuses forms without FLAG_DELETABLE (osTicket's built-in forms).
+ * row — and refuses forms without FLAG_DELETABLE. This handler additionally refuses every
+ * form that is not a custom one (type G).
  */
 
 require_once INCLUDE_DIR . 'class.dynamic_forms.php';
@@ -60,8 +61,14 @@ class FastApiFormHandler {
 
     public static function delete($payload, $requester_staff_id) {
         $form = self::requireForm($payload['form_id'] ?? 0);
+        // osTicket flags even its own core forms (Contact Information, Ticket Details, ...)
+        // deletable, and deleting one breaks ticket / user / organization handling. Only
+        // custom forms (type G) may be removed through the API.
+        if ($form->get('type') !== 'G') {
+            throw new Exception("'" . $form->getTitle() . "' is a core osTicket form (type " . $form->get('type') . "); only custom forms can be deleted.");
+        }
         if (!$form->isDeletable()) {
-            throw new Exception('This is a protected system form and cannot be deleted.');
+            throw new Exception('This form is protected and cannot be deleted.');
         }
         if (!$form->delete()) {
             throw new Exception('DynamicForm::delete() failed.');

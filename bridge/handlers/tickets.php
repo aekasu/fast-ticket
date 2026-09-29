@@ -67,6 +67,14 @@ class FastApiTicketHandler {
      * real reason (e.g. "Team does not have members") instead of a bare "Unknown assignee".
      */
     private static function assignmentForm($assignee, $note) {
+        if ($assignee[0] === 't' && ($team = Team::lookup((int) substr($assignee, 1)))) {
+            if (!$team->isActive()) {
+                throw new Exception("Assignment refused: team '{$team->getName()}' is disabled.");
+            }
+            if (!$team->getNumMembers()) {
+                throw new Exception("Assignment refused: team '{$team->getName()}' does not have members.");
+            }
+        }
         $form = AssignmentForm::instantiate(['assignee' => $assignee, 'comments' => (string) $note]);
         if (!$form->isValid()) {
             throw new Exception('Assignment refused: ' . json_encode($form->errors()));

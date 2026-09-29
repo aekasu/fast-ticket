@@ -116,6 +116,7 @@ class FastApiKbHandler {
 
     public static function updateFaq($payload, $staff_id) {
         $faq = self::requireFaq($payload['faq_id'] ?? 0);
+        $stored_keywords = $faq->keywords;
         $topics = array();
         foreach ($faq->topics as $link) {
             $topics[] = $link->topic_id;   // update() would unlink all of them if omitted
@@ -129,7 +130,9 @@ class FastApiKbHandler {
             'notes' => isset($payload['notes']) ? $payload['notes'] : $faq->notes,
             'topics' => $topics,
         );
-        self::saveFaq($faq, $vars, isset($payload['keywords']) ? $payload['keywords'] : null);
+        // FAQ::update() blanks the deprecated keywords column, so always restore the wanted value.
+        $keywords = isset($payload['keywords']) ? $payload['keywords'] : $stored_keywords;
+        self::saveFaq($faq, $vars, $keywords);
         return array('faq_id' => $faq->getId());
     }
 
