@@ -14,10 +14,13 @@ test-unit:
 test-integration:
 	$(PYTHON) -m pytest tests/integration/ -v
 
-# Live round trip against the running stack. Source .env first so the admin login is available:
+# Live end-to-end tests against the running stack (`make start` first). Source .env so the
+# admin login is available. Writes are drained by osTicket's cron about once a minute, so the
+# tests trigger that run themselves (E2E_CRON_CMD) instead of waiting for it:
 #   set -a; . ./.env; set +a; make test-e2e
 test-e2e:
-	$(PYTHON) -m pytest tests/e2e -m e2e -v
+	E2E_CRON_CMD="docker compose exec -T -u www-data osticket-cron php /var/www/html/api/cron.php" \
+	    $(PYTHON) -m pytest tests/e2e -m e2e -v
 
 test-cov:
 	$(PYTHON) -m pytest tests/ --cov=app --cov-report=term-missing -v
@@ -42,7 +45,7 @@ down:
 	docker compose down
 
 test-docker:
-	docker compose -f docker-compose.test.yml run --rm tests
+	docker compose -f docker-compose.test.yml run --build --rm tests
 
 # Tear down everything for a clean install on next 'make start'.
 # Removes all volumes: DB, and the persisted osTicket ost-config.php.
