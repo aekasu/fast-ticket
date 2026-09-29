@@ -186,7 +186,7 @@ async def test_create_task_linked_to_ticket():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         resp = await ac.post(
             TASKS_URL + "/",
-            json={"title": "Follow-up", "ticket_id": 77},
+            json={"title": "Follow-up", "description": "Chase the vendor.", "ticket_id": 77},
             headers=_auth(["task.create"]),
         )
     assert resp.status_code == 202
@@ -206,6 +206,15 @@ async def test_create_task_validates_empty_title():
 
 
 @pytest.mark.asyncio
+async def test_create_task_requires_a_description():
+    """osTicket's task form requires one; reject it at the API instead of failing in the bridge."""
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        resp = await ac.post(TASKS_URL + "/", json={"title": "No body"}, headers=_auth(["task.create"]))
+    assert resp.status_code == 422
+    assert len(await _inbox_rows()) == 0
+
+
+@pytest.mark.asyncio
 async def test_create_task_requires_permission():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         resp = await ac.post(
@@ -221,8 +230,8 @@ async def test_create_task_requires_permission():
 async def test_create_task_idempotency():
     headers = {**_auth(["task.create"]), "Idempotency-Key": "task-create-idem-1"}
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-        r1 = await ac.post(TASKS_URL + "/", json={"title": "Idempotent task"}, headers=headers)
-        r2 = await ac.post(TASKS_URL + "/", json={"title": "Idempotent task"}, headers=headers)
+        r1 = await ac.post(TASKS_URL + "/", json={"title": "Idempotent task", "description": "d"}, headers=headers)
+        r2 = await ac.post(TASKS_URL + "/", json={"title": "Idempotent task", "description": "d"}, headers=headers)
     assert r1.json()["command_id"] == r2.json()["command_id"]
     assert len(await _inbox_rows()) == 1
 
@@ -335,7 +344,7 @@ async def test_command_response_shape():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         resp = await ac.post(
             TASKS_URL + "/",
-            json={"title": "Shape test"},
+            json={"title": "Shape test", "description": "d"},
             headers={**_auth(["task.create"]), "Idempotency-Key": "task-shape-key"},
         )
     assert resp.status_code == 202

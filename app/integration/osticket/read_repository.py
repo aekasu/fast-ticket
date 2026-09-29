@@ -554,10 +554,10 @@ async def get_canned(session: AsyncSession, canned_id: int) -> dict | None:
         SELECT
             c.canned_id AS id,
             c.title,
-            c.response,
-            c.isenabled AS is_enabled,
+            COALESCE(c.response, '') AS response,
+            c.isenabled > 0 AS is_enabled,
             c.dept_id,
-            c.notes,
+            COALESCE(c.notes, '') AS notes,
             c.created,
             c.updated
         FROM ost_canned_response c

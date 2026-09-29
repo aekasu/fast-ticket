@@ -53,7 +53,9 @@ class TaskListResponse(BaseModel):
 
 class TaskCreate(BaseModel):
     title: str = Field(min_length=1, max_length=255)
-    description: str = ""
+    # osTicket's default task form requires a description; without one the bridge could only
+    # answer "Description is a required field" after the command had been queued.
+    description: str = Field(min_length=1)
     dept_id: Optional[int] = None
     ticket_id: Optional[int] = Field(
         default=None,
