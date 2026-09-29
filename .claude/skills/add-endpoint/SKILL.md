@@ -25,6 +25,8 @@ Decide: **read** (SQL in `read_repository.py`) or **write** (command through the
 ## 3a. Read path
 
 1. Add a `SELECT`-only async function to `app/integration/osticket/read_repository.py` returning `list[dict]` / `dict | None`. Parameterized queries only; no business logic.
+   **Check every table and column against the real schema first** (`docker compose exec db sh -c 'mariadb … -e "DESCRIBE ost_x"'`) — most of the original queries used columns that don't exist and 500ed. Known osTicket 1.18 facts: booleans like `isactive` / `isenabled` / `deletable` are usually **bits in `flags`**; a ticket's subject, a task's title, and an organization's/user's phone/notes live in the `ost_*__cdata` mirrors; threads are `ost_thread` keyed by `object_type` (`T` ticket, `A` task) + `object_id`; the ban list is the `SYSTEM BAN LIST` filter's rows in `ost_filter_rule`; tasks have no status table (open = `flags & 1`).
+   **Make it NULL-safe**: osTicket stores `NULL` text and even `0000-00-00` dates, and response models are `str`/`datetime`, so wrap with `COALESCE(x, '')` and coerce "featured" visibility (2) with `> 0`. An unhandled NULL is a 500 for that row only, which the unit tests (mocked repo) can never catch.
 2. In `service.py`, call it via `from app.integration.osticket import read_repository as repo` (tests patch `app.modules.<domain>.service.repo.<fn>`) and map rows with a `_row_to_*` helper.
 
 ## 3b. Write path
@@ -66,12 +68,14 @@ async def assign_task(
 
 ## 5. Tests
 
-Use the **`endpoint-tests`** skill. Minimum: happy path, 401, 403, 422, and idempotency for writes.
+Use the **`endpoint-tests`** skill. Minimum: happy path, 401, 403, 422, and idempotency for writes. Those tests mock the repository and the bridge, so they prove routing and validation only — also extend `tests/e2e/test_bridge_domains.py` so the read query and the bridge handler are exercised against real osTicket (`test_every_read_endpoint_answers_200` picks up new GET routes automatically).
 
 ## 6. Verify and commit
 
 ```bash
-make test
+make test           # local venv
+make test-docker    # the image's pinned deps (uv.lock) — the versions that actually run
+make test-e2e   # needs OSTICKET_ADMIN_USERNAME/PASSWORD exported (a human sources .env; agents must not read it)   # live stack; required when you touched bridge/ or read_repository.py
 ```
 Commit atomically: `feat(<domain>): <what>` (bridge changes can be a separate `feat(bridge): ...` commit).
 
@@ -83,4 +87,5 @@ Commit atomically: `feat(<domain>): <what>` (bridge changes can be a separate `f
 - [ ] Writes: 202 + `CommandResponse`, `Idempotency-Key` passed through
 - [ ] Bridge case + handler + `commandToEventType` entry exist for every new command type
 - [ ] osTicket SQL only in `read_repository.py`, SELECT-only
-- [ ] Tests for 200/202, 401, 403, 422, idempotency; `make test` green
+- [ ] Tests for 200/202, 401, 403, 422, idempotency; `make test` and `make test-docker` green
+- [ ] Read query verified against the real schema and NULL-safe; write verified by an e2e test against the live bridge

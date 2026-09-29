@@ -23,20 +23,29 @@ make start        # first boot: generates .env, builds, boots everything (never 
 make logs         # osticket logs
 docker compose logs -f osticket-cron api
 docker compose ps
-make reset        # destroys volumes + resets ost-config.php → then `make start`
+make reset        # destroys ALL volumes (DB + the persisted osTicket config) → then `make start`
+make test-docker  # unit/integration suite on the image's pinned deps (rebuilds the test image)
+make test-e2e   # needs OSTICKET_ADMIN_USERNAME/PASSWORD exported (a human sources .env; agents must not read it)   # live tests of every command/read against the running stack
 ```
 
 Never `cat` / print `.env` — it holds generated secrets. Read `.env.example` for variable names.
 
-## Known footguns (summary — details in the runbook Part 1)
+## Known footguns
 
-1. First boot must go through `make start`.
-2. `setup_env.sh` may leave `OSTICKET_AUTO_SETUP=false` — headless install then won't run.
-3. Cron runs only in `osticket-cron`; if it's down, commands stay `pending` forever.
-4. Writes are async: expect up to ~60 s before an inbox row is processed.
-5. Permission keys from `bridge/auth.php` may not match the keys routes check → unexpected 403s.
-6. Two things can register `/api/auth/integration` — know which one answers.
-7. WebSocket auth uses the `Sec-WebSocket-Protocol` header, not a query param.
+Install / boot
+1. First boot must go through `make start`. The install is **idempotent and state-driven** (`docker/osticket/entrypoint.sh` derives it from the DB `schema_signature` + the persisted config, not a marker file); every combination self-heals, and only a half-finished install (`make reset`) fails.
+2. `ost-config.php` lives in the `osticket_config` **named volume** and is symlinked into osTicket — it is not in git and not on the host. `docker compose down -v` (or `make reset`) deletes it together with the DB.
+3. osTicket's `api/.htaccess` rewrites every non-file `/api/*` URL to its own dispatcher; the bridge auth URL works only because `docker/osticket/apache.conf` rewrites `/api/auth/integration` first. The osticket healthcheck is a keyless POST expecting **403**.
+4. The `api` image installs from `uv.lock`; after changing dependencies run `uv lock` and commit it. `./app` is bind-mounted with `--reload`, but **`bridge/` is baked into the osticket image** — rebuild (`docker compose up -d --build osticket osticket-cron`) or `docker cp` to test bridge edits.
+
+Bridge
+5. The plugin only runs if osTicket *loads* it: `ost_plugin.install_path` must be the plugin **directory** (`plugins/fastapi_integration`), there must be an enabled `ost_plugin_instance` row, and the plugin needs a `PluginConfig` class; signals are connected in `bootstrap()`, not the constructor. `bridge/install.php` does all of this (idempotently, repairing old rows). If commands stay `pending`, check the plugin loads before anything else.
+6. Cron runs only in `osticket-cron`; if it's down, commands stay `pending`. Writes are async (up to ~60 s). To drain immediately: `docker compose exec -T -u www-data osticket-cron php /var/www/html/api/cron.php`. A row stuck `processing` > 5 min is failed by recovery, not retried.
+7. `failed` rows carry osTicket's real reason in `error_message`; a handler that "succeeds" without creating anything is turned into `failed` (no id returned).
+
+Auth / events
+8. Permission keys from `bridge/auth.php` may not match the keys routes check → unexpected 403s.
+9. WebSocket auth uses the `Sec-WebSocket-Protocol` header, not a query param.
 
 ## Debug hop by hop (never start with the full chain)
 
@@ -53,8 +62,10 @@ Never `cat` / print `.env` — it holds generated secrets. Read `.env.example` f
 4. **Event direction in isolation** — runbook Part 3b/3c (insert an outbox row, watch the worker, WebSocket smoke client).
 5. **Read SQL against real data** — runbook Part 3d (`read_repo_smoke_test.py` via `uv run python`).
 
-Put throwaway smoke scripts in the session scratchpad or `notes/.scratch/` (gitignored), not the repo root.
+Put throwaway smoke scripts in `notes/.scratch/` (gitignored; the session scratchpad may disappear mid-session), not the repo root. A handy pattern: a script that queues a command through the API, runs cron, then reads the inbox row and the API read-back — that is exactly what `tests/e2e/` automates.
 
-## Tests without the stack
+## Tests
 
-`make test` uses in-memory SQLite and needs no containers. `make test-docker` runs the same suite in `docker-compose.test.yml`.
+- `make test` — in-memory SQLite, no containers (local venv).
+- `make test-docker` — same suite in `docker-compose.test.yml` on the image's pinned dependencies; also mounts `bridge/` read-only for `tests/unit/test_bridge_registry.py`.
+- `make test-e2e` — live stack; needs `.env` sourced (admin login). See the `endpoint-tests` skill.

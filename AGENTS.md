@@ -27,14 +27,16 @@ fast-ticket/
 │   └── workers/events.py             # Outbox poller → event handlers → WebSocket
 ├── bridge/                           # PHP integration bridge plugin (installed into osTicket)
 │   ├── plugin.php                    # Signal hooks, inbox cron, dispatchCommand switch, outbox emit
-│   └── handlers/<domain>.php         # FastApi<Domain>Handler classes — one static method per command
+│   └── handlers/<domain>.php         # FastApi<Domain>Handler classes — one static method per command (+ common.php helpers)
 ├── tests/
 │   ├── conftest.py                   # In-memory SQLite, auth_user/admin_user/client fixtures
 │   ├── unit/                         # Pure function tests (no I/O)
-│   └── integration/                  # ASGITransport tests against the full app
+│   ├── integration/                  # ASGITransport tests against the full app
+│   └── e2e/                          # live tests of every command + read against the running stack (opt-in)
 ├── docker/                           # osticket / fastapi / mysql images + init SQL
 ├── docker-compose.yml                # Local stack: osTicket + MySQL + FastAPI (+ cron)
-├── docker-compose.test.yml           # Isolated test env (no real osTicket)
+├── docker-compose.test.yml           # Isolated test env on the image's pinned deps (no real osTicket)
+├── uv.lock                           # committed: the image, the venv and CI must run the same versions
 ├── notes/                            # Research + runbooks (tracked)
 └── pyproject.toml                    # uv-managed dependencies
 ```
@@ -56,11 +58,17 @@ All mutation operations use a **command inbox** pattern:
 
 The plugin also hooks osTicket's `model.*` / `object.*` signals so changes made in the osTicket UI emit outbox events too.
 
+Dispatcher guarantees (`bridge/plugin.php`, keep them): each command runs **as the requesting staff member** (global `$thisstaff` — osTicket's permission checks and authorship read it), against a **fresh ORM cache**; any `Throwable` fails the row with osTicket's reason (never leaves it `processing`); a row held > 5 min is **failed, not retried**; a `*.create` handler that returns no id is **failed** (osTicket's `Model::create()` only instantiates, so "success" without an id means nothing was stored).
+
+**Writing a handler is not guessing osTicket's API.** It is written for osTicket's web UI, and every handler here was once broken by assumption. Read the class *and* the admin page that does the same job (`/var/www/html/scp/*.php`) before writing one, build updates from the stored state overlaid with the payload (osTicket's `update()` overwrites every field and deletes members/permissions/links when keys are absent), and verify against the live stack. Details and the list of traps: `.claude/skills/add-bridge-command`.
+
 **Never bypass the bridge.** Direct writes to osTicket's own tables are forbidden — they skip PHP validation, filters, SLA computation, email notifications, and audit trails.
 
 ### Read path
 
 `app/integration/osticket/read_repository.py` — raw `SELECT`-only SQL against osTicket tables. This is the only file that may contain osTicket-schema SQL. Services map rows → Pydantic models.
+
+Queries must match the **real osTicket 1.18 schema** (`DESCRIBE` it; don't assume): booleans such as active/enabled/deletable are usually bits in `flags`; dynamic-form values (ticket subject, task title, organization/user phone & notes) are in `ost_*__cdata`; threads are `ost_thread` by `object_type` + `object_id`. And they must be **NULL-safe** (`COALESCE`, `> 0` for "featured" 2) — osTicket stores NULL text and zero dates, and the mocked unit tests cannot see a row that breaks response validation.
 
 ### Command dispatch
 
@@ -159,14 +167,18 @@ Use the osTicket internal int PK (`ticket_id`, `task_id`, …) as the path param
 
 ## Testing
 
-**Stack:** `pytest` + `pytest-asyncio` (auto mode) + in-memory SQLite (`aiosqlite`). Docker test env for true end-to-end against real osTicket.
+**Stack:** `pytest` + `pytest-asyncio` (auto mode) + in-memory SQLite (`aiosqlite`); plus live end-to-end tests (`tests/e2e/`) against the real stack.
 
 ```bash
 make test              # all  (== .venv/bin/python -m pytest tests/ -v)
 make test-unit         # fast, no I/O
 make test-integration  # ASGITransport + SQLite
+make test-docker       # same suite on the image's pinned deps (uv.lock) — run it too
+make test-e2e          # live: every command + every read, ~4 min; needs `make start` and OSTICKET_ADMIN_USERNAME / OSTICKET_ADMIN_PASSWORD exported
 make test-cov
 ```
+
+The unit/integration tests **mock the read repository and the bridge**, so they cannot catch a wrong SQL column, a handler calling an osTicket method that doesn't exist, or a NULL that breaks response validation — which were the majority of real defects. `tests/e2e/` does (create → read back → partial update → delete, plus osTicket's refusals, plus every GET). Anything touching `bridge/` or `read_repository.py` is not verified until `make test-e2e` passes; the final check must follow a rebuild of the image (`bridge/` is baked in). E2E tests must never modify seeded osTicket data. The e2e login comes from the environment: a human runs `set -a; . ./.env; set +a` in their own shell — an agent must not read `.env` (see Secrets) and should ask for the two variables to be exported.
 
 **Rules:**
 - Write tests **in tandem** with implementation — not after.
@@ -182,7 +194,7 @@ make test-cov
 ```bash
 make start        # generate .env (scripts/setup_env.sh) + build + boot full stack
 make logs         # follow osTicket logs
-make reset        # nuke all volumes (DB + persisted ost-config.php) for a clean reinstall
+make reset        # nuke all volumes (DB + persisted ost-config.php) for a clean reinstall; `make start` is idempotent on its own
 make install      # uv sync --extra dev
 make dev          # local uvicorn with reload (needs external MySQL)
 make test-docker  # isolated test suite in Docker
@@ -212,5 +224,8 @@ FastAPI: http://localhost:8000 (`/docs`) · osTicket: http://localhost:8080 (`/s
 - Don't skip the idempotency check in `dispatch_command`.
 - Don't merge a route without `require_perm(...)` / `require_admin()` (or an explicit `# no permission required: <why>` comment).
 - No `Any` in request schemas — every field explicitly typed and constrained.
-- Don't add a command type in Python without the matching bridge `case` + `commandToEventType` entry (and vice versa).
+- Don't add a command type in Python without the matching bridge `case` + `commandToEventType` entry (and vice versa) — `tests/unit/test_bridge_registry.py` enforces it.
+- Don't report a bridge handler as working because it returned without error; prove it stored the right thing (read it back) and that a partial update preserved the other fields.
+- Don't write osTicket SQL from memory or from `notes/OSTICKET_CAPABILITIES.md`; check the schema and the class source.
+- Don't put throwaway scripts anywhere but `notes/.scratch/` (gitignored).
 - Don't build a frontend — the API and its test suite are the deliverable.
