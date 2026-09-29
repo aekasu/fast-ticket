@@ -12,6 +12,7 @@ include a client-generated ``Idempotency-Key`` header on every write request.
 """
 
 import json
+from datetime import date, datetime
 import logging
 from typing import Any
 
@@ -21,6 +22,17 @@ from sqlmodel import select
 from app.integration.osticket.commands import IntegrationInbox
 
 logger = logging.getLogger(__name__)
+
+
+def _json_default(value: Any) -> str:
+    """Encode the non-JSON types a Pydantic ``model_dump()`` can contain (dates as ISO 8601).
+
+    Without this, any command body with a datetime field (e.g. a task ``due_date``) made
+    ``json.dumps`` raise and the route answer 500 before anything was queued.
+    """
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
 
 
 async def dispatch_command(
@@ -68,7 +80,7 @@ async def dispatch_command(
         command_type=command_type,
         aggregate_type=aggregate_type,
         aggregate_id=aggregate_id,
-        payload=json.dumps(payload),
+        payload=json.dumps(payload, default=_json_default),
         idempotency_key=idempotency_key,
         requested_by_staff_id=requested_by_staff_id,
     )

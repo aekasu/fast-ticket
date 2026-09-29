@@ -4,6 +4,8 @@ Tests run against in-memory SQLite via the shared conftest.
 No HTTP client required — calls the service function directly.
 """
 
+import json
+
 import pytest
 from sqlmodel import select
 
@@ -137,3 +139,22 @@ async def test_staff_id_is_recorded():
         requested_by_staff_id=99,
     )
     assert cmd.requested_by_staff_id == 99
+
+
+@pytest.mark.asyncio
+async def test_datetime_payload_values_are_serialised_as_iso_8601():
+    """A command body with a datetime field (a task due_date) must queue, not raise."""
+    from datetime import datetime
+
+    async with TestingSessionLocal() as session:
+        cmd = await dispatch_command(
+            session=session,
+            command_type="task.update",
+            aggregate_type="task",
+            aggregate_id="1",
+            payload={"task_id": 1, "due_date": datetime(2030, 1, 15, 10, 0, 0)},
+            requested_by_staff_id=1,
+        )
+        await session.commit()
+
+    assert json.loads(cmd.payload)["due_date"] == "2030-01-15T10:00:00"
