@@ -75,7 +75,8 @@ Use the **`endpoint-tests`** skill. Minimum: happy path, 401, 403, 422, and idem
 ```bash
 make test           # local venv
 make test-docker    # the image's pinned deps (uv.lock) — the versions that actually run
-make test-e2e   # needs OSTICKET_ADMIN_USERNAME/PASSWORD exported (a human sources .env; agents must not read it)   # live stack; required when you touched bridge/ or read_repository.py
+make test-e2e       # live stack; required when you touched bridge/ or read_repository.py
+                    # (needs OSTICKET_ADMIN_USERNAME/PASSWORD exported; a human sources .env, agents must not read it)
 ```
 Commit atomically: `feat(<domain>): <what>` (bridge changes can be a separate `feat(bridge): ...` commit).
 

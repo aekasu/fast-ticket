@@ -25,7 +25,8 @@ docker compose logs -f osticket-cron api
 docker compose ps
 make reset        # destroys ALL volumes (DB + the persisted osTicket config) → then `make start`
 make test-docker  # unit/integration suite on the image's pinned deps (rebuilds the test image)
-make test-e2e   # needs OSTICKET_ADMIN_USERNAME/PASSWORD exported (a human sources .env; agents must not read it)   # live tests of every command/read against the running stack
+make test-e2e     # live tests of every command/read against the running stack
+                  # (needs OSTICKET_ADMIN_USERNAME/PASSWORD exported; a human sources .env, agents must not read it)
 ```
 
 Never `cat` / print `.env` — it holds generated secrets. Read `.env.example` for variable names.
@@ -68,4 +69,4 @@ Put throwaway smoke scripts in `notes/.scratch/` (gitignored; the session scratc
 
 - `make test` — in-memory SQLite, no containers (local venv).
 - `make test-docker` — same suite in `docker-compose.test.yml` on the image's pinned dependencies; also mounts `bridge/` read-only for `tests/unit/test_bridge_registry.py`.
-- `make test-e2e` — live stack; needs `.env` sourced (admin login). See the `endpoint-tests` skill.
+- `make test-e2e` — live stack; needs `OSTICKET_ADMIN_USERNAME` / `OSTICKET_ADMIN_PASSWORD` exported (the admin login). See the `endpoint-tests` skill.
