@@ -1,5 +1,5 @@
 <?php
-error_reporting(E_ALL);
+error_reporting(E_ALL & ~E_DEPRECATED & ~E_STRICT);  // osTicket 1.18 emits PHP 8.2 deprecations
 ini_set('display_errors', 1);
 
 /**
