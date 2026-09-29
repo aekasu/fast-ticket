@@ -233,6 +233,39 @@ async def test_create_canned_queues_command():
 
 
 @pytest.mark.asyncio
+async def test_create_canned_payload_matches_what_the_bridge_reads():
+    """FastApiKbHandler::createCanned reads ``is_enabled`` (a JSON bool), ``dept_id`` and ``notes``.
+
+    ``is_enabled: false`` must survive as an explicit key — the handler defaults a missing
+    key to enabled, so dropping a falsy value would silently create an enabled response.
+    """
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        resp = await ac.post(
+            "/api/v1/canned",
+            json={"title": "Off by default", "response": "Body", "is_enabled": False},
+            headers=_auth(["canned.manage"]),
+        )
+    assert resp.status_code == 202
+    payload = json.loads((await _inbox_rows())[0].payload)
+    assert payload["is_enabled"] is False
+    assert payload["dept_id"] == 0
+    assert payload["notes"] == ""
+
+
+@pytest.mark.asyncio
+async def test_update_canned_payload_is_partial_and_carries_canned_id():
+    """The handler overlays only the keys present on the stored row, so omitted fields
+    must be absent from the payload (not null, not defaulted)."""
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        resp = await ac.patch(
+            "/api/v1/canned/2", json={"title": "Renamed"}, headers=_auth(["canned.manage"])
+        )
+    assert resp.status_code == 202
+    payload = json.loads((await _inbox_rows())[0].payload)
+    assert payload == {"canned_id": 2, "title": "Renamed"}
+
+
+@pytest.mark.asyncio
 async def test_update_canned_queues_command():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         resp = await ac.patch(
