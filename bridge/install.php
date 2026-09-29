@@ -44,17 +44,47 @@ $plugin_id = 'fastapi_integration';
 
 // ── 1. Register/enable plugin ──────────────────────────────────────────────
 
+// osTicket's PluginManager wants install_path to be the plugin *directory*
+// relative to include/ (it appends /plugin.php itself, includes the manifest it
+// returns, then instantiates the class the manifest names). Anything else and
+// the plugin is silently never loaded, so its cron/model signals never connect.
+$install_path = 'plugins/fastapi_integration';
+$version = '1.0';   // keep in sync with the manifest at the bottom of plugin.php
+
 $existing = db_query("SELECT id FROM ost_plugin WHERE install_path LIKE '%fastapi_integration%' LIMIT 1");
 if (!db_fetch_array($existing)) {
     db_query(sprintf(
-        "INSERT INTO ost_plugin (name, install_path, isactive) VALUES (%s, %s, 1)",
+        "INSERT INTO ost_plugin (name, install_path, isactive, version, installed) VALUES (%s, %s, 1, %s, NOW())",
         db_input('FastAPI Integration Bridge'),
-        db_input('include/plugins/fastapi_integration/plugin.php')
+        db_input($install_path),
+        db_input($version)
     ));
     echo "[install.php] Plugin registered.\n";
 } else {
-    db_query("UPDATE ost_plugin SET isactive=1 WHERE install_path LIKE '%fastapi_integration%'");
+    // Also repairs rows written by older versions of this script (wrong install_path).
+    db_query(sprintf(
+        "UPDATE ost_plugin SET isactive=1, install_path=%s, version=%s WHERE install_path LIKE '%%fastapi_integration%%'",
+        db_input($install_path),
+        db_input($version)
+    ));
     echo "[install.php] Plugin already registered — enabled.\n";
+}
+
+// osTicket bootstraps a plugin only through an enabled *instance* row, so make
+// sure exactly one exists and is enabled (flags bit 0x1 = PluginInstance::FLAG_ENABLED).
+$plugin_row = db_fetch_array(db_query("SELECT id FROM ost_plugin WHERE install_path=" . db_input($install_path) . " LIMIT 1"));
+$plugin_db_id = (int) $plugin_row['id'];
+$instance = db_fetch_array(db_query("SELECT id FROM ost_plugin_instance WHERE plugin_id=$plugin_db_id LIMIT 1"));
+if (!$instance) {
+    db_query(sprintf(
+        "INSERT INTO ost_plugin_instance (plugin_id, flags, name, created) VALUES (%d, 1, %s, NOW())",
+        $plugin_db_id,
+        db_input('FastAPI Integration Bridge')
+    ));
+    echo "[install.php] Plugin instance created.\n";
+} else {
+    db_query("UPDATE ost_plugin_instance SET flags = flags | 1 WHERE plugin_id=$plugin_db_id");
+    echo "[install.php] Plugin instance already present — enabled.\n";
 }
 
 // ── 2. Store integration key in plugin config ──────────────────────────────

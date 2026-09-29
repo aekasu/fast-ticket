@@ -16,15 +16,42 @@
 
 require_once INCLUDE_DIR . 'class.plugin.php';
 
+/**
+ * osTicket only bootstraps a plugin through an enabled instance whose config
+ * object resolves (PluginInstance::bootstrap), so even a plugin with no
+ * settings needs a PluginConfig subclass. The integration key itself lives in
+ * the container env / ost_config — see FastApiIntegrationPlugin::integrationKey().
+ */
+class FastApiIntegrationPluginConfig extends PluginConfig {
+    function getOptions() {
+        return array();
+    }
+}
+
 class FastApiIntegrationPlugin extends Plugin {
 
+    var $config_class = 'FastApiIntegrationPluginConfig';
 
-    function __construct($id=0) {
-        parent::__construct($id);
-        error_log("FastApiIntegrationPlugin __construct CALLED!");
+    /** Integration key from env (compose) or the ost_config row install.php writes. */
+    static function integrationKey() {
+        $key = getenv('FASTAPI_INTEGRATION_KEY') ?: ($_SERVER['FASTAPI_INTEGRATION_KEY'] ?? '');
+        if ($key)
+            return $key;
+        $res = db_query("SELECT value FROM ost_config WHERE namespace='fastapi_integration' AND `key`='integration_key' LIMIT 1");
+        $row = $res ? db_fetch_array($res) : null;
+        return $row ? $row['value'] : '';
+    }
+
+    /**
+     * Called by osTicket for each enabled plugin instance (see install.php,
+     * which creates one). Connect every signal here: signals connected in the
+     * constructor were observed not to be registered when osTicket loads the
+     * plugin from the database.
+     */
+    function bootstrap() {
         Signal::connect('cron', array($this, 'processInbox'));
         Signal::connect('api', array($this, 'registerApiEndpoints'));
-        
+
         // Outbound event synchronization
         Signal::connect('model.created', array($this, 'onModelCreated'));
         Signal::connect('model.updated', array($this, 'onModelUpdated'));
@@ -35,10 +62,6 @@ class FastApiIntegrationPlugin extends Plugin {
         Signal::connect('object.deleted', array($this, 'onObjectDeleted'));
     }
 
-    function bootstrap() {
-        // Nothing here. Signals moved to constructor.
-    }
-
     /**
      * Drain the integration inbox — called every minute by cron.
      *
@@ -46,8 +69,9 @@ class FastApiIntegrationPlugin extends Plugin {
      * the appropriate handler, then writes a result event to the outbox.
      */
     function processInbox() {
-        $config = $this->getConfig();
-        if (!$config->get('integration_key')) {
+        // The plugin defines no PluginConfig class, so getConfig() is null. The key
+        // is provisioned by install.php (ost_config) and mirrored in the container env.
+        if (!self::integrationKey()) {
             error_log('[FastAPI Integration] Plugin not configured — skipping inbox drain.');
             return;
         }
