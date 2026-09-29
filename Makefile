@@ -1,4 +1,4 @@
-.PHONY: test test-unit test-integration lint install
+.PHONY: test test-unit test-integration test-e2e lint install
 
 PYTHON := .venv/bin/python
 
@@ -13,6 +13,11 @@ test-unit:
 
 test-integration:
 	$(PYTHON) -m pytest tests/integration/ -v
+
+# Live round trip against the running stack. Source .env first so the admin login is available:
+#   set -a; . ./.env; set +a; make test-e2e
+test-e2e:
+	$(PYTHON) -m pytest tests/e2e -m e2e -v
 
 test-cov:
 	$(PYTHON) -m pytest tests/ --cov=app --cov-report=term-missing -v

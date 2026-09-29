@@ -33,6 +33,9 @@ dev = [
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+# tests/e2e needs the live docker stack — opt in with `make test-e2e` (or `-m e2e`)
+addopts = '-m "not e2e"'
+markers = ["e2e: needs the running docker stack (make start); deselected by default"]
 
 [tool.coverage.run]
 source = ["app"]
