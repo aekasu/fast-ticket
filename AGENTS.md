@@ -182,7 +182,7 @@ make test-cov
 ```bash
 make start        # generate .env (scripts/setup_env.sh) + build + boot full stack
 make logs         # follow osTicket logs
-make reset        # nuke volumes + ost-config.php for a clean reinstall
+make reset        # nuke all volumes (DB + persisted ost-config.php) for a clean reinstall
 make install      # uv sync --extra dev
 make dev          # local uvicorn with reload (needs external MySQL)
 make test-docker  # isolated test suite in Docker

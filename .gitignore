@@ -22,7 +22,8 @@ uv.lock
 .env
 *.env.local
 
-# Docker generated
+# Docker generated (ost-config.php now lives in the osticket_config volume)
+docker/osticket/ost-config.php
 mysql_data/
 
 # Editor

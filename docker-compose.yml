@@ -26,7 +26,8 @@ services:
     ports:
       - "8080:80"
     volumes:
-      - ./docker/osticket/ost-config.php:/var/www/html/include/ost-config.php
+      # ost-config.php lives here (symlinked into osTicket by the entrypoint), not in git.
+      - osticket_config:/var/osticket-config
     environment:
       MYSQL_HOST: db
       MYSQL_USER: osticket
@@ -65,7 +66,7 @@ services:
       context: .
       dockerfile: docker/osticket/Dockerfile
     volumes:
-      - ./docker/osticket/ost-config.php:/var/www/html/include/ost-config.php
+      - osticket_config:/var/osticket-config
     environment:
       MYSQL_HOST: db
       MYSQL_USER: osticket
@@ -106,3 +107,4 @@ services:
 
 volumes:
   mysql_data:
+  osticket_config:

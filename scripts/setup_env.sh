@@ -1,33 +1,13 @@
 #!/usr/bin/env bash
 #
 # Generates .env with safe random defaults if it doesn't exist.
+# (osTicket's ost-config.php is not handled here: the container entrypoint
+# creates and persists it in the osticket_config volume.)
 
 set -e
 
 ENV_FILE=".env"
 EXAMPLE_FILE=".env.example"
-
-# ── ost-config.php ────────────────────────────────────────────────────────────
-# The bind-mount target must exist on the host before `docker compose up`.
-# It must contain the sample placeholder content (not be empty) so the web
-# installer can find and rewrite it. After successful installation, the
-# installer overwrites it with OSTINSTALLED=TRUE and real DB credentials.
-CONFIG_FILE="docker/osticket/ost-config.php"
-SAMPLE_FILE="docker/osticket/ost-sampleconfig.php"
-
-if [ ! -s "$CONFIG_FILE" ]; then
-    echo "[$CONFIG_FILE] missing or empty — initializing from sample..."
-    if [ -f "$SAMPLE_FILE" ]; then
-        cp "$SAMPLE_FILE" "$CONFIG_FILE"
-    else
-        # The committed ost-config.php is already in sample format (%CONFIG-* tokens).
-        # If it's somehow missing, something is wrong with the checkout.
-        echo "ERROR: Neither $CONFIG_FILE nor $SAMPLE_FILE found." >&2
-        echo "       Ensure you have a clean checkout of the repository." >&2
-        exit 1
-    fi
-    chmod 0666 "$CONFIG_FILE"
-fi
 
 # ── .env ──────────────────────────────────────────────────────────────────────
 if [ -f "$ENV_FILE" ]; then
