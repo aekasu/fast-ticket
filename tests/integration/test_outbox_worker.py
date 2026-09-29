@@ -19,6 +19,14 @@ from tests.conftest import TestingSessionLocal
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
 
+def _utcnow() -> datetime:
+    """Naive UTC, matching what production stores (MySQL DATETIME, PHP NOW(), worker._now()).
+
+    Tests used tz-aware values, which sqlmodel>=0.0.47 accepts but production never writes.
+    """
+    return datetime.now(UTC).replace(tzinfo=None)
+
+
 async def _insert_outbox(
     event_type: str,
     aggregate_type: str,
@@ -35,7 +43,7 @@ async def _insert_outbox(
             payload=payload_str,
             status=status,
             retry_count=retry_count,
-            created_at=datetime.now(UTC),
+            created_at=_utcnow(),
         )
         session.add(ev)
         await session.commit()
@@ -124,7 +132,7 @@ async def test_exhausted_retries_marks_event_failed():
 @pytest.mark.asyncio
 async def test_stale_processing_events_are_requeued():
     """Events stuck in 'processing' with an old locked_at are re-queued."""
-    stale_time = datetime.now(UTC) - timedelta(minutes=10)
+    stale_time = _utcnow() - timedelta(minutes=10)
     async with TestingSessionLocal() as session:
         ev = IntegrationOutbox(
             event_type="ticket.created",
@@ -147,7 +155,7 @@ async def test_stale_processing_events_are_requeued():
 @pytest.mark.asyncio
 async def test_purge_removes_old_processed_events():
     """purge_old_events removes stale processed/failed events only."""
-    old_time = datetime.now(UTC) - timedelta(days=35)
+    old_time = _utcnow() - timedelta(days=35)
     async with TestingSessionLocal() as session:
         old = IntegrationOutbox(
             event_type="ticket.created", aggregate_type="ticket", aggregate_id="99",
@@ -157,7 +165,7 @@ async def test_purge_removes_old_processed_events():
         fresh = IntegrationOutbox(
             event_type="ticket.created", aggregate_type="ticket", aggregate_id="100",
             payload="{}", status="processed",
-            created_at=datetime.now(UTC), processed_at=datetime.now(UTC),
+            created_at=_utcnow(), processed_at=_utcnow(),
         )
         session.add_all([old, fresh])
         await session.commit()
@@ -181,7 +189,7 @@ async def test_duplicate_processing_is_skipped():
     async with TestingSessionLocal() as session:
         ev = await session.get(IntegrationOutbox, ev_id)
         ev.status = "processing"
-        ev.locked_at = datetime.now(UTC)
+        ev.locked_at = _utcnow()
         await session.commit()
 
     summary = await poll_and_process_events(TestingSessionLocal)
