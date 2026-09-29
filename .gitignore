@@ -16,7 +16,6 @@ build/
 .coverage
 htmlcov/
 .pytest_cache/
-uv.lock
 
 # Env / secrets
 .env
