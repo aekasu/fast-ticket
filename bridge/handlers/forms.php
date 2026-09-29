@@ -2,60 +2,69 @@
 /**
  * Dynamic Form command handlers.
  *
- * Allows create/update/delete of osTicket DynamicForms.
- * Payload field names match app/modules/forms/models.py (FormCreate,
- * FormUpdate).
+ * Allows create/update/delete of osTicket DynamicForms, mirroring scp/forms.php.
+ * Payload field names match app/modules/forms/models.py (FormCreate, FormUpdate).
  *
  * NOTE: DynamicForm creation/deletion is restricted to admin in osTicket.
  * That permission is enforced at the FastAPI layer; the bridge trusts it.
+ *
+ * DynamicForm::delete() is a *soft* delete — it sets FLAG_DELETED and keeps the
+ * row — and refuses forms without FLAG_DELETABLE (osTicket's built-in forms).
  */
 
-require_once INCLUDE_DIR . 'class.dynamic.forms.php';
+require_once INCLUDE_DIR . 'class.dynamic_forms.php';
 
 class FastApiFormHandler {
 
     private static function requireForm($form_id) {
         $form = DynamicForm::lookup((int) $form_id);
-        if (!$form) {
+        if (!$form || $form->hasFlag(DynamicForm::FLAG_DELETED)) {
             throw new Exception("Dynamic form not found: {$form_id}");
         }
         return $form;
     }
 
     public static function create($payload, $requester_staff_id) {
-        $vars = [
-            'title'  => $payload['title'] ?? '',
-            'type'   => $payload['type'] ?? 'G', // G=generic, T=ticket, U=user, O=org
-            'notes'  => $payload['notes'] ?? '',
-        ];
-        $errors = [];
-        $form = DynamicForm::create($vars, $errors);
-        if (!$form) {
-            throw new Exception('DynamicForm::create failed: ' . implode(', ', $errors));
+        $title = trim($payload['title'] ?? '');
+        if ($title === '') {
+            throw new Exception('A form title is required.');
+        }
+
+        // DynamicForm::create() only instantiates; save(true) inserts and re-reads the row.
+        $form = DynamicForm::create();
+        $form->set('title', $title);
+        $form->set('instructions', $payload['instructions'] ?? '');
+        $form->set('notes', $payload['notes'] ?? '');
+        $form->set('type', $payload['type'] ?? 'G'); // G=generic, T=ticket, U=user, O=org
+        if (!$form->save(true) || !$form->getId()) {
+            throw new Exception('DynamicForm could not be saved.');
         }
         return ['form_id' => $form->getId(), 'title' => $form->getTitle()];
     }
 
     public static function update($payload, $requester_staff_id) {
         $form = self::requireForm($payload['form_id'] ?? 0);
-        $vars = [];
-        foreach (['title', 'type', 'notes'] as $field) {
+        foreach (['title', 'instructions', 'notes'] as $field) {
             if (isset($payload[$field])) {
-                $vars[$field] = $payload[$field];
+                $form->set($field, $payload[$field]);
             }
         }
-        $errors = [];
-        if (!$form->update($vars, $errors)) {
-            throw new Exception('DynamicForm::update failed: ' . implode(', ', $errors));
+        if (trim((string) $form->get('title')) === '') {
+            throw new Exception('A form title is required.');
+        }
+        if (!$form->save(true)) {
+            throw new Exception('DynamicForm could not be updated.');
         }
         return ['form_id' => $form->getId()];
     }
 
     public static function delete($payload, $requester_staff_id) {
         $form = self::requireForm($payload['form_id'] ?? 0);
-        // DynamicForm::delete() returns false for system forms (is_deletable=0).
+        if (!$form->isDeletable()) {
+            throw new Exception('This is a protected system form and cannot be deleted.');
+        }
         if (!$form->delete()) {
-            throw new Exception('DynamicForm::delete() failed — form may be a protected system form.');
+            throw new Exception('DynamicForm::delete() failed.');
         }
         return ['form_id' => (int) ($payload['form_id'] ?? 0)];
     }

@@ -7,15 +7,28 @@
  *
  * Payload field names match app/modules/lookups/models.py (TopicCreate,
  * SLACreate, PriorityCreate, and their *Update counterparts).
+ *
+ * Topic::create() / SLA::create() only instantiate; ->update($vars, &$errors)
+ * validates and saves, and it OVERWRITES every field from $vars. So updates start
+ * from the stored state (storedVars) and overlay only what the payload provides.
  */
 
 require_once INCLUDE_DIR . 'class.topic.php';
 require_once INCLUDE_DIR . 'class.sla.php';
 require_once INCLUDE_DIR . 'class.priority.php';
+require_once dirname(__FILE__) . '/common.php';
 
 
 // ── Help Topics ───────────────────────────────────────────────────────────────
 
+/**
+ * State is driven by `status` (active|disabled|archived) only: Topic::update() also
+ * assigns $this->isactive, but ost_help_topic has no such column in 1.18, so passing
+ * it makes the INSERT fail. `flags` accepts Topic::FLAG_ARCHIVED; is_active controls
+ * FLAG_ACTIVE. Ticket-number
+ * format, form attachments and auto-assignment are not exposed by the API and are
+ * preserved as stored on update.
+ */
 class FastApiTopicHandler {
 
     private static function requireTopic($topic_id) {
@@ -26,48 +39,74 @@ class FastApiTopicHandler {
         return $topic;
     }
 
-    public static function create($payload, $requester_staff_id) {
+    private static function storedVars(Topic $topic) {
+        $flags = (int) $topic->flags;
         $vars = [
-            'topic'      => $payload['topic'] ?? '',
-            'ispublic'   => (int) ($payload['is_public'] ?? 1),
-            'isactive'   => (int) ($payload['is_active'] ?? 1),
-            'dept_id'    => $payload['dept_id'] ?? null,
-            'sla_id'     => $payload['sla_id'] ?? null,
-            'priority_id'=> $payload['priority_id'] ?? null,
+            'id'          => $topic->getId(),
+            'topic'       => $topic->topic,
+            'topic_pid'   => $topic->topic_pid,
+            'dept_id'     => $topic->dept_id,
+            'priority_id' => $topic->priority_id,
+            'status_id'   => $topic->status_id,
+            'sla_id'      => $topic->sla_id,
+            'page_id'     => $topic->page_id,
+            'ispublic'    => (int) $topic->ispublic,
+            'sequence_id' => $topic->sequence_id,
+            'number_format' => $topic->number_format,
+            'notes'       => $topic->notes,
+            'status'      => ($flags & Topic::FLAG_ARCHIVED) ? 'archived'
+                               : (($flags & Topic::FLAG_ACTIVE) ? 'active' : 'disabled'),
         ];
-        $errors = [];
-        $topic = Topic::create($vars, $errors);
-        if (!$topic) {
-            throw new Exception('Topic::create failed: ' . implode(', ', $errors));
-        }
-        return ['topic_id' => $topic->getId(), 'topic' => $topic->getName()];
+        if ($flags & Topic::FLAG_CUSTOM_NUMBERS) $vars['custom-numbers'] = 1;
+        if ($topic->noautoresp)                  $vars['noautoresp'] = 1; // isset(): present = on
+        // Auto-assignment is overloaded into one field: 's<staff_id>' or 't<team_id>'.
+        if ($topic->staff_id)     $vars['assign'] = 's' . $topic->staff_id;
+        elseif ($topic->team_id)  $vars['assign'] = 't' . $topic->team_id;
+        return $vars;
     }
 
-    public static function update($payload, $requester_staff_id) {
-        $topic = self::requireTopic($payload['topic_id'] ?? 0);
-        $vars  = [];
-        foreach (['topic', 'ispublic', 'isactive', 'dept_id', 'sla_id', 'priority_id'] as $field) {
+    private static function overlay(array $vars, array $payload) {
+        foreach (['topic', 'dept_id', 'priority_id', 'sla_id', 'page_id', 'notes'] as $field) {
             if (isset($payload[$field])) {
                 $vars[$field] = $payload[$field];
             }
         }
-        if (isset($payload['is_public']) && !isset($vars['ispublic'])) {
+        if (isset($payload['is_public'])) {
             $vars['ispublic'] = (int) $payload['is_public'];
         }
-        if (isset($payload['is_active']) && !isset($vars['isactive'])) {
-            $vars['isactive'] = (int) $payload['is_active'];
+        $archived = isset($payload['flags']) ? (bool) ((int) $payload['flags'] & Topic::FLAG_ARCHIVED) : null;
+        if (isset($payload['is_active']) || $archived !== null) {
+            $active = isset($payload['is_active']) ? (bool) $payload['is_active'] : ($vars['status'] === 'active');
+            $vars['status'] = ($archived ?? ($vars['status'] === 'archived')) ? 'archived' : ($active ? 'active' : 'disabled');
         }
-        $errors = [];
-        if (!$topic->update($vars, $errors)) {
-            throw new Exception('Topic::update failed: ' . implode(', ', $errors));
-        }
+        return $vars;
+    }
+
+    private static function save(Topic $topic, array $vars) {
+        FastApiModel::saveViaUpdate($topic, $vars, 'Help topic');
+    }
+
+    public static function create($payload, $requester_staff_id) {
+        $defaults = [
+            'topic' => '', 'topic_pid' => 0, 'dept_id' => 0, 'priority_id' => 0, 'status_id' => 0,
+            'sla_id' => 0, 'page_id' => 0, 'ispublic' => 1, 'sequence_id' => 0,
+            'number_format' => '', 'notes' => '', 'status' => 'active',
+        ];
+        $topic = Topic::create();
+        self::save($topic, self::overlay($defaults, $payload));
+        return ['topic_id' => $topic->getId(), 'topic' => $topic->topic];
+    }
+
+    public static function update($payload, $requester_staff_id) {
+        $topic = self::requireTopic($payload['topic_id'] ?? 0);
+        self::save($topic, self::overlay(self::storedVars($topic), $payload));
         return ['topic_id' => $topic->getId()];
     }
 
     public static function delete($payload, $requester_staff_id) {
         $topic = self::requireTopic($payload['topic_id'] ?? 0);
         if (!$topic->delete()) {
-            throw new Exception('Topic::delete() failed.');
+            throw new Exception('Help topic could not be deleted (it may still be in use).');
         }
         return ['topic_id' => (int) ($payload['topic_id'] ?? 0)];
     }
@@ -76,6 +115,11 @@ class FastApiTopicHandler {
 
 // ── SLAs ──────────────────────────────────────────────────────────────────────
 
+/**
+ * `flags` accepts SLA::FLAG_ESCALATE, FLAG_NOALERTS and FLAG_TRANSIENT; is_active
+ * controls FLAG_ACTIVE (SLA::update() rebuilds the whole bitmask from named keys, so a
+ * raw value would otherwise be ignored).
+ */
 class FastApiSlaHandler {
 
     private static function requireSla($sla_id) {
@@ -86,43 +130,65 @@ class FastApiSlaHandler {
         return $sla;
     }
 
-    public static function create($payload, $requester_staff_id) {
-        $vars = [
-            'name'         => $payload['name'] ?? '',
-            'grace_period' => (int) ($payload['grace_period'] ?? 24),
-            'isactive'     => (int) ($payload['is_active'] ?? 1),
-            'flags'        => $payload['flags'] ?? 3, // default: enable+transient
-        ];
-        $errors = [];
-        $sla = SLA::create($vars, $errors);
-        if (!$sla) {
-            throw new Exception('SLA::create failed: ' . implode(', ', $errors));
+    private static function varsFromFlags(array $vars, $flags) {
+        foreach (['disable_overdue_alerts', 'transient', 'enable_priority_escalation'] as $key) {
+            unset($vars[$key]);  // SLA::update() reads these with isset()
         }
-        return ['sla_id' => $sla->getId(), 'name' => $sla->getName()];
+        if ($flags & SLA::FLAG_NOALERTS)  $vars['disable_overdue_alerts'] = 1;
+        if ($flags & SLA::FLAG_TRANSIENT) $vars['transient'] = 1;
+        if ($flags & SLA::FLAG_ESCALATE)  $vars['enable_priority_escalation'] = SLA::FLAG_ESCALATE;
+        return $vars;
     }
 
-    public static function update($payload, $requester_staff_id) {
-        $sla  = self::requireSla($payload['sla_id'] ?? 0);
-        $vars = [];
-        foreach (['name', 'grace_period', 'isactive', 'flags'] as $field) {
+    private static function storedVars(SLA $sla) {
+        $flags = (int) $sla->flags;
+        $vars = [
+            'id'           => $sla->getId(),
+            'name'         => $sla->name,
+            'grace_period' => $sla->grace_period,
+            'schedule_id'  => $sla->schedule_id,
+            'notes'        => $sla->notes,
+            'isactive'     => ($flags & SLA::FLAG_ACTIVE) ? 1 : 0,
+        ];
+        return self::varsFromFlags($vars, $flags);
+    }
+
+    private static function overlay(array $vars, array $payload, $stored_flags) {
+        foreach (['name', 'grace_period', 'notes'] as $field) {
             if (isset($payload[$field])) {
                 $vars[$field] = $payload[$field];
             }
         }
-        if (isset($payload['is_active']) && !isset($vars['isactive'])) {
+        if (isset($payload['is_active'])) {
             $vars['isactive'] = (int) $payload['is_active'];
         }
-        $errors = [];
-        if (!$sla->update($vars, $errors)) {
-            throw new Exception('SLA::update failed: ' . implode(', ', $errors));
+        if (isset($payload['flags'])) {
+            $vars = self::varsFromFlags($vars, (int) $payload['flags']);
         }
+        return $vars;
+    }
+
+    private static function save(SLA $sla, array $vars) {
+        FastApiModel::saveViaUpdate($sla, $vars, 'SLA');
+    }
+
+    public static function create($payload, $requester_staff_id) {
+        $defaults = ['name' => '', 'grace_period' => 0, 'schedule_id' => 0, 'notes' => '', 'isactive' => 1];
+        $sla = SLA::create();
+        self::save($sla, self::overlay($defaults, $payload, 0));
+        return ['sla_id' => $sla->getId(), 'name' => $sla->name];
+    }
+
+    public static function update($payload, $requester_staff_id) {
+        $sla = self::requireSla($payload['sla_id'] ?? 0);
+        self::save($sla, self::overlay(self::storedVars($sla), $payload, (int) $sla->flags));
         return ['sla_id' => $sla->getId()];
     }
 
     public static function delete($payload, $requester_staff_id) {
         $sla = self::requireSla($payload['sla_id'] ?? 0);
         if (!$sla->delete()) {
-            throw new Exception('SLA::delete() failed.');
+            throw new Exception('SLA could not be deleted (it may still be in use).');
         }
         return ['sla_id' => (int) ($payload['sla_id'] ?? 0)];
     }
@@ -131,6 +197,12 @@ class FastApiSlaHandler {
 
 // ── Priorities ────────────────────────────────────────────────────────────────
 
+/**
+ * osTicket 1.18 has no admin UI or management API for priorities: Priority is a bare
+ * model with getters. These handlers therefore write through the ORM directly and add
+ * the safety osTicket itself never needed (it never deleted them): a priority that is
+ * the system default, or that a help topic or ticket still references, is refused.
+ */
 class FastApiPriorityHandler {
 
     private static function requirePriority($priority_id) {
@@ -141,49 +213,75 @@ class FastApiPriorityHandler {
         return $priority;
     }
 
-    public static function create($payload, $requester_staff_id) {
-        $vars = [
-            'priority'       => $payload['name'] ?? '',
-            'priority_desc'  => $payload['desc'] ?? '',
-            'priority_color' => $payload['color'] ?? '#cccccc',
-            'ispublic'       => (int) ($payload['is_public'] ?? 1),
-            'urgency'        => (int) ($payload['urgency'] ?? 2),
-        ];
-        $errors = [];
-        $priority = Priority::create($vars, $errors);
-        if (!$priority) {
-            throw new Exception('Priority::create failed: ' . implode(', ', $errors));
+    private static function validate($name, $urgency) {
+        if (trim($name) === '') {
+            throw new Exception('A priority name is required.');
         }
-        return ['priority_id' => $priority->getId(), 'name' => $priority->getName()];
+        if ($urgency < 1) {
+            throw new Exception('Urgency must be a positive integer (1 is the most urgent).');
+        }
+    }
+
+    public static function create($payload, $requester_staff_id) {
+        $name = trim($payload['name'] ?? '');
+        $urgency = (int) ($payload['urgency'] ?? 2);
+        self::validate($name, $urgency);
+        if (Priority::objects()->filter(['priority' => $name])->exists()) {
+            throw new Exception("A priority named '{$name}' already exists.");
+        }
+
+        $priority = new Priority([
+            'priority'         => $name,
+            'priority_desc'    => $payload['desc'] ?? $name,
+            'priority_color'   => $payload['color'] ?? '#cccccc',
+            'priority_urgency' => $urgency,
+            'ispublic'         => (int) ($payload['is_public'] ?? 1),
+        ]);
+        if (!$priority->save() || !$priority->getId()) {
+            throw new Exception('Priority could not be saved.');
+        }
+        return ['priority_id' => $priority->getId(), 'name' => $priority->getTag()];
     }
 
     public static function update($payload, $requester_staff_id) {
         $priority = self::requirePriority($payload['priority_id'] ?? 0);
-        $vars     = [];
-        $fieldMap = [
-            'name'    => 'priority',
-            'desc'    => 'priority_desc',
-            'color'   => 'priority_color',
-            'is_public' => 'ispublic',
-            'urgency' => 'urgency',
-        ];
-        foreach ($fieldMap as $pyKey => $phpKey) {
-            if (isset($payload[$pyKey])) {
-                $vars[$phpKey] = $payload[$pyKey];
-            }
+
+        $name = isset($payload['name']) ? trim($payload['name']) : $priority->priority;
+        $urgency = isset($payload['urgency']) ? (int) $payload['urgency'] : (int) $priority->priority_urgency;
+        self::validate($name, $urgency);
+        if ($name !== $priority->priority
+                && Priority::objects()->filter(['priority' => $name])->exists()) {
+            throw new Exception("A priority named '{$name}' already exists.");
         }
-        $errors = [];
-        if (!$priority->update($vars, $errors)) {
-            throw new Exception('Priority::update failed: ' . implode(', ', $errors));
+
+        $priority->priority = $name;
+        $priority->priority_urgency = $urgency;
+        if (isset($payload['desc']))      $priority->priority_desc = $payload['desc'];
+        if (isset($payload['color']))     $priority->priority_color = $payload['color'];
+        if (isset($payload['is_public'])) $priority->ispublic = (int) $payload['is_public'];
+        if (!$priority->save()) {
+            throw new Exception('Priority could not be updated.');
         }
         return ['priority_id' => $priority->getId()];
     }
 
     public static function delete($payload, $requester_staff_id) {
+        global $cfg;
         $priority = self::requirePriority($payload['priority_id'] ?? 0);
-        if (!$priority->delete()) {
-            throw new Exception('Priority::delete() failed.');
+        $id = $priority->getId();
+
+        if ($cfg && $cfg->getDefaultPriorityId() == $id) {
+            throw new Exception('The system default priority cannot be deleted.');
         }
-        return ['priority_id' => (int) ($payload['priority_id'] ?? 0)];
+        if (Topic::objects()->filter(['priority_id' => $id])->exists()) {
+            throw new Exception('Priority is the default of a help topic; change the topic first.');
+        }
+        if (TicketCData::objects()->filter(['priority' => $id])->exists()) {
+            throw new Exception('Priority is set on existing tickets and cannot be deleted.');
+        }
+        if (!$priority->delete()) {
+            throw new Exception('Priority could not be deleted.');
+        }
+        return ['priority_id' => (int) $id];
     }
 }

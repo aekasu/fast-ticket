@@ -7,9 +7,15 @@
  *
  * Payload field names match app/modules/staff/models.py (TeamCreate,
  * TeamUpdate).
+ *
+ * osTicket's Team::create() only instantiates; Team::update($vars, &$errors)
+ * validates and saves, overwrites every field from $vars, and REMOVES every
+ * member when `members` is absent. So updates start from the stored state
+ * (storedVars) and overlay only what the payload provides.
  */
 
 require_once INCLUDE_DIR . 'class.team.php';
+require_once dirname(__FILE__) . '/common.php';
 
 class FastApiTeamHandler {
 
@@ -21,44 +27,70 @@ class FastApiTeamHandler {
         return $team;
     }
 
-    public static function create($payload, $requester_staff_id) {
+    /** The vars Team::update() would need to leave $team exactly as it is. */
+    private static function storedVars(Team $team) {
+        $flags = (int) $team->flags;
         $vars = [
-            'name'      => $payload['name'] ?? '',
-            'lead_id'   => $payload['lead_id'] ?? null,
-            'isenabled' => (int) ($payload['is_enabled'] ?? 1),
-            'noalerts'  => (int) ($payload['noalerts'] ?? 0),
+            'id'        => $team->getId(),
+            'name'      => $team->name,
+            'isenabled' => ($flags & Team::FLAG_ENABLED) ? 1 : 0,
+            'lead_id'   => $team->lead_id,
+            'notes'     => $team->notes,
+            'members'   => [],
+            'member_alerts' => [],
         ];
-        $errors = [];
-        $team = Team::create($vars, $errors);
-        if (!$team) {
-            throw new Exception('Team::create failed: ' . implode(', ', $errors));
+        if ($flags & Team::FLAG_NOALERTS) {
+            $vars['noalerts'] = 1; // read with isset(): present = on
         }
-        return ['team_id' => $team->getId(), 'name' => $team->getName()];
+        foreach ($team->members as $member) {
+            $vars['members'][] = $member->staff_id;
+            $vars['member_alerts'][$member->staff_id] = $member->isAlertsEnabled() ? 1 : 0;
+        }
+        return $vars;
     }
 
-    public static function update($payload, $requester_staff_id) {
-        $team = self::requireTeam($payload['team_id'] ?? 0);
-        $vars = [];
-        foreach (['name', 'lead_id', 'isenabled', 'noalerts'] as $field) {
+    private static function overlay(array $vars, array $payload) {
+        foreach (['name', 'lead_id', 'notes'] as $field) {
             if (isset($payload[$field])) {
                 $vars[$field] = $payload[$field];
             }
         }
-        // Map Python-style is_enabled → isenabled
-        if (isset($payload['is_enabled']) && !isset($vars['isenabled'])) {
+        if (isset($payload['is_enabled'])) {
             $vars['isenabled'] = (int) $payload['is_enabled'];
         }
-        $errors = [];
-        if (!$team->update($vars, $errors)) {
-            throw new Exception('Team::update failed: ' . implode(', ', $errors));
+        if (isset($payload['members'])) {
+            // Keep the alert preference of members that stay; new members get alerts on.
+            $previous = $vars['member_alerts'];
+            $vars['members'] = array_values(array_map('intval', (array) $payload['members']));
+            $vars['member_alerts'] = [];
+            foreach ($vars['members'] as $staff_id) {
+                $vars['member_alerts'][$staff_id] = $previous[$staff_id] ?? 1;
+            }
         }
+        return $vars;
+    }
+
+    private static function save(Team $team, array $vars) {
+        FastApiModel::saveViaUpdate($team, $vars, 'Team');
+    }
+
+    public static function create($payload, $requester_staff_id) {
+        $defaults = ['name' => '', 'isenabled' => 1, 'lead_id' => 0, 'notes' => '', 'members' => [], 'member_alerts' => []];
+        $team = Team::create();
+        self::save($team, self::overlay($defaults, $payload));
+        return ['team_id' => $team->getId(), 'name' => $team->name];
+    }
+
+    public static function update($payload, $requester_staff_id) {
+        $team = self::requireTeam($payload['team_id'] ?? 0);
+        self::save($team, self::overlay(self::storedVars($team), $payload));
         return ['team_id' => $team->getId()];
     }
 
     public static function delete($payload, $requester_staff_id) {
         $team = self::requireTeam($payload['team_id'] ?? 0);
         if (!$team->delete()) {
-            throw new Exception('Team::delete() failed.');
+            throw new Exception('Team could not be deleted.');
         }
         return ['team_id' => (int) ($payload['team_id'] ?? 0)];
     }
