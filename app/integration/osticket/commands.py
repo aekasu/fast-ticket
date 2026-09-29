@@ -7,7 +7,12 @@ Never write directly to osTicket's own tables; always go through this table.
 from datetime import datetime
 from typing import Optional
 
+from sqlalchemy import DateTime
 from sqlmodel import Field, SQLModel
+
+# Timestamps are naive UTC (osTicket/MySQL DATETIME, PHP writes NOW()). An explicit
+# sa_type bypasses sqlmodel>=0.0.47's wrapper, which rejects naive datetimes.
+_TS = DateTime(timezone=False)
 
 
 class IntegrationInbox(SQLModel, table=True):
@@ -25,5 +30,5 @@ class IntegrationInbox(SQLModel, table=True):
     requested_by_staff_id: Optional[int] = Field(default=None)
     result_payload: Optional[str] = Field(default=None)     # JSON response from PHP side
     error_message: Optional[str] = Field(default=None)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    processed_at: Optional[datetime] = Field(default=None)
+    created_at: datetime = Field(default_factory=datetime.utcnow, sa_type=_TS)
+    processed_at: Optional[datetime] = Field(default=None, sa_type=_TS)

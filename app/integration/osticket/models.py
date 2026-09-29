@@ -8,7 +8,12 @@ broadcasts updates over WebSocket.
 from datetime import datetime
 from typing import Optional
 
+from sqlalchemy import DateTime
 from sqlmodel import Field, SQLModel
+
+# Timestamps are naive UTC (osTicket/MySQL DATETIME, PHP writes NOW()). An explicit
+# sa_type bypasses sqlmodel>=0.0.47's wrapper, which rejects naive datetimes.
+_TS = DateTime(timezone=False)
 
 
 class IntegrationOutbox(SQLModel, table=True):
@@ -24,6 +29,6 @@ class IntegrationOutbox(SQLModel, table=True):
     status: str = Field(default="pending", index=True)      # pending | processing | processed | failed
     retry_count: int = Field(default=0)
     error_message: Optional[str] = Field(default=None)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    locked_at: Optional[datetime] = Field(default=None)
-    processed_at: Optional[datetime] = Field(default=None)
+    created_at: datetime = Field(default_factory=datetime.utcnow, sa_type=_TS)
+    locked_at: Optional[datetime] = Field(default=None, sa_type=_TS)
+    processed_at: Optional[datetime] = Field(default=None, sa_type=_TS)
