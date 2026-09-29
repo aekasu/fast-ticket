@@ -48,11 +48,11 @@ services:
       db:
         condition: service_healthy
     healthcheck:
-      # Check the bridge auth endpoint — it only returns non-error when osTicket is
-      # fully installed AND the integration.php file was successfully placed by bridge/install.php.
-      # (index.php would 302 to the setup wizard even on a broken install, giving a false positive)
-      test: ["CMD", "curl", "-sf", "-o", "/dev/null",
-             "http://localhost/api/auth/integration"]
+      # The bridge auth endpoint answers 403 to a keyless POST, but only once osTicket is
+      # fully installed (main.inc.php bootstraps first), the plugin installer has copied
+      # integration.php, and the Apache rewrite routes the extensionless URL to it.
+      # (index.php would 302 to the setup wizard even on a broken install.)
+      test: ["CMD-SHELL", "[ \"$$(curl -s -o /dev/null -w '%{http_code}' -X POST http://localhost/api/auth/integration)\" = 403 ]"]
       interval: 15s
       timeout: 5s
       retries: 20
