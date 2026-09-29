@@ -3,10 +3,15 @@ services:
     build:
       context: .
       dockerfile: docker/fastapi/Dockerfile
-    command: ["uv", "run", "pytest", "tests/", "-v", "--tb=short"]
+    # pytest is in the `dev` extra; the image installs with --no-dev
+    command: ["uv", "run", "--extra", "dev", "pytest", "tests/", "-v", "--tb=short"]
+    volumes:
+      # tests/unit/test_bridge_registry.py reads the PHP bridge as text; the API image
+      # deliberately does not contain it.
+      - ./bridge:/app/bridge:ro
     environment:
       # SQLite in-memory — no real DB needed for unit/integration tests
-      DATABASE_URL: sqlite+aiosqlite:///:memory:
+      DATABASE_URL: "sqlite+aiosqlite:///:memory:"
       FASTAPI_INTEGRATION_KEY: test-integration-key-32-chars-long!!
       JWT_SECRET_KEY: test-jwt-secret-key-48-chars-long-for-testing!!
       OSTICKET_AUTH_URL: http://localhost/not-used-in-tests
