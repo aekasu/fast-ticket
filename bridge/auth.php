@@ -12,14 +12,16 @@
  */
 
 // Bootstrap osTicket — we need the full osTicket context for Staff::lookup.
-// auth.php is installed at api/auth/integration.php. The osTicket API bootstrap
-// file is at api/api.inc.php (NOT include/api.inc.php). api.inc.php includes
-// main.inc.php which calls Bootstrap::connect() + Bootstrap::loadCode().
-define('OSTAPI', TRUE);
-$__webroot = dirname(dirname(dirname(__FILE__)));
-define('API_SESSION', true);
-chdir($__webroot);
-require_once $__webroot . '/main.inc.php';
+// Two ways in: through the plugin's `api` signal route (osTicket's api/http.php has already
+// bootstrapped, INCLUDE_DIR is defined) or, for older installs that copied this file to
+// api/auth/integration.php, standalone (bootstrap here; the webroot is three levels up).
+if (!defined('INCLUDE_DIR')) {
+    define('OSTAPI', TRUE);
+    $__webroot = dirname(dirname(dirname(__FILE__)));
+    define('API_SESSION', true);
+    chdir($__webroot);
+    require_once $__webroot . '/main.inc.php';
+}
 require_once INCLUDE_DIR . 'class.staff.php';
 
 // ── Integration key validation ─────────────────────────────────────────────
@@ -28,7 +30,7 @@ require_once INCLUDE_DIR . 'class.staff.php';
 // has one, else the key install.php stored — so a host that doesn't inject env still works.
 $expected_key = getenv('FASTAPI_INTEGRATION_KEY') ?: ($_SERVER['FASTAPI_INTEGRATION_KEY'] ?? '');
 if (!$expected_key) {
-    $res = db_query("SELECT value FROM " . TABLE_PREFIX . "config WHERE namespace='fastapi_integration' AND `key`='integration_key' LIMIT 1");
+    $res = db_query("SELECT value FROM " . CONFIG_TABLE . " WHERE namespace='fastapi_integration' AND `key`='integration_key' LIMIT 1");
     $cfg = $res ? db_fetch_array($res) : null;
     $expected_key = $cfg ? $cfg['value'] : '';
 }
@@ -86,10 +88,10 @@ $permissions = [];
 $is_admin = (bool) $staff->isAdmin();
 
 if (!$is_admin) {
-    // Fetch role permissions from ost_role
+    // Fetch role permissions from the role table
     $role_id = $staff->get('role_id');
     if ($role_id) {
-        $role_result = db_query("SELECT permissions FROM ost_role WHERE id=" . db_input($role_id));
+        $role_result = db_query("SELECT permissions FROM " . ROLE_TABLE . " WHERE id=" . db_input($role_id));
         if ($role_row = db_fetch_array($role_result)) {
             $perm_map = json_decode($role_row['permissions'], true) ?: [];
             foreach ($perm_map as $key => $val) {

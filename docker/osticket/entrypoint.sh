@@ -23,6 +23,8 @@
 set -e
 
 WEBROOT="/var/www/html"
+# Table prefix osTicket is installed with (default: osTicket's own `ost_`).
+export OSTICKET_TABLE_PREFIX="${OSTICKET_TABLE_PREFIX-ost_}"
 CONFIG_FILE="$WEBROOT/include/ost-config.php"
 SAMPLE_FILE="$WEBROOT/include/ost-sampleconfig.php"
 CONFIG_STORE="/var/osticket-config/ost-config.php"
@@ -38,9 +40,9 @@ db_state() {
         mysqli_report(MYSQLI_REPORT_OFF);
         $c = @new mysqli(getenv("MYSQL_HOST"), getenv("MYSQL_USER"), getenv("MYSQL_PASSWORD"), getenv("MYSQL_DATABASE"));
         if ($c->connect_error) { echo "unreachable"; exit; }
-        $r = $c->query("SELECT value FROM ost_config WHERE namespace=\"core\" AND `key`=\"schema_signature\" LIMIT 1");
+        $r = $c->query("SELECT value FROM " . getenv("OSTICKET_TABLE_PREFIX") . "config WHERE namespace=\"core\" AND `key`=\"schema_signature\" LIMIT 1");
         if ($r && $r->num_rows > 0) { echo "installed"; exit; }
-        $t = $c->query("SHOW TABLES LIKE \"ost_config\"");
+        $t = $c->query("SHOW TABLES LIKE \"" . getenv("OSTICKET_TABLE_PREFIX") . "config\"");
         echo ($t && $t->num_rows > 0) ? "partial" : "empty";
     ' 2>/dev/null || echo "unreachable"
 }
@@ -64,7 +66,7 @@ regenerate_config() {
             "%CONFIG-DBNAME"  => getenv("MYSQL_DATABASE"),
             "%CONFIG-DBUSER"  => getenv("MYSQL_USER"),
             "%CONFIG-DBPASS"  => getenv("MYSQL_PASSWORD"),
-            "%CONFIG-PREFIX"  => "ost_",
+            "%CONFIG-PREFIX"  => getenv("OSTICKET_TABLE_PREFIX"),
         ]);
         file_put_contents(getenv("CONFIG_STORE"), $c);
     ' || return 1
@@ -145,7 +147,7 @@ run_installer() {
         --data-urlencode "username=${INSTALL_USERNAME}" \
         --data-urlencode "passwd=${OSTICKET_ADMIN_PASSWORD:-changeme-admin}" \
         --data-urlencode "passwd2=${OSTICKET_ADMIN_PASSWORD:-changeme-admin}" \
-        --data-urlencode "prefix=ost_" \
+        --data-urlencode "prefix=${OSTICKET_TABLE_PREFIX}" \
         --data-urlencode "dbhost=${MYSQL_HOST}" \
         --data-urlencode "dbname=${MYSQL_DATABASE}" \
         --data-urlencode "dbuser=${MYSQL_USER}" \

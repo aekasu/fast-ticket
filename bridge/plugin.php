@@ -3,18 +3,24 @@
  * FastAPI Integration Plugin for osTicket
  *
  * Bridges the fast-ticket FastAPI layer with osTicket's PHP model layer.
- * Consumes ost_integration_inbox (commands from FastAPI) and produces
- * ost_integration_outbox (events for the Python outbox worker).
+ * Consumes " . FASTAPI_INBOX_TABLE . " (commands from FastAPI) and produces
+ * " . FASTAPI_OUTBOX_TABLE . " (events for the Python outbox worker).
  *
  * Architecture:
- *   FastAPI → ost_integration_inbox → [this plugin via cron] → osTicket PHP models
- *   osTicket PHP models → ost_integration_outbox → Python outbox worker → WebSocket
+ *   FastAPI → " . FASTAPI_INBOX_TABLE . " → [this plugin via cron] → osTicket PHP models
+ *   osTicket PHP models → " . FASTAPI_OUTBOX_TABLE . " → Python outbox worker → WebSocket
  *
  * The plugin hooks into osTicket's Signal system ('cron') to drain the inbox
  * every minute via api/cron.php.
  */
 
 require_once INCLUDE_DIR . 'class.plugin.php';
+
+// Our two tables follow osTicket's install-time table prefix, like its own (CONFIG_TABLE, ...).
+if (!defined('FASTAPI_INBOX_TABLE')) {
+    define('FASTAPI_INBOX_TABLE', TABLE_PREFIX . 'integration_inbox');
+    define('FASTAPI_OUTBOX_TABLE', TABLE_PREFIX . 'integration_outbox');
+}
 
 /**
  * osTicket only bootstraps a plugin through an enabled instance whose config
@@ -32,14 +38,56 @@ class FastApiIntegrationPlugin extends Plugin {
 
     var $config_class = 'FastApiIntegrationPluginConfig';
 
-    /** Integration key from env (compose) or the ost_config row install.php writes. */
+    /** Integration key from env (compose) or the config row install.php writes. */
     static function integrationKey() {
         $key = getenv('FASTAPI_INTEGRATION_KEY') ?: ($_SERVER['FASTAPI_INTEGRATION_KEY'] ?? '');
         if ($key)
             return $key;
-        $res = db_query("SELECT value FROM ost_config WHERE namespace='fastapi_integration' AND `key`='integration_key' LIMIT 1");
+        $res = db_query("SELECT value FROM " . CONFIG_TABLE . " WHERE namespace='fastapi_integration' AND `key`='integration_key' LIMIT 1");
         $row = $res ? db_fetch_array($res) : null;
         return $row ? $row['value'] : '';
+    }
+
+    /**
+     * Create the plugin's two tables if they are missing (CREATE ... IF NOT EXISTS from
+     * schema.php). Called when the plugin is enabled or upgraded in the admin panel, by
+     * install.php, and at the start of every worker — never per web request.
+     */
+    static function ensureTables() {
+        $exists = function () {
+            foreach ([FASTAPI_INBOX_TABLE, FASTAPI_OUTBOX_TABLE] as $table) {
+                $res = db_query('SHOW TABLES LIKE ' . db_input($table));
+                if (!$res || !db_num_rows($res))
+                    return false;
+            }
+            return true;
+        };
+        if ($exists())
+            return;
+        foreach (require dirname(__FILE__) . '/schema.php' as $sql) {
+            db_query(strtr($sql, [
+                '{inbox}'  => FASTAPI_INBOX_TABLE,
+                '{outbox}' => FASTAPI_OUTBOX_TABLE,
+            ]));
+        }
+        if (!$exists())
+            throw new Exception('Could not create ' . FASTAPI_INBOX_TABLE . ' / ' . FASTAPI_OUTBOX_TABLE
+                . ' — grant the database user CREATE, or run the statements in schema.php by hand.');
+    }
+
+    function enable() {
+        self::ensureTables();
+        return true;
+    }
+
+    function pre_upgrade(&$errors) {
+        try {
+            self::ensureTables();
+        } catch (Throwable $e) {
+            $errors['err'] = $e->getMessage();
+            return false;
+        }
+        return true;
     }
 
     /**
@@ -108,7 +156,7 @@ class FastApiIntegrationPlugin extends Plugin {
         // retry: it may have partly executed, and re-running a non-idempotent command
         // (ticket.create, ...) would duplicate work — and a handler that always crashes
         // would otherwise be retried forever.
-        db_query("UPDATE ost_integration_inbox
+        db_query("UPDATE " . FASTAPI_INBOX_TABLE . "
                    SET status='failed', processed_at=NOW(),
                        error_message='Timed out while processing (the handler crashed or the run was killed); not retried automatically.'
                    WHERE status='processing'
@@ -119,14 +167,14 @@ class FastApiIntegrationPlugin extends Plugin {
         // can't steal each other's rows.
         $run_id = db_input(bin2hex(random_bytes(8)));
 
-        db_query("UPDATE ost_integration_inbox
+        db_query("UPDATE " . FASTAPI_INBOX_TABLE . "
                    SET status='processing', claimed_by={$run_id}, processed_at=NOW()
                    WHERE status='pending'
                    ORDER BY id ASC
                    LIMIT {$batch_size}");
 
         // Only fetch rows we own (identified by our run_id).
-        $rows = db_query("SELECT * FROM ost_integration_inbox
+        $rows = db_query("SELECT * FROM " . FASTAPI_INBOX_TABLE . "
                           WHERE status='processing' AND claimed_by={$run_id}
                           ORDER BY id ASC");
 
@@ -180,7 +228,7 @@ class FastApiIntegrationPlugin extends Plugin {
 
             // Mark inbox row as done
             db_query(sprintf(
-                "UPDATE ost_integration_inbox SET status='done', result_payload=%s, processed_at=NOW() WHERE id=%d",
+                "UPDATE " . FASTAPI_INBOX_TABLE . " SET status='done', result_payload=%s, processed_at=NOW() WHERE id=%d",
                 db_input(json_encode($result)),
                 $inbox_id
             ));
@@ -200,7 +248,7 @@ class FastApiIntegrationPlugin extends Plugin {
             // an Error, which must fail this row instead of wedging it in 'processing'.
             error_log("[FastAPI Integration] Command #{$inbox_id} ({$command_type}) failed: " . $e->getMessage());
             db_query(sprintf(
-                "UPDATE ost_integration_inbox SET status='failed', error_message=%s, processed_at=NOW() WHERE id=%d",
+                "UPDATE " . FASTAPI_INBOX_TABLE . " SET status='failed', error_message=%s, processed_at=NOW() WHERE id=%d",
                 db_input($e->getMessage()),
                 $inbox_id
             ));
@@ -229,7 +277,7 @@ class FastApiIntegrationPlugin extends Plugin {
      */
     private function emitOutboxEvent($event_type, $aggregate_type, $aggregate_id, $payload) {
         db_query(sprintf(
-            "INSERT INTO ost_integration_outbox (event_type, aggregate_type, aggregate_id, payload, status, created_at)
+            "INSERT INTO " . FASTAPI_OUTBOX_TABLE . " (event_type, aggregate_type, aggregate_id, payload, status, created_at)
              VALUES (%s, %s, %s, %s, 'pending', NOW())",
             db_input($event_type),
             db_input($aggregate_type),

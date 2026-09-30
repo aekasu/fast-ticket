@@ -9,9 +9,8 @@ services:
       MARIADB_DATABASE: osticket
     volumes:
       - mysql_data:/var/lib/mysql
-      - ./docker/mysql:/docker-entrypoint-initdb.d:ro
     ports:
-      - "13306:3306"
+      - "${MYSQL_PORT:-13306}:3306"
     healthcheck:
       test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
       interval: 5s
@@ -24,7 +23,7 @@ services:
       context: .
       dockerfile: docker/osticket/Dockerfile
     ports:
-      - "8080:80"
+      - "${OSTICKET_PORT:-8080}:80"
     volumes:
       # ost-config.php lives here (symlinked into osTicket by the entrypoint), not in git.
       - osticket_config:/var/osticket-config
@@ -40,6 +39,7 @@ services:
       OSTICKET_ADMIN_PASSWORD: ${OSTICKET_ADMIN_PASSWORD:-changeme-admin}
       OSTICKET_SITE_NAME: ${OSTICKET_SITE_NAME:-fast-ticket Dev}
       OSTICKET_AUTO_SETUP: ${OSTICKET_AUTO_SETUP:-true}
+      OSTICKET_TABLE_PREFIX: ${OSTICKET_TABLE_PREFIX:-ost_}
       # Must NOT be 'admin', 'admins', 'username', or 'osticket' (installer blocks them)
       OSTICKET_ADMIN_USERNAME: ${OSTICKET_ADMIN_USERNAME:-helpdesk}
       # Must differ from OSTICKET_ADMIN_EMAIL
@@ -104,7 +104,7 @@ services:
       context: .
       dockerfile: docker/fastapi/Dockerfile
     ports:
-      - "8000:8000"
+      - "${API_PORT:-8000}:8000"
     volumes:
       - ./app:/app/app:ro       # hot-reload in dev; remove :ro for write access
     environment:
@@ -113,7 +113,9 @@ services:
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:?Set JWT_SECRET_KEY in .env}
       OSTICKET_AUTH_URL: http://osticket/api/auth/integration
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
-      AUTO_CREATE_SCHEMA: "true"
+      # The bridge plugin owns the integration tables (bridge/schema.php); the API only uses them.
+      AUTO_CREATE_SCHEMA: "false"
+      OSTICKET_TABLE_PREFIX: ${OSTICKET_TABLE_PREFIX:-ost_}
     depends_on:
       db:
         condition: service_healthy

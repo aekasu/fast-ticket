@@ -11,7 +11,7 @@ ini_set('display_errors', 1);
  * What it does:
  *   1. Activates the FastAPI integration plugin in osTicket's plugin registry.
  *   2. Stores the integration key in plugin config.
- *   3. Copies auth.php to the location Apache can serve it as /api/auth/integration.
+ *   3. Creates the plugin's two tables (schema.php).
  */
 
 if (php_sapi_name() !== 'cli') {
@@ -51,10 +51,10 @@ $plugin_id = 'fastapi_integration';
 $install_path = 'plugins/fastapi_integration';
 $version = '1.0';   // keep in sync with the manifest at the bottom of plugin.php
 
-$existing = db_query("SELECT id FROM ost_plugin WHERE install_path LIKE '%fastapi_integration%' LIMIT 1");
+$existing = db_query("SELECT id FROM " . PLUGIN_TABLE . " WHERE install_path LIKE '%fastapi_integration%' LIMIT 1");
 if (!db_fetch_array($existing)) {
     db_query(sprintf(
-        "INSERT INTO ost_plugin (name, install_path, isactive, version, installed) VALUES (%s, %s, 1, %s, NOW())",
+        "INSERT INTO " . PLUGIN_TABLE . " (name, install_path, isactive, version, installed) VALUES (%s, %s, 1, %s, NOW())",
         db_input('FastAPI Integration Bridge'),
         db_input($install_path),
         db_input($version)
@@ -63,7 +63,7 @@ if (!db_fetch_array($existing)) {
 } else {
     // Also repairs rows written by older versions of this script (wrong install_path).
     db_query(sprintf(
-        "UPDATE ost_plugin SET isactive=1, install_path=%s, version=%s WHERE install_path LIKE '%%fastapi_integration%%'",
+        "UPDATE " . PLUGIN_TABLE . " SET isactive=1, install_path=%s, version=%s WHERE install_path LIKE '%%fastapi_integration%%'",
         db_input($install_path),
         db_input($version)
     ));
@@ -72,18 +72,18 @@ if (!db_fetch_array($existing)) {
 
 // osTicket bootstraps a plugin only through an enabled *instance* row, so make
 // sure exactly one exists and is enabled (flags bit 0x1 = PluginInstance::FLAG_ENABLED).
-$plugin_row = db_fetch_array(db_query("SELECT id FROM ost_plugin WHERE install_path=" . db_input($install_path) . " LIMIT 1"));
+$plugin_row = db_fetch_array(db_query("SELECT id FROM " . PLUGIN_TABLE . " WHERE install_path=" . db_input($install_path) . " LIMIT 1"));
 $plugin_db_id = (int) $plugin_row['id'];
-$instance = db_fetch_array(db_query("SELECT id FROM ost_plugin_instance WHERE plugin_id=$plugin_db_id LIMIT 1"));
+$instance = db_fetch_array(db_query("SELECT id FROM " . PLUGIN_INSTANCE_TABLE . " WHERE plugin_id=$plugin_db_id LIMIT 1"));
 if (!$instance) {
     db_query(sprintf(
-        "INSERT INTO ost_plugin_instance (plugin_id, flags, name, created) VALUES (%d, 1, %s, NOW())",
+        "INSERT INTO " . PLUGIN_INSTANCE_TABLE . " (plugin_id, flags, name, created) VALUES (%d, 1, %s, NOW())",
         $plugin_db_id,
         db_input('FastAPI Integration Bridge')
     ));
     echo "[install.php] Plugin instance created.\n";
 } else {
-    db_query("UPDATE ost_plugin_instance SET flags = flags | 1 WHERE plugin_id=$plugin_db_id");
+    db_query("UPDATE " . PLUGIN_INSTANCE_TABLE . " SET flags = flags | 1 WHERE plugin_id=$plugin_db_id");
     echo "[install.php] Plugin instance already present — enabled.\n";
 }
 
@@ -91,31 +91,35 @@ if (!$instance) {
 
 $namespace = 'fastapi_integration';
 $existing_key = db_query(sprintf(
-    "SELECT id FROM ost_config WHERE namespace=%s AND `key`='integration_key' LIMIT 1",
+    "SELECT id FROM " . CONFIG_TABLE . " WHERE namespace=%s AND `key`='integration_key' LIMIT 1",
     db_input($namespace)
 ));
 if (db_fetch_array($existing_key)) {
     db_query(sprintf(
-        "UPDATE ost_config SET value=%s WHERE namespace=%s AND `key`='integration_key'",
+        "UPDATE " . CONFIG_TABLE . " SET value=%s WHERE namespace=%s AND `key`='integration_key'",
         db_input($integration_key),
         db_input($namespace)
     ));
 } else {
     db_query(sprintf(
-        "INSERT INTO ost_config (namespace, `key`, value) VALUES (%s, 'integration_key', %s)",
+        "INSERT INTO " . CONFIG_TABLE . " (namespace, `key`, value) VALUES (%s, 'integration_key', %s)",
         db_input($namespace),
         db_input($integration_key)
     ));
 }
 echo "[install.php] Integration key stored.\n";
 
-// ── 3. Install auth endpoint ───────────────────────────────────────────────
-// Copy auth.php to api/auth/integration so Apache serves it at /api/auth/integration
-$api_auth_dir = $webroot . '/api/auth';
-if (!is_dir($api_auth_dir)) {
-    mkdir($api_auth_dir, 0755, true);
-}
-copy(dirname(__FILE__) . '/auth.php', $api_auth_dir . '/integration.php');
-echo "[install.php] Auth endpoint installed at api/auth/integration.php\n";
+// ── 3. Tables + auth endpoint ──────────────────────────────────────────────
+// The auth endpoint is served by the plugin's own `api` route (POST /api/auth/integration),
+// so nothing is copied into osTicket's api/ directory. Older installs did copy auth.php there;
+// remove that stale copy so it cannot drift from the plugin's.
+require_once INCLUDE_DIR . 'class.plugin.php';
+require_once dirname(__FILE__) . '/plugin.php';
+FastApiIntegrationPlugin::ensureTables();
+echo "[install.php] Integration tables ready (" . FASTAPI_INBOX_TABLE . ", " . FASTAPI_OUTBOX_TABLE . ").\n";
+
+$stale_auth = $webroot . '/api/auth/integration.php';
+if (is_file($stale_auth) && @unlink($stale_auth))
+    echo "[install.php] Removed the old api/auth/integration.php copy.\n";
 
 echo "[install.php] FastAPI integration plugin installed successfully.\n";

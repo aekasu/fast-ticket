@@ -21,8 +21,17 @@ class Settings(BaseSettings):
         description="Async SQLAlchemy URL for the osTicket database (mysql+aiomysql://…).",
     )
     AUTO_CREATE_SCHEMA: bool = Field(
-        default=True,
-        description="Create our integration tables at startup. Disable in production.",
+        default=False,
+        description=(
+            "Create the integration tables from the SQLModel classes at startup. Off by default: "
+            "the bridge plugin creates them (bridge/schema.php). For a local DB with no plugin."
+        ),
+    )
+
+    OSTICKET_TABLE_PREFIX: str = Field(
+        default="ost_",
+        description="Table prefix chosen when osTicket was installed (TABLE_PREFIX in ost-config.php).",
+        pattern=r"^[A-Za-z0-9_]{0,32}$",
     )
 
     # ── osTicket bridge ───────────────────────────────────────────────────────

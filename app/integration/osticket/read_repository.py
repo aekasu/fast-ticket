@@ -9,11 +9,31 @@ Rules:
 
 import json
 import logging
+import re
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
+
 logger = logging.getLogger(__name__)
+
+_TABLE_TOKEN = re.compile(r"(?<![A-Za-z0-9_])ost_(?=[a-z])")
+
+
+def prefixed(sql: str, prefix: str | None = None) -> str:
+    """Rewrite the ``ost_`` table names in ``sql`` to the instance's real table prefix.
+
+    The queries below are written against osTicket's default ``ost_`` prefix; an instance
+    installed with another prefix has ``ost_ticket`` as e.g. ``support_ticket``. This is the one
+    place that difference is handled — every query goes through ``_sql``.
+    """
+    prefix = settings.OSTICKET_TABLE_PREFIX if prefix is None else prefix
+    return sql if prefix == "ost_" else _TABLE_TOKEN.sub(prefix, sql)
+
+
+def _sql(sql: str):
+    return text(prefixed(sql))
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -111,14 +131,14 @@ async def list_tickets(
         + " ORDER BY t.updated DESC"
         + " LIMIT :limit OFFSET :offset"
     )
-    result = await session.execute(text(sql), params)
+    result = await session.execute(_sql(sql), params)
     return list(result.mappings().all())
 
 
 async def get_ticket(session: AsyncSession, ticket_id: int) -> dict | None:
     """Return a single ticket row dict, or None if not found."""
     sql = _TICKET_SELECT + " WHERE t.ticket_id = :ticket_id"
-    result = await session.execute(text(sql), {"ticket_id": ticket_id})
+    result = await session.execute(_sql(sql), {"ticket_id": ticket_id})
     row = result.mappings().one_or_none()
     return dict(row) if row else None
 
@@ -147,7 +167,7 @@ async def get_ticket_thread(session: AsyncSession, ticket_id: int) -> list:
         WHERE th.object_type = 'T' AND th.object_id = :ticket_id
         ORDER BY te.created ASC, te.id ASC
     """
-    result = await session.execute(text(sql), {"ticket_id": ticket_id})
+    result = await session.execute(_sql(sql), {"ticket_id": ticket_id})
     return list(result.mappings().all())
 
 
@@ -166,7 +186,7 @@ async def get_ticket_collaborators(session: AsyncSession, ticket_id: int) -> lis
         WHERE th.object_id = :ticket_id
         ORDER BY c.id ASC
     """
-    result = await session.execute(text(sql), {"ticket_id": ticket_id})
+    result = await session.execute(_sql(sql), {"ticket_id": ticket_id})
     return list(result.mappings().all())
 
 
@@ -181,7 +201,7 @@ async def get_staff_permissions(
     Called at login time to embed permissions into the JWT.
     """
     result = await session.execute(
-        text("SELECT isadmin, role_id FROM ost_staff WHERE staff_id = :sid"),
+        _sql("SELECT isadmin, role_id FROM ost_staff WHERE staff_id = :sid"),
         {"sid": staff_id},
     )
     row = result.mappings().one_or_none()
@@ -197,7 +217,7 @@ async def get_staff_permissions(
         return [], False
 
     role_result = await session.execute(
-        text("SELECT permissions FROM ost_role WHERE id = :rid"),
+        _sql("SELECT permissions FROM ost_role WHERE id = :rid"),
         {"rid": role_id},
     )
     role_row = role_result.mappings().one_or_none()
@@ -226,7 +246,7 @@ async def list_staff(session: AsyncSession, limit: int = 50, offset: int = 0) ->
         FROM ost_staff s
         ORDER BY s.username ASC LIMIT :limit OFFSET :offset
     """
-    result = await session.execute(text(sql), {"limit": limit, "offset": offset})
+    result = await session.execute(_sql(sql), {"limit": limit, "offset": offset})
     return list(result.mappings().all())
 
 
@@ -249,14 +269,14 @@ async def get_staff(session: AsyncSession, staff_id: int) -> dict | None:
         FROM ost_staff s
         WHERE s.staff_id = :staff_id
     """
-    result = await session.execute(text(sql), {"staff_id": staff_id})
+    result = await session.execute(_sql(sql), {"staff_id": staff_id})
     row = result.mappings().one_or_none()
     return dict(row) if row else None
 
 
 async def get_staff_teams(session: AsyncSession, staff_id: int) -> list[int]:
     sql = "SELECT team_id FROM ost_team_member WHERE staff_id = :staff_id"
-    result = await session.execute(text(sql), {"staff_id": staff_id})
+    result = await session.execute(_sql(sql), {"staff_id": staff_id})
     return [r["team_id"] for r in result.mappings().all()]
 
 
@@ -273,7 +293,7 @@ async def list_departments(session: AsyncSession, limit: int = 50, offset: int =
         FROM ost_department d
         ORDER BY d.name ASC LIMIT :limit OFFSET :offset
     """
-    result = await session.execute(text(sql), {"limit": limit, "offset": offset})
+    result = await session.execute(_sql(sql), {"limit": limit, "offset": offset})
     return list(result.mappings().all())
 
 
@@ -291,7 +311,7 @@ async def get_department(session: AsyncSession, dept_id: int) -> dict | None:
         FROM ost_department d
         WHERE d.id = :dept_id
     """
-    result = await session.execute(text(sql), {"dept_id": dept_id})
+    result = await session.execute(_sql(sql), {"dept_id": dept_id})
     row = result.mappings().one_or_none()
     return dict(row) if row else None
 
@@ -309,7 +329,7 @@ async def list_teams(session: AsyncSession, limit: int = 50, offset: int = 0) ->
         FROM ost_team t
         ORDER BY t.name ASC LIMIT :limit OFFSET :offset
     """
-    result = await session.execute(text(sql), {"limit": limit, "offset": offset})
+    result = await session.execute(_sql(sql), {"limit": limit, "offset": offset})
     return list(result.mappings().all())
 
 
@@ -326,14 +346,14 @@ async def get_team(session: AsyncSession, team_id: int) -> dict | None:
         FROM ost_team t
         WHERE t.team_id = :team_id
     """
-    result = await session.execute(text(sql), {"team_id": team_id})
+    result = await session.execute(_sql(sql), {"team_id": team_id})
     row = result.mappings().one_or_none()
     return dict(row) if row else None
 
 
 async def get_team_members(session: AsyncSession, team_id: int) -> list[int]:
     sql = "SELECT staff_id FROM ost_team_member WHERE team_id = :team_id"
-    result = await session.execute(text(sql), {"team_id": team_id})
+    result = await session.execute(_sql(sql), {"team_id": team_id})
     return [r["staff_id"] for r in result.mappings().all()]
 
 
@@ -351,7 +371,7 @@ async def list_topics(session: AsyncSession, limit: int = 50, offset: int = 0) -
         FROM ost_help_topic ht
         ORDER BY ht.topic ASC LIMIT :limit OFFSET :offset
     """
-    result = await session.execute(text(sql), {"limit": limit, "offset": offset})
+    result = await session.execute(_sql(sql), {"limit": limit, "offset": offset})
     return list(result.mappings().all())
 
 
@@ -373,7 +393,7 @@ async def get_topic(session: AsyncSession, topic_id: int) -> dict | None:
         FROM ost_help_topic ht
         WHERE ht.topic_id = :topic_id
     """
-    result = await session.execute(text(sql), {"topic_id": topic_id})
+    result = await session.execute(_sql(sql), {"topic_id": topic_id})
     row = result.mappings().one_or_none()
     return dict(row) if row else None
 
@@ -392,7 +412,7 @@ async def list_slas(session: AsyncSession, limit: int = 50, offset: int = 0) -> 
         FROM ost_sla s
         ORDER BY s.name ASC LIMIT :limit OFFSET :offset
     """
-    result = await session.execute(text(sql), {"limit": limit, "offset": offset})
+    result = await session.execute(_sql(sql), {"limit": limit, "offset": offset})
     return list(result.mappings().all())
 
 
@@ -410,7 +430,7 @@ async def get_sla(session: AsyncSession, sla_id: int) -> dict | None:
         FROM ost_sla s
         WHERE s.id = :sla_id
     """
-    result = await session.execute(text(sql), {"sla_id": sla_id})
+    result = await session.execute(_sql(sql), {"sla_id": sla_id})
     row = result.mappings().one_or_none()
     return dict(row) if row else None
 
@@ -428,7 +448,7 @@ async def list_priorities(session: AsyncSession, limit: int = 50, offset: int = 
         FROM ost_ticket_priority p
         ORDER BY p.priority_urgency ASC LIMIT :limit OFFSET :offset
     """
-    result = await session.execute(text(sql), {"limit": limit, "offset": offset})
+    result = await session.execute(_sql(sql), {"limit": limit, "offset": offset})
     return list(result.mappings().all())
 
 
@@ -443,7 +463,7 @@ async def get_priority(session: AsyncSession, priority_id: int) -> dict | None:
         FROM ost_ticket_priority p
         WHERE p.priority_id = :priority_id
     """
-    result = await session.execute(text(sql), {"priority_id": priority_id})
+    result = await session.execute(_sql(sql), {"priority_id": priority_id})
     row = result.mappings().one_or_none()
     return dict(row) if row else None
 
@@ -462,7 +482,7 @@ async def list_categories(session: AsyncSession, limit: int = 50, offset: int = 
         FROM ost_faq_category c
         ORDER BY c.name ASC LIMIT :limit OFFSET :offset
     """
-    result = await session.execute(text(sql), {"limit": limit, "offset": offset})
+    result = await session.execute(_sql(sql), {"limit": limit, "offset": offset})
     return list(result.mappings().all())
 
 async def get_category(session: AsyncSession, category_id: int) -> dict | None:
@@ -478,7 +498,7 @@ async def get_category(session: AsyncSession, category_id: int) -> dict | None:
         FROM ost_faq_category c
         WHERE c.category_id = :category_id
     """
-    result = await session.execute(text(sql), {"category_id": category_id})
+    result = await session.execute(_sql(sql), {"category_id": category_id})
     row = result.mappings().one_or_none()
     return dict(row) if row else None
 
@@ -509,7 +529,7 @@ async def list_faqs(
         {where_clause}
         ORDER BY f.question ASC LIMIT :limit OFFSET :offset
     """
-    result = await session.execute(text(sql), params)
+    result = await session.execute(_sql(sql), params)
     return list(result.mappings().all())
 
 async def get_faq(session: AsyncSession, faq_id: int) -> dict | None:
@@ -527,7 +547,7 @@ async def get_faq(session: AsyncSession, faq_id: int) -> dict | None:
         FROM ost_faq f
         WHERE f.faq_id = :faq_id
     """
-    result = await session.execute(text(sql), {"faq_id": faq_id})
+    result = await session.execute(_sql(sql), {"faq_id": faq_id})
     row = result.mappings().one_or_none()
     return dict(row) if row else None
 
@@ -546,7 +566,7 @@ async def list_canned(session: AsyncSession, limit: int = 50, offset: int = 0) -
         FROM ost_canned_response c
         ORDER BY c.title ASC LIMIT :limit OFFSET :offset
     """
-    result = await session.execute(text(sql), {"limit": limit, "offset": offset})
+    result = await session.execute(_sql(sql), {"limit": limit, "offset": offset})
     return list(result.mappings().all())
 
 async def get_canned(session: AsyncSession, canned_id: int) -> dict | None:
@@ -563,7 +583,7 @@ async def get_canned(session: AsyncSession, canned_id: int) -> dict | None:
         FROM ost_canned_response c
         WHERE c.canned_id = :canned_id
     """
-    result = await session.execute(text(sql), {"canned_id": canned_id})
+    result = await session.execute(_sql(sql), {"canned_id": canned_id})
     row = result.mappings().one_or_none()
     return dict(row) if row else None
 
@@ -588,7 +608,7 @@ async def list_banlist(session: AsyncSession, limit: int = 50, offset: int = 0) 
         + _BAN_RULES
         + " ORDER BY r.val ASC LIMIT :limit OFFSET :offset"
     )
-    result = await session.execute(text(sql), {"limit": limit, "offset": offset})
+    result = await session.execute(_sql(sql), {"limit": limit, "offset": offset})
     return list(result.mappings().all())
 
 async def get_banlist_entry(session: AsyncSession, ban_id: int) -> dict | None:
@@ -597,7 +617,7 @@ async def get_banlist_entry(session: AsyncSession, ban_id: int) -> dict | None:
         + _BAN_RULES
         + " AND r.id = :ban_id"
     )
-    result = await session.execute(text(sql), {"ban_id": ban_id})
+    result = await session.execute(_sql(sql), {"ban_id": ban_id})
     row = result.mappings().one_or_none()
     return dict(row) if row else None
 
@@ -617,7 +637,7 @@ async def list_forms(session: AsyncSession, limit: int = 50, offset: int = 0) ->
         WHERE (f.flags & 2) = 0                  -- DynamicForm::FLAG_DELETED is a soft delete
         ORDER BY f.title ASC LIMIT :limit OFFSET :offset
     """
-    result = await session.execute(text(sql), {"limit": limit, "offset": offset})
+    result = await session.execute(_sql(sql), {"limit": limit, "offset": offset})
     return list(result.mappings().all())
 
 async def get_form(session: AsyncSession, form_id: int) -> dict | None:
@@ -634,7 +654,7 @@ async def get_form(session: AsyncSession, form_id: int) -> dict | None:
         FROM ost_form f
         WHERE f.id = :form_id AND (f.flags & 2) = 0
     """
-    result = await session.execute(text(sql), {"form_id": form_id})
+    result = await session.execute(_sql(sql), {"form_id": form_id})
     row = result.mappings().one_or_none()
     return dict(row) if row else None
 
@@ -650,7 +670,7 @@ async def get_form_fields(session: AsyncSession, form_id: int) -> list:
         WHERE ff.form_id = :form_id
         ORDER BY ff.sort ASC
     """
-    result = await session.execute(text(sql), {"form_id": form_id})
+    result = await session.execute(_sql(sql), {"form_id": form_id})
     return list(result.mappings().all())
 
 
@@ -670,7 +690,7 @@ async def list_commands(session: AsyncSession, limit: int = 50, offset: int = 0)
         FROM ost_integration_inbox
         ORDER BY created_at DESC LIMIT :limit OFFSET :offset
     """
-    result = await session.execute(text(sql), {"limit": limit, "offset": offset})
+    result = await session.execute(_sql(sql), {"limit": limit, "offset": offset})
     return list(result.mappings().all())
 
 async def get_command(session: AsyncSession, command_id: int) -> dict | None:
@@ -691,7 +711,7 @@ async def get_command(session: AsyncSession, command_id: int) -> dict | None:
         FROM ost_integration_inbox
         WHERE id = :command_id
     """
-    result = await session.execute(text(sql), {"command_id": command_id})
+    result = await session.execute(_sql(sql), {"command_id": command_id})
     row = result.mappings().one_or_none()
     return dict(row) if row else None
 
@@ -734,7 +754,7 @@ async def search_all(session: AsyncSession, query: str, limit: int = 10) -> list
 
         LIMIT :limit
     """
-    result = await session.execute(text(sql), {"q": f"%{query}%", "limit": limit})
+    result = await session.execute(_sql(sql), {"q": f"%{query}%", "limit": limit})
     return list(result.mappings().all())
 
 
@@ -754,7 +774,7 @@ async def list_organizations(
     session: AsyncSession, limit: int = 50, offset: int = 0
 ) -> list:
     sql = _ORG_SELECT + " ORDER BY o.name ASC LIMIT :limit OFFSET :offset"
-    result = await session.execute(text(sql), {"limit": limit, "offset": offset})
+    result = await session.execute(_sql(sql), {"limit": limit, "offset": offset})
     return list(result.mappings().all())
 
 async def get_organization(session: AsyncSession, org_id: int) -> dict | None:
@@ -774,7 +794,7 @@ async def get_organization(session: AsyncSession, org_id: int) -> dict | None:
         LEFT JOIN ost_organization__cdata c ON c.org_id = o.id
         WHERE o.id = :org_id
     """
-    result = await session.execute(text(sql), {"org_id": org_id})
+    result = await session.execute(_sql(sql), {"org_id": org_id})
     row = result.mappings().one_or_none()
     return dict(row) if row else None
 
@@ -809,7 +829,7 @@ async def list_users(
         params["org_id"] = org_id
         
     sql = _USER_SELECT + where_clause + " ORDER BY u.name ASC LIMIT :limit OFFSET :offset"
-    result = await session.execute(text(sql), params)
+    result = await session.execute(_sql(sql), params)
     return list(result.mappings().all())
 
 async def get_user(session: AsyncSession, user_id: int) -> dict | None:
@@ -834,7 +854,7 @@ async def get_user(session: AsyncSession, user_id: int) -> dict | None:
         LEFT JOIN ost_user__cdata c ON c.user_id = u.id
         WHERE u.id = :user_id
     """
-    result = await session.execute(text(sql), {"user_id": user_id})
+    result = await session.execute(_sql(sql), {"user_id": user_id})
     row = result.mappings().one_or_none()
     return dict(row) if row else None
 
@@ -908,13 +928,13 @@ async def list_tasks(
         + " ORDER BY t.updated DESC"
         + " LIMIT :limit OFFSET :offset"
     )
-    result = await session.execute(text(sql), params)
+    result = await session.execute(_sql(sql), params)
     return list(result.mappings().all())
 
 
 async def get_task(session: AsyncSession, task_id: int) -> dict | None:
     sql = _TASK_SELECT + " WHERE t.id = :task_id"
-    result = await session.execute(text(sql), {"task_id": task_id})
+    result = await session.execute(_sql(sql), {"task_id": task_id})
     row = result.mappings().one_or_none()
     return dict(row) if row else None
 
@@ -943,7 +963,7 @@ async def get_task_thread(session: AsyncSession, task_id: int) -> list:
         WHERE th.object_type = 'A' AND th.object_id = :task_id
         ORDER BY te.created ASC, te.id ASC
     """
-    result = await session.execute(text(sql), {"task_id": task_id})
+    result = await session.execute(_sql(sql), {"task_id": task_id})
     return list(result.mappings().all())
 
 

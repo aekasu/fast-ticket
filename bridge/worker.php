@@ -39,6 +39,7 @@ require_once INCLUDE_DIR . 'class.plugin.php';
 if (!class_exists('FastApiIntegrationPlugin'))
     require_once dirname(__FILE__) . '/plugin.php';
 
+FastApiIntegrationPlugin::ensureTables();
 $plugin = new FastApiIntegrationPlugin();
 
 if (in_array('--one', $argv ?? [], true)) {

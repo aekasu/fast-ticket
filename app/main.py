@@ -38,14 +38,31 @@ logger = logging.getLogger(__name__)
 # ── Background outbox worker ──────────────────────────────────────────────────
 
 
+def _tables_missing(exc: Exception) -> bool:
+    """True when ``exc`` is 'the integration tables don't exist (yet)' — MySQL or SQLite wording."""
+    return "doesn't exist" in str(exc) or "no such table" in str(exc)
+
+
 async def _outbox_worker() -> None:
     """Continuously poll the integration outbox and dispatch events."""
     logger.info("Outbox worker started (interval=%.1fs)", settings.EVENT_POLL_INTERVAL_SECONDS)
+    warned_missing = False
     while True:
         try:
             await poll_and_process_events(AsyncSessionLocal)
-        except Exception:
-            logger.exception("Outbox worker encountered an unhandled error — continuing.")
+            warned_missing = False
+        except Exception as exc:
+            if _tables_missing(exc):
+                # The bridge plugin creates the tables when it is enabled; until then just wait.
+                if not warned_missing:
+                    logger.warning(
+                        "Integration tables not found (prefix %r) — is the fast-ticket bridge plugin "
+                        "installed and enabled in osTicket? Waiting for it.",
+                        settings.OSTICKET_TABLE_PREFIX,
+                    )
+                    warned_missing = True
+            else:
+                logger.exception("Outbox worker encountered an unhandled error — continuing.")
         await asyncio.sleep(settings.EVENT_POLL_INTERVAL_SECONDS)
 
 
@@ -56,8 +73,9 @@ async def _purge_worker() -> None:
             deleted = await purge_old_events(AsyncSessionLocal)
             if deleted:
                 logger.info("Purged %d old outbox events", deleted)
-        except Exception:
-            logger.exception("Retention purge failed — will retry next hour.")
+        except Exception as exc:
+            if not _tables_missing(exc):   # the outbox worker already warns about missing tables
+                logger.exception("Retention purge failed — will retry next hour.")
         await asyncio.sleep(3600)
 
 

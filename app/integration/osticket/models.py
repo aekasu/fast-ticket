@@ -11,6 +11,8 @@ from typing import Optional
 from sqlalchemy import DateTime
 from sqlmodel import Field, SQLModel
 
+from app.core.config import settings
+
 # Timestamps are naive UTC (osTicket/MySQL DATETIME, PHP writes NOW()). An explicit
 # sa_type bypasses sqlmodel>=0.0.47's wrapper, which rejects naive datetimes.
 _TS = DateTime(timezone=False)
@@ -19,7 +21,7 @@ _TS = DateTime(timezone=False)
 class IntegrationOutbox(SQLModel, table=True):
     """ost_integration_outbox — events produced by PHP-side command execution."""
 
-    __tablename__ = "ost_integration_outbox"
+    __tablename__ = f"{settings.OSTICKET_TABLE_PREFIX}integration_outbox"
 
     id: Optional[int] = Field(default=None, primary_key=True)
     event_type: str = Field(index=True)                     # e.g. "ticket.created"
