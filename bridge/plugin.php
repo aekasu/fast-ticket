@@ -36,6 +36,8 @@ class FastApiIntegrationPluginConfig extends PluginConfig {
 
 class FastApiIntegrationPlugin extends Plugin {
 
+    const VERSION = '1.0';   // keep in sync with the manifest below and install.php
+
     var $config_class = 'FastApiIntegrationPluginConfig';
 
     /** Integration key from env (compose) or the config row install.php writes. */
@@ -385,6 +387,41 @@ class FastApiIntegrationPlugin extends Plugin {
         $dispatcher->append(
             url_post("^/auth/integration", array($this, 'authenticateForFastApi'))
         );
+        $dispatcher->append(
+            url_get("^/fast-ticket/handshake", array($this, 'handshake'))
+        );
+    }
+
+    /**
+     * GET /api/fast-ticket/handshake — what fast-ticket's `make doctor` asks the instance.
+     * Needs the integration key, like login. Read-only; reveals versions and readiness only.
+     */
+    function handshake() {
+        header('Content-Type: application/json');
+        $expected = self::integrationKey();
+        $provided = $_SERVER['HTTP_X_INTEGRATION_KEY'] ?? '';
+        if (!$expected || !hash_equals($expected, $provided)) {
+            http_response_code(403);
+            echo json_encode(['error' => 'Invalid integration key.']);
+            return;
+        }
+        $tables_ready = true;
+        foreach ([FASTAPI_INBOX_TABLE, FASTAPI_OUTBOX_TABLE] as $table) {
+            $res = db_query('SHOW TABLES LIKE ' . db_input($table));
+            if (!$res || !db_num_rows($res))
+                $tables_ready = false;
+        }
+        $sig = db_query("SELECT value FROM " . CONFIG_TABLE . " WHERE namespace='core' AND `key`='schema_signature' LIMIT 1");
+        $sig = $sig ? db_fetch_array($sig) : null;
+        echo json_encode([
+            'plugin_version'   => self::VERSION,
+            'osticket_version' => defined('THIS_VERSION') ? THIS_VERSION : null,
+            'schema_signature' => $sig ? $sig['value'] : null,
+            'table_prefix'     => TABLE_PREFIX,
+            'php_version'      => PHP_VERSION,
+            'tables_ready'     => $tables_ready,
+            'worker_available' => function_exists('pcntl_exec'),
+        ]);
     }
 
     function authenticateForFastApi() {
@@ -395,7 +432,7 @@ class FastApiIntegrationPlugin extends Plugin {
 // Plugin registration
 return array(
     'id'          => 'fastapi_integration',
-    'version'     => '1.0',
+    'version'     => FastApiIntegrationPlugin::VERSION,
     'name'        => 'FastAPI Integration Bridge',
     'author'      => 'fast-ticket',
     'description' => 'Bridges fast-ticket FastAPI requests with osTicket PHP model layer.',

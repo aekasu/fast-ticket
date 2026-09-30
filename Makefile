@@ -1,4 +1,4 @@
-.PHONY: test test-unit test-integration test-e2e lint install
+.PHONY: doctor test test-unit test-integration test-e2e lint install
 
 PYTHON := .venv/bin/python
 
@@ -21,6 +21,11 @@ test-integration:
 test-e2e:
 	E2E_CRON_CMD="docker compose exec -T -u www-data osticket-cron php /var/www/html/api/cron.php" \
 	    $(PYTHON) -m pytest tests/e2e -m e2e -v
+
+# Preflight of the osTicket instance the API points at (prefix, plugin tables, every read query
+# against the live schema, plugin handshake, DB privileges, queue health). Exit 1 on a failure.
+doctor:
+	docker compose exec -T api /app/.venv/bin/python -m app.doctor
 
 test-cov:
 	$(PYTHON) -m pytest tests/ --cov=app --cov-report=term-missing -v
