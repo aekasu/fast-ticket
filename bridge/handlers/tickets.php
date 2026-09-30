@@ -439,6 +439,55 @@ class FastApiTicketHandler {
         return ['ticket_id' => $ticket->getId(), 'collaborator_user_id' => $user->getId()];
     }
 
+    private static function requireCollaborator(Ticket $ticket, $user_id) {
+        $thread = $ticket->getThread();
+        $collab = $thread ? Collaborator::lookup(['thread_id' => $thread->getId(), 'user_id' => (int) $user_id]) : null;
+        if (!$collab) {
+            throw new Exception("User {$user_id} is not a collaborator of this ticket.");
+        }
+        return $collab;
+    }
+
+    /**
+     * Update a collaborator's flags (Collaborator::FLAG_ACTIVE = receives the thread's mail,
+     * FLAG_CC). Only the flags present in the payload change. Payload: user_id, is_active, is_cc.
+     */
+    public static function updateCollaborator($payload, $staff_id) {
+        $ticket = self::requireTicket($payload['ticket_id'] ?? 0);
+        self::requirePerm($ticket, Ticket::PERM_EDIT, 'edit');
+        $collab = self::requireCollaborator($ticket, $payload['user_id'] ?? 0);
+        $changed = false;
+        foreach (['is_active' => Collaborator::FLAG_ACTIVE, 'is_cc' => Collaborator::FLAG_CC] as $key => $flag) {
+            if (array_key_exists($key, $payload)) {
+                $collab->setFlag($flag, (bool) $payload[$key]);
+                $changed = true;
+            }
+        }
+        if (!$changed) {
+            throw new Exception("Nothing to change: give 'is_active' and/or 'is_cc'.");
+        }
+        if (!$collab->save()) {
+            throw new Exception('Collaborator was not updated.');
+        }
+        return ['ticket_id' => $ticket->getId(), 'collaborator_user_id' => (int) $collab->getUserId(),
+                'is_active' => $collab->isActive(), 'is_cc' => $collab->isCc()];
+    }
+
+    /** Remove a collaborator and log the "collab" event, as Thread::updateCollaborators() does. */
+    public static function removeCollaborator($payload, $staff_id) {
+        $ticket = self::requireTicket($payload['ticket_id'] ?? 0);
+        self::requirePerm($ticket, Ticket::PERM_EDIT, 'edit');
+        $collab = self::requireCollaborator($ticket, $payload['user_id'] ?? 0);
+        $user_id = (int) $collab->getUserId();
+        $thread = $ticket->getThread();
+        // capture before deleting: the event needs the name
+        $thread->logCollaboratorEvents($collab, ['del' => true]);
+        if (!$collab->delete()) {
+            throw new Exception('Collaborator was not removed.');
+        }
+        return ['ticket_id' => $ticket->getId(), 'collaborator_user_id' => $user_id];
+    }
+
     public static function answered($payload, $staff_id) {
         return self::setAnswered($payload, true, $staff_id);
     }
