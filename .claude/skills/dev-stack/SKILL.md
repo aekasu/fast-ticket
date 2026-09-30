@@ -17,6 +17,10 @@ Full runbook: `notes/fast-ticket-bridge-bringup-and-testing.md`. Read Part 1 (fo
 | `osticket-cron` | osTicket cron once a minute → the same claim via `worker.php --one` — **fallback** if the worker is down | — |
 | `api` | FastAPI | http://localhost:8000 (`/docs`, `/health`) |
 
+## First step when anything is off
+
+`make doctor` checks the database and table prefix, the plugin's tables, every read query against the live schema, the plugin handshake (key, versions), DB grants and stuck commands, and names what failed. Run it before reading logs.
+
 ## Common commands
 
 ```bash

@@ -1,4 +1,4 @@
-.PHONY: doctor test test-unit test-integration test-e2e lint install
+.PHONY: bridge-zip doctor test test-unit test-integration test-e2e lint install
 
 PYTHON := .venv/bin/python
 
@@ -26,6 +26,11 @@ test-e2e:
 # against the live schema, plugin handshake, DB privileges, queue health). Exit 1 on a failure.
 doctor:
 	docker compose exec -T api /app/.venv/bin/python -m app.doctor
+
+# The bridge as an osTicket plugin zip (dist/fastapi_integration-<version>.zip) for installing
+# on an existing osTicket: see notes/install-on-an-existing-osticket.md
+bridge-zip:
+	python3 scripts/build_bridge_zip.py
 
 test-cov:
 	$(PYTHON) -m pytest tests/ --cov=app --cov-report=term-missing -v

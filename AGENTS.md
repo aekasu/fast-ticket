@@ -22,11 +22,13 @@ fast-ticket/
 ├── app/                              # FastAPI application (Python 3.12, uv)
 │   ├── api/v1/router.py              # Mounts every module router
 │   ├── core/                         # Config, DB, auth, security (require_perm), events, WS manager
-│   ├── integration/osticket/         # Bridge boundary only: inbox model, dispatch, outbox, read-only SQL
+│   ├── integration/osticket/         # Bridge boundary only: inbox model, dispatch, outbox, read-only SQL, doctor.py
+│   ├── doctor.py                     # `make doctor`: preflight of the osTicket instance
 │   ├── modules/<domain>/             # One sub-package per API domain (router / models / service)
 │   └── workers/events.py             # Outbox poller → event handlers → WebSocket
 ├── bridge/                           # PHP integration bridge plugin (installed into osTicket)
-│   ├── plugin.php                    # Signal hooks, inbox claim + dispatch, outbox emit
+│   ├── plugin.php                    # Signal hooks, inbox claim + dispatch, outbox emit, handshake route, settings (integration key)
+│   ├── schema.php                    # the ONLY definition of the plugin's two tables (created on enable, prefix-aware)
 │   ├── registry.php                  # command type → [handler file, class, method, outbox event] (one line each)
 │   ├── worker.php                    # optional long-running inbox worker (~1 s latency); cron is the fallback
 │   └── handlers/<domain>.php         # FastApi<Domain>Handler classes — one static method per command (+ common.php helpers)
@@ -71,6 +73,8 @@ Dispatcher guarantees (`bridge/plugin.php`, keep them): each command runs **as t
 ### Read path
 
 `app/integration/osticket/read_repository.py` — raw `SELECT`-only SQL against osTicket tables. This is the only file that may contain osTicket-schema SQL. Services map rows → Pydantic models.
+
+Queries are written against osTicket's default `ost_` prefix and run through `_sql()`, which rewrites the prefix to `OSTICKET_TABLE_PREFIX` — **never call `text()` directly there**, or that instance's table names break. `make doctor` runs every function in this file against the live schema, so a new read function must be callable with `limit`/`offset`/`*_id` arguments only (a test enforces it).
 
 Queries must match the **real osTicket 1.18 schema** (`DESCRIBE` it; don't assume): booleans such as active/enabled/deletable are usually bits in `flags`; dynamic-form values (ticket subject, task title, organization/user phone & notes) are in `ost_*__cdata`; threads are `ost_thread` by `object_type` + `object_id`. And they must be **NULL-safe** (`COALESCE`, `> 0` for "featured" 2) — osTicket stores NULL text and zero dates, and the mocked unit tests cannot see a row that breaks response validation.
 
@@ -140,6 +144,7 @@ Read the relevant section **before** implementing any endpoint.
 - `notes/OSTICKET_CAPABILITIES.md` — inventory of osTicket PHP model operations: suitability ratings, permissions, relationships (summary matrix §2, per-domain from §3, unverified items flagged in §8).
 - `notes/INTEGRATION_CAPABILITIES.md` — API ↔ bridge matrix: required commands (§3), events (§4), read-throughs (§5), open decisions (§6).
 - `notes/fast-ticket-bridge-bringup-and-testing.md` — Docker bring-up order, known footguns, testing each hop in isolation.
+- `notes/install-on-an-existing-osticket.md` — installing the plugin zip on an existing osTicket, worker/cron, least-privilege DB user, `make doctor`.
 
 Implementation priority:
 - **Wave 1 (high):** Tickets, Threads/Messages, Users, Organizations, Staff, Teams, Departments, Help Topics, Knowledgebase/FAQ, Canned Responses, Tasks, SLA, Banlist
@@ -201,7 +206,11 @@ make reset        # nuke all volumes (DB + persisted ost-config.php) for a clean
 make install      # uv sync --extra dev
 make dev          # local uvicorn with reload (needs external MySQL)
 make test-docker  # isolated test suite in Docker
+make doctor       # preflight the osTicket instance the API points at (prefix, plugin tables, every read query, handshake, DB grants)
+make bridge-zip   # dist/fastapi_integration-<version>.zip — the plugin, for an existing osTicket
 ```
+
+The stack takes `OSTICKET_TABLE_PREFIX` and the host ports (`API_PORT`, `OSTICKET_PORT`, `MYSQL_PORT`) from the environment, so a second stack can run beside the first (`docker compose -p other up`) — that is how a non-`ost_` prefix is tested end to end. The bridge plugin creates the integration tables itself (`bridge/schema.php`); the API does not (`AUTO_CREATE_SCHEMA=false`).
 
 FastAPI: http://localhost:8000 (`/docs`) · osTicket: http://localhost:8080 (`/scp`) · MySQL on host port 13306.
 
@@ -227,6 +236,7 @@ FastAPI: http://localhost:8000 (`/docs`) · osTicket: http://localhost:8080 (`/s
 - Don't skip the idempotency check in `dispatch_command`.
 - Don't merge a route without `require_perm(...)` / `require_admin()` (or an explicit `# no permission required: <why>` comment).
 - No `Any` in request schemas — every field explicitly typed and constrained.
+- Don't define the integration tables anywhere but `bridge/schema.php` (the SQLModel classes must mirror it; a test compares the columns), and don't put a `DEFAULT` on a TEXT column there (MySQL < 8.0.13).
 - Don't add a command type in Python without the matching `bridge/registry.php` entry (and vice versa) — `tests/unit/test_bridge_registry.py` enforces it.
 - Don't report a bridge handler as working because it returned without error; prove it stored the right thing (read it back) and that a partial update preserved the other fields.
 - Don't write osTicket SQL from memory or from `notes/OSTICKET_CAPABILITIES.md`; check the schema and the class source.
