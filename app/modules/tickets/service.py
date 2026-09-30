@@ -32,6 +32,9 @@ from app.modules.tickets.models import (
     TicketClose,
     TicketMerge,
     TicketReopen,
+    TicketClaim,
+    TicketRefer,
+    TicketRelease,
     TicketTransfer,
     TicketUpdate,
 )
@@ -333,6 +336,63 @@ async def update_ticket(
         aggregate_type="ticket",
         aggregate_id=str(ticket_id),
         payload={"ticket_id": ticket_id, **fields},
+        requested_by_staff_id=staff_id,
+        idempotency_key=idempotency_key,
+    )
+    return _make_cmd_response(cmd, idempotency_key)
+
+
+async def claim_ticket(
+    session: AsyncSession,
+    ticket_id: int,
+    body: TicketClaim,
+    staff_id: int,
+    idempotency_key: str | None,
+) -> CommandResponse:
+    cmd = await dispatch_command(
+        session=session,
+        command_type="ticket.claim",
+        aggregate_type="ticket",
+        aggregate_id=str(ticket_id),
+        payload={"ticket_id": ticket_id, **body.model_dump(exclude_none=True)},
+        requested_by_staff_id=staff_id,
+        idempotency_key=idempotency_key,
+    )
+    return _make_cmd_response(cmd, idempotency_key)
+
+
+async def release_ticket(
+    session: AsyncSession,
+    ticket_id: int,
+    body: TicketRelease,
+    staff_id: int,
+    idempotency_key: str | None,
+) -> CommandResponse:
+    cmd = await dispatch_command(
+        session=session,
+        command_type="ticket.release",
+        aggregate_type="ticket",
+        aggregate_id=str(ticket_id),
+        payload={"ticket_id": ticket_id, **body.model_dump(exclude_none=True)},
+        requested_by_staff_id=staff_id,
+        idempotency_key=idempotency_key,
+    )
+    return _make_cmd_response(cmd, idempotency_key)
+
+
+async def refer_ticket(
+    session: AsyncSession,
+    ticket_id: int,
+    body: TicketRefer,
+    staff_id: int,
+    idempotency_key: str | None,
+) -> CommandResponse:
+    cmd = await dispatch_command(
+        session=session,
+        command_type="ticket.refer",
+        aggregate_type="ticket",
+        aggregate_id=str(ticket_id),
+        payload={"ticket_id": ticket_id, **body.model_dump(exclude_none=True)},
         requested_by_staff_id=staff_id,
         idempotency_key=idempotency_key,
     )

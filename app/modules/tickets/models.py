@@ -9,7 +9,7 @@ Three tiers:
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 # ── Shared response ────────────────────────────────────────────────────────────
@@ -174,3 +174,36 @@ class TicketUpdate(BaseModel):
     source: Optional[str] = Field(default=None, min_length=1, max_length=32)
     due_date: Optional[datetime] = Field(default=None, description="Must be in the future; null clears it.")
     note: Optional[str] = Field(default=None, max_length=10000, description="Logged as an internal note.")
+
+
+class TicketClaim(BaseModel):
+    note: str = Field(default="", max_length=10000)
+
+
+class TicketRelease(BaseModel):
+    """Drop the agent and/or the team assignment (both = unassign)."""
+
+    staff: bool = False
+    team: bool = False
+    note: str = Field(default="", max_length=10000)
+
+    @model_validator(mode="after")
+    def _something_to_release(self):
+        if not (self.staff or self.team):
+            raise ValueError("set 'staff' and/or 'team' to say which assignment to release")
+        return self
+
+
+class TicketRefer(BaseModel):
+    """Give an agent, team or department referral access; exactly one referee."""
+
+    agent_id: Optional[int] = Field(default=None, gt=0)
+    team_id: Optional[int] = Field(default=None, gt=0)
+    dept_id: Optional[int] = Field(default=None, gt=0)
+    note: str = Field(default="", max_length=10000)
+
+    @model_validator(mode="after")
+    def _one_referee(self):
+        if sum(v is not None for v in (self.agent_id, self.team_id, self.dept_id)) != 1:
+            raise ValueError("give exactly one of agent_id, team_id, dept_id")
+        return self

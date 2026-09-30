@@ -9,7 +9,8 @@ query (``read_repository.ticket_visibility``); a ticket they may not open is a 4
 Writes — permission map (role permissions — any of the agent's roles; the bridge applies osTicket's exact
 per-department check when it runs the command):
   ticket.create     ticket.reply      ticket.note (→ ticket.reply used for notes)
-  ticket.close      ticket.assign     ticket.transfer
+  ticket.close      ticket.assign (assign, claim, refer)     ticket.transfer
+  ticket.release    (release / unassign)
   ticket.delete     ticket.merge      ticket.markanswered
   ticket.edit       (edit fields, change owner)
 """
@@ -34,6 +35,9 @@ from app.modules.tickets.models import (
     TicketNote,
     TicketReopen,
     TicketReply,
+    TicketClaim,
+    TicketRefer,
+    TicketRelease,
     TicketTransfer,
     TicketUpdate,
 )
@@ -259,6 +263,60 @@ async def update_ticket(
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
     return await service.update_ticket(
+        session, ticket_id, body, current_user["staff_id"], idempotency_key
+    )
+
+
+@router.post(
+    "/{ticket_id}/claim",
+    response_model=CommandResponse,
+    status_code=202,
+    summary="Assign an open, unassigned ticket to yourself",
+)
+async def claim_ticket(
+    ticket_id: int,
+    body: TicketClaim,
+    current_user: dict = require_perm("ticket.assign"),
+    session: AsyncSession = Depends(get_session),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    return await service.claim_ticket(
+        session, ticket_id, body, current_user["staff_id"], idempotency_key
+    )
+
+
+@router.post(
+    "/{ticket_id}/release",
+    response_model=CommandResponse,
+    status_code=202,
+    summary="Release (unassign) the agent and/or team assignment",
+)
+async def release_ticket(
+    ticket_id: int,
+    body: TicketRelease,
+    current_user: dict = require_perm("ticket.release"),
+    session: AsyncSession = Depends(get_session),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    return await service.release_ticket(
+        session, ticket_id, body, current_user["staff_id"], idempotency_key
+    )
+
+
+@router.post(
+    "/{ticket_id}/refer",
+    response_model=CommandResponse,
+    status_code=202,
+    summary="Refer the ticket to an agent, team or department",
+)
+async def refer_ticket(
+    ticket_id: int,
+    body: TicketRefer,
+    current_user: dict = require_perm("ticket.assign"),
+    session: AsyncSession = Depends(get_session),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    return await service.refer_ticket(
         session, ticket_id, body, current_user["staff_id"], idempotency_key
     )
 

@@ -472,6 +472,34 @@ def test_ticket_patch_edits_fields_and_keeps_the_rest(bridge, uniq):
     bridge.refuses("PATCH", f"/api/v1/tickets/{tk}", {"due_date": "2001-01-01T00:00:00Z"}, because="must be in the future")
 
 
+def test_ticket_claim_release_and_refer(bridge, uniq):
+    holder = {}
+    tk = _new_ticket(bridge, uniq, holder)
+    url = f"/api/v1/tickets/{tk}"
+    bridge.refuses("POST", f"{url}/release", {"staff": True}, because="not assigned")
+
+    bridge.command("POST", f"{url}/claim", {"note": "mine"})
+    assert bridge.read(url)["assignee_staff_id"] == 1
+    bridge.refuses("POST", f"{url}/claim", {}, because="already assigned")
+
+    team = bridge.create("/api/v1/teams", {"name": f"e2e-claim-team-{uniq}", "members": [1]}, cleanup="/api/v1/teams/{id}")
+    bridge.command("POST", f"{url}/assign-team", {"team_id": team})
+    bridge.command("POST", f"{url}/release", {"team": True, "note": "team off"})
+    got = bridge.read(url)
+    assert got["team_id"] is None and got["assignee_staff_id"] == 1     # only the team was dropped
+    bridge.refuses("POST", f"{url}/release", {"team": True}, because="not assigned to a team")
+
+    bridge.command("POST", f"{url}/assign-team", {"team_id": team})
+    bridge.command("POST", f"{url}/release", {"staff": True, "team": True})   # = unassign
+    got = bridge.read(url)
+    assert got["team_id"] is None and got["assignee_staff_id"] is None
+
+    bridge.command("POST", f"{url}/refer", {"dept_id": 2, "note": "fyi"})
+    bridge.command("POST", f"{url}/refer", {"team_id": team})
+    bridge.refuses("POST", f"{url}/refer", {"dept_id": 1}, because="already in the department")
+    bridge.refuses("POST", f"{url}/refer", {"agent_id": 99999}, because="Unknown selection")
+
+
 def test_ticket_merge_combines_children_into_the_parent_and_closes_them(bridge, uniq):
     holder = {}
     parent = _new_ticket(bridge, uniq, holder, "p")

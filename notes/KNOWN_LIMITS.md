@@ -28,6 +28,8 @@ Each entry: what is true today · what it means for you · what will resolve it 
 | Limit | Impact | Resolved by |
 |---|---|---|
 | **`PATCH /tickets/{id}` edits subject, priority, help topic, SLA, source, due date and adds a note; it does not edit other custom ticket-form fields**, and the due date is taken as UTC.  | Custom fields on a ticket form cannot be changed through the API yet. | Dynamic-form answers as a sub-resource (NEXT 0.B) |
+| **Release needs the `ticket.release` role permission through the API; osTicket also lets a department manager release without it** (`ajax.tickets.php`: `PERM_RELEASE \|\| isManager()`). The bridge handler applies osTicket's exact rule, but the registry check in front of it is stricter. | A manager whose role lacks `ticket.release` is refused. Never looser than osTicket. | Registry support for an "or manager" permission |
+| **Referrals can be created but not listed or removed** (`refer` only; osTicket's "manage referrals" action and the ticket's referral list are not exposed). | An API client cannot see or undo a referral it made. | NEXT 0.A follow-up |
 
 ## Login and abuse protection
 

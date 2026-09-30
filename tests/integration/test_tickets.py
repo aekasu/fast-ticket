@@ -625,6 +625,9 @@ async def test_all_write_endpoints_require_auth():
         ("POST",   "/1/transfer"),
         ("POST",   "/1/change-owner"),
         ("PATCH",  "/1"),
+        ("POST",   "/1/claim"),
+        ("POST",   "/1/release"),
+        ("POST",   "/1/refer"),
         ("DELETE", "/1"),
         ("POST",   "/1/merge"),
         ("POST",   "/1/answered"),
@@ -639,3 +642,27 @@ async def test_all_write_endpoints_require_auth():
             assert resp.status_code == 401, (
                 f"{method} {path} returned {resp.status_code}, expected 401"
             )
+
+
+@pytest.mark.asyncio
+async def test_claim_release_refer_queue_commands():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        claim = await ac.post(TICKETS_URL + "/5/claim", json={"note": "mine"}, headers=_auth(["ticket.assign"]))
+        release = await ac.post(TICKETS_URL + "/5/release", json={"staff": True, "team": True},
+                                headers=_auth(["ticket.release"]))
+        refer = await ac.post(TICKETS_URL + "/5/refer", json={"team_id": 2}, headers=_auth(["ticket.assign"]))
+    assert (claim.status_code, release.status_code, refer.status_code) == (202, 202, 202)
+    rows = await _inbox_rows()
+    assert [r.command_type for r in rows] == ["ticket.claim", "ticket.release", "ticket.refer"]
+    assert json.loads(rows[1].payload) == {"ticket_id": 5, "staff": True, "team": True, "note": ""}
+    assert json.loads(rows[2].payload)["team_id"] == 2
+
+
+@pytest.mark.asyncio
+async def test_release_and_refer_validate_and_check_permission():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        none = await ac.post(TICKETS_URL + "/5/release", json={}, headers=_auth(["ticket.release"]))
+        two = await ac.post(TICKETS_URL + "/5/refer", json={"agent_id": 1, "team_id": 2}, headers=_auth(["ticket.assign"]))
+        zero = await ac.post(TICKETS_URL + "/5/refer", json={}, headers=_auth(["ticket.assign"]))
+        denied = await ac.post(TICKETS_URL + "/5/release", json={"staff": True}, headers=_auth(["ticket.assign"]))
+    assert (none.status_code, two.status_code, zero.status_code, denied.status_code) == (422, 422, 422, 403)
