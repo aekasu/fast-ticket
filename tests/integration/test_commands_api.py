@@ -63,6 +63,56 @@ async def test_get_command_returns_detail():
 
 
 @pytest.mark.asyncio
+async def test_get_command_wait_returns_as_soon_as_the_command_finishes():
+    done = {**MOCK_COMMAND, "status": "done", "result_payload": '{"ticket_id": 7}'}
+    repo = AsyncMock(side_effect=[MOCK_COMMAND, {**MOCK_COMMAND, "status": "processing"}, done])
+    with patch("app.modules.commands.service.repo.get_command", new=repo):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            resp = await ac.get("/api/v1/commands/1?wait=10", headers=_auth(["commands.read"]))
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "done"
+    assert resp.json()["result_payload"] == '{"ticket_id": 7}'
+    assert repo.await_count == 3
+
+
+@pytest.mark.asyncio
+async def test_get_command_wait_gives_up_and_returns_the_pending_row():
+    repo = AsyncMock(return_value=MOCK_COMMAND)
+    with patch("app.modules.commands.service.repo.get_command", new=repo):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            resp = await ac.get("/api/v1/commands/1?wait=0.3", headers=_auth(["commands.read"]))
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "pending"
+    assert repo.await_count >= 2
+
+
+@pytest.mark.asyncio
+async def test_get_command_without_wait_reads_once():
+    repo = AsyncMock(return_value=MOCK_COMMAND)
+    with patch("app.modules.commands.service.repo.get_command", new=repo):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            resp = await ac.get("/api/v1/commands/1", headers=_auth(["commands.read"]))
+    assert resp.status_code == 200
+    assert repo.await_count == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("wait", ["-1", "31", "abc"])
+async def test_get_command_rejects_an_invalid_wait(wait):
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        resp = await ac.get(f"/api/v1/commands/1?wait={wait}", headers=_auth(["commands.read"]))
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_get_command_wait_on_a_missing_command_is_404():
+    with patch("app.modules.commands.service.repo.get_command", new=AsyncMock(return_value=None)):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            resp = await ac.get("/api/v1/commands/99?wait=5", headers=_auth(["commands.read"]))
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
 async def test_commands_require_auth():
     endpoints = [
         ("GET", "/api/v1/commands"),

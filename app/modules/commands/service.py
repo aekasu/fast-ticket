@@ -1,5 +1,6 @@
 """Commands service layer."""
 
+import asyncio
 import logging
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -47,3 +48,28 @@ async def get_command(session: AsyncSession, command_id: int) -> CommandDetail |
     if not row:
         return None
     return CommandDetail(**row)
+
+
+FINISHED_STATUSES = ("done", "failed")
+_WAIT_POLL_SECONDS = 0.25
+
+
+async def wait_for_command(
+    session: AsyncSession, command_id: int, wait: float
+) -> CommandDetail | None:
+    """Return the command, holding the request up to ``wait`` seconds for it to finish.
+
+    Lets a client learn the result of a write (and the id a create produced) in one call
+    instead of polling. Returns the row as it stands when the time is up, still
+    ``pending``/``processing``, so the caller can keep waiting.
+    """
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + wait
+    while True:
+        command = await get_command(session, command_id)
+        if command is None or command.status in FINISHED_STATUSES or loop.time() >= deadline:
+            return command
+        # End the read transaction: under MySQL's REPEATABLE READ the next SELECT would
+        # otherwise keep seeing the snapshot from before the bridge committed its result.
+        await session.rollback()
+        await asyncio.sleep(_WAIT_POLL_SECONDS)

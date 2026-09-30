@@ -29,10 +29,16 @@ async def list_commands(
 @router.get("/commands/{command_id}", response_model=CommandDetail, summary="Get command detail")
 async def get_command(
     command_id: int,
+    wait: float = Query(
+        default=0,
+        ge=0,
+        le=30,
+        description="Seconds to hold the request while the command is still pending/processing.",
+    ),
     current_user: dict = require_perm("commands.read"),
     session: AsyncSession = Depends(get_session),
 ):
-    command = await service.get_command(session, command_id)
+    command = await service.wait_for_command(session, command_id, wait)
     if not command:
         raise HTTPException(status_code=404, detail="Command not found")
     return command
