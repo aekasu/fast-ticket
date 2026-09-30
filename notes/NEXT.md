@@ -21,6 +21,36 @@ after. fast-ticket should work against any osTicket instance out of the box.
 
 ## Direction, in order
 
+### 0. Replicate osTicket — gap audit (2026-09-30)
+Compared `notes/OSTICKET_CAPABILITIES.md` §2 against the routers and `bridge/registry.php` (66 command types).
+Audited: which operations exist. **Not audited:** how completely each PATCH covers the fields osTicket's own
+edit page has, and whether each handler matches the page — check that when you touch one.
+Work in this order; for every item follow the "Adding a scoped read" rule in AGENTS.md and the add-endpoint skill.
+
+**A. Ticket lifecycle gaps (agents live here) — do first**
+- Edit ticket fields (`Ticket::update` — subject, priority, SLA, topic, due date, form answers): no `PATCH /tickets/{id}`.
+- Claim, release (unassign), unassign, refer: `assign`/`assign-team` exist, the rest do not.
+- Collaborators: only `add`; no list, update or remove.
+- Thread: no attachments (upload/download), no thread-entry edit/resend, no "post client message".
+- Ticket export (PDF/ZIP), edit lock: skip until needed (low).
+
+**B. Tasks / users / orgs / staff depth**
+- Tasks: create/assign/close/reopen/note/edit/delete exist; check transfer, thread attachments, task forms.
+- Users: no lock/unlock, register account, password reset/confirm email, CSV import.
+- Organizations: check add/remove members (may ride on user update).
+- Staff: no password reset, no permissions/access update as its own resource (may ride on PATCH), no CSV import.
+- Dynamic-form answers as a sub-resource (fill/validate).
+
+**C. Non-admin reference data** (see item 1 "Deferred authorization work" below): teams, agent directory,
+assignable agents/teams, SLAs, forms for an ordinary agent building an assign form.
+
+**D. Wave 2, one domain at a time (mostly Admin Panel, light on scoping):** filters + rules, custom lists,
+business hours/schedules, roles, API keys, email accounts (config only, not piping), pages, export, logs/audit.
+Search exists but is basic.
+
+**E. Deliberately not exposed (AGENTS.md "What NOT to do"):** queue query-builder, sequences, sessions,
+draft autosave, raw config bulk-write, plugin registration, email piping, cron.
+
 ### 1. Deferred authorization work (KNOWN_LIMITS → "Authorization")
 Pick per need; each needs osTicket's rule read first (class + `scp/*.php` page), never guessed:
 - Teams, agent directory, SLA plans, forms and detail of departments/topics/priorities are admin-only. Non-admin
