@@ -30,6 +30,7 @@ return [
     'ticket.assign'           => ['tickets', 'FastApiTicketHandler', 'assign', 'ticket.assigned', 'role:ticket.assign'],
     'ticket.assign_team'      => ['tickets', 'FastApiTicketHandler', 'assignTeam', 'ticket.team_assigned', 'role:ticket.assign'],
     'ticket.transfer'         => ['tickets', 'FastApiTicketHandler', 'transfer', 'ticket.transferred', 'role:ticket.transfer'],
+    'ticket.update'           => ['tickets', 'FastApiTicketHandler', 'update', 'ticket.updated', 'role:ticket.edit'],
     'ticket.change_owner'     => ['tickets', 'FastApiTicketHandler', 'changeOwner', 'ticket.owner_changed', 'role:ticket.edit'],
     'ticket.delete'           => ['tickets', 'FastApiTicketHandler', 'delete', 'ticket.deleted', 'role:ticket.delete'],
     'ticket.merge'            => ['tickets', 'FastApiTicketHandler', 'merge', 'ticket.merged', 'role:ticket.merge'],

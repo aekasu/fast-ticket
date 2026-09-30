@@ -22,6 +22,9 @@ require_once INCLUDE_DIR . 'class.staff.php';
 require_once INCLUDE_DIR . 'class.dept.php';
 require_once INCLUDE_DIR . 'class.team.php';
 require_once INCLUDE_DIR . 'class.user.php';
+require_once INCLUDE_DIR . 'class.sla.php';
+require_once INCLUDE_DIR . 'class.topic.php';
+require_once INCLUDE_DIR . 'class.priority.php';
 require_once dirname(__FILE__) . '/common.php';
 
 class FastApiTicketHandler {
@@ -229,6 +232,95 @@ class FastApiTicketHandler {
             throw new Exception('Owner was not changed (the requesting staff member needs the ticket edit permission).');
         }
         return ['ticket_id' => $ticket->getId(), 'user_id' => $user->getId()];
+    }
+
+    /**
+     * PATCH: what scp/tickets.php?a=edit does. Ticket::update() overwrites topic, SLA, source and
+     * due date from the submitted form, so the vars start from the stored state and only the
+     * keys present in the payload are overlaid. Subject and priority are ticket-form answers,
+     * not columns: they are set on the stored form entries before update() saves the answers.
+     * Payload keys: topic_id, sla_id (0 = none), due_date (UTC 'Y-m-d H:i:s'; null = clear), source,
+     * subject, priority_id, note. update() keeps every form entry (forms = all entry ids), so
+     * none is deleted.
+     */
+    public static function update($payload, $staff_id) {
+        $ticket = self::requireTicket($payload['ticket_id'] ?? 0);
+        self::requirePerm($ticket, Ticket::PERM_EDIT, 'edit');
+
+        $forms = [];
+        $entries = DynamicFormEntry::forTicket($ticket->getId());
+        foreach ($entries as $entry) {
+            $entry->addMissingFields();
+            $forms[] = $entry->getId();
+        }
+
+        $answers = [];
+        if (array_key_exists('subject', $payload)) {
+            $answers['subject'] = (string) $payload['subject'];
+        }
+        if (array_key_exists('priority_id', $payload)) {
+            if (!Priority::lookup((int) $payload['priority_id'])) {
+                throw new Exception('Priority not found: ' . $payload['priority_id']);
+            }
+            $answers['priority'] = (int) $payload['priority_id'];
+        }
+        // Ticket::update() only validates the shape of these ids, not that they exist.
+        if (array_key_exists('topic_id', $payload) && !Topic::lookup((int) $payload['topic_id'])) {
+            throw new Exception('Help topic not found: ' . $payload['topic_id']);
+        }
+        if (!empty($payload['sla_id']) && !SLA::lookup((int) $payload['sla_id'])) {
+            throw new Exception('SLA plan not found: ' . $payload['sla_id']);
+        }
+        $errors = [];
+        foreach ($answers as $name => $value) {
+            $done = false;
+            foreach ($entries as $entry) {
+                if (!($field = $entry->getField($name)))
+                    continue;
+                $clean = $name === 'priority' ? [$value => Priority::lookup($value)->getDesc()] : $field->parse($value);
+                $field->validateEntry($clean);
+                if ($field->errors()) {
+                    $errors[$name] = $field->errors();
+                } else {
+                    $entry->setAnswer($name, $name === 'priority' ? Priority::lookup($value)->getDesc() : $clean,
+                        $name === 'priority' ? $value : null);
+                }
+                $done = true;
+                break;
+            }
+            if (!$done) {
+                $errors[$name] = ["The ticket has no '{$name}' field"];
+            }
+        }
+        if ($errors) {
+            throw new Exception('Ticket was not updated: ' . json_encode($errors));
+        }
+
+        // osTicket's form takes the due date as a string in its configured timezone. The payload
+        // carries UTC; an unchanged stored date is passed back (osTicket refuses a past one,
+        // as its own page does).
+        global $cfg;
+        $tz = $cfg->getTimezone();
+        if (array_key_exists('due_date', $payload)) {
+            $duedate = $payload['due_date']
+                ? (new DateTime($payload['due_date'], new DateTimeZone('UTC')))
+                    ->setTimezone(new DateTimeZone($tz))->format('Y-m-d H:i:s')
+                : '';
+        } else {
+            $duedate = $ticket->getDueDate() ? Format::datetime($ticket->getDueDate(), true, 'yyyy-MM-dd HH:mm:ss', $tz) : ''; // ICU pattern
+        }
+        $vars = [
+            'topicId' => array_key_exists('topic_id', $payload) ? (int) $payload['topic_id'] : (int) $ticket->getTopicId(),
+            'slaId'   => array_key_exists('sla_id', $payload) ? (int) $payload['sla_id'] : (int) $ticket->getSLAId(),
+            'source'  => array_key_exists('source', $payload) ? (string) $payload['source'] : (string) $ticket->getSource(),
+            'duedate' => $duedate,
+            'note'    => (string) ($payload['note'] ?? ''),
+            'forms'   => $forms,
+        ];
+        if (!$ticket->update($vars, $errors) || $errors) {
+            throw new Exception('Ticket was not updated: ' . self::errorText($errors));
+        }
+        return ['ticket_id' => $ticket->getId()];
     }
 
     public static function addCollaborator($payload, $staff_id) {
