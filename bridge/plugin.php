@@ -233,7 +233,7 @@ class FastApiIntegrationPlugin extends Plugin {
 
         error_log("[FastAPI Integration] Processing command #{$inbox_id}: {$command_type}");
 
-        $this->runningCommand = true;
+        self::$runningCommand = true;
         try {
             // Act as the staff member who made the API request. osTicket's models read the
             // global $thisstaff for permission checks and to attribute replies, notes and
@@ -291,7 +291,7 @@ class FastApiIntegrationPlugin extends Plugin {
                 $inbox_id
             ));
         } finally {
-            $this->runningCommand = false;
+            self::$runningCommand = false;
             $this->scrubPayload($inbox_id, $payload);
         }
     }
@@ -417,11 +417,20 @@ class FastApiIntegrationPlugin extends Plugin {
         $this->handleModelEvent('deleted', $object);
     }
 
-    /** True while a command runs: it emits its own result event, so signals would duplicate it. */
-    private $runningCommand = false;
+    /**
+     * True while a command runs: it emits its own result event, so the model signals it triggers would
+     * duplicate it. STATIC on purpose: osTicket calls the plugin instance it bootstrapped, while the worker
+     * runs commands on another instance — a per-instance flag was never seen by the signal listeners, and
+     * every command produced three extra events.
+     */
+    private static $runningCommand = false;
+
+    /** Signal events already written by this PHP process, so the same change is not emitted twice
+     *  (osTicket fires both model.* and object.* for it). */
+    private static $emittedSignals = [];
 
     private function handleModelEvent($action, $object) {
-        if (!is_object($object) || $this->runningCommand) return;
+        if (!is_object($object) || self::$runningCommand) return;
 
         $class = get_class($object);
         $typeMap = [
@@ -454,7 +463,13 @@ class FastApiIntegrationPlugin extends Plugin {
 
         if (!$aggregate_id) return;
 
-        $this->emitOutboxEvent($event_type, $aggregate_type, $aggregate_id, self::safePayload($object));
+        $payload = self::safePayload($object);
+        $fingerprint = md5($event_type . '|' . $aggregate_id . '|' . json_encode($payload));
+        if (isset(self::$emittedSignals[$fingerprint]))
+            return;
+        self::$emittedSignals[$fingerprint] = true;
+
+        $this->emitOutboxEvent($event_type, $aggregate_type, $aggregate_id, $payload);
     }
 
     /** Column names never sent to the outbox (it is broadcast over WebSocket). */

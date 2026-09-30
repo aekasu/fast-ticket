@@ -60,6 +60,12 @@ async def websocket_endpoint(ws: WebSocket):
         protocols: ["bearer", "<access_token>"]
 
     The token is kept out of the URL so it does not appear in proxy/access logs.
+
+    What a client is sent is decided per agent: only events about things osTicket lets them see (their own
+    tickets and tasks, the directory if they hold ``user.dir``, ...); see ``app.modules.events.visibility``.
+    The connection ends when the token expires or the account is disabled (checked every ``WS_RECHECK_SECONDS``),
+    and an agent may hold ``WS_MAX_CONNECTIONS_PER_STAFF`` at once. The server only pushes; anything a client
+    sends is ignored.
     """
     protocols = [
         p.strip()
@@ -68,14 +74,18 @@ async def websocket_endpoint(ws: WebSocket):
     ]
     token = protocols[1] if len(protocols) >= 2 and protocols[0].lower() == "bearer" else None
     try:
-        authenticate_websocket(token)
+        claims, access = await authenticate_websocket(token)
     except Exception:
         await ws.close(code=1008)
         return
 
-    await manager.connect(ws, subprotocol="bearer")
+    client = await manager.connect(ws, access, expires_at=float(claims["exp"]), subprotocol="bearer")
+    if client is None:      # this agent already holds the maximum number of connections
+        return
     try:
         while True:
             await ws.receive_text()  # keep connection alive; server pushes only
     except WebSocketDisconnect:
-        manager.disconnect(ws)
+        pass
+    finally:
+        manager.disconnect(client)

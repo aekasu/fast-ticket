@@ -58,7 +58,7 @@ All mutation operations use a **command inbox** pattern:
 1. FastAPI validates + authorizes the request and writes a row to `ost_integration_inbox` via `dispatch_command(...)`.
 2. The PHP plugin claims `pending` rows and calls the handler `bridge/registry.php` names, which uses osTicket's PHP models. Two drivers share one atomic claim: `bridge/worker.php` (a CLI loop, the `osticket-worker` service, ~1 s latency) and osTicket's own `cron` signal (once a minute — the fallback if no worker runs).
 3. On success/failure the plugin writes a result event to `ost_integration_outbox` (event name from the registry entry).
-4. The asyncio worker (`app/workers/events.py`) polls the outbox, dispatches to registered Python handlers, and broadcasts over WebSocket.
+4. The asyncio worker (`app/workers/events.py`) reads the outbox by a **per-process cursor** — every API process sees every event, so the clients of any worker are told and every process runs the registered handlers — and pushes each event only to the WebSocket clients allowed to hear it (`app/modules/events/visibility.py`). The outbox is a log, not a queue: rows are not claimed or retried.
 
 Clients needn't poll: `GET /api/v1/commands/{id}?wait=<seconds ≤ 30>` holds the request until the command is `done`/`failed`.
 
@@ -127,6 +127,11 @@ Security is implemented **in tandem** with each domain, not as a later layer.
 - `app/core/security.py` houses the dependencies. **There is no admin bypass in `require_perm`** — osTicket's `hasPerm()` has none; an admin's power is the Admin Panel (`require_admin`), and an admin holds the other permissions they were given.
 - Document the module's permission map in the router's module docstring.
 - The coarse "any authenticated staff can do anything" model from the predecessor is **not acceptable**.
+
+### WebSocket
+- `GET /api/v1/ws` takes the token in the `Sec-WebSocket-Protocol` header (`bearer, <token>`), verifies it and loads the agent's live `AccessContext` — a disabled or deleted agent is refused, as on REST.
+- **What a client is sent is decided per agent**: `app/modules/events/visibility.py` maps each event's aggregate to an audience — tickets and tasks to agents who have them in their list (osTicket's list visibility), users/organizations to `user.dir`, the knowledge base to everyone, canned responses to `canned.manage`, and everything else (including any aggregate the table does not know) to administrators only. **A new kind of event must be added to that table**; the default fails closed.
+- Connections do not outlive their authority: every `WS_RECHECK_SECONDS` the manager closes expired tokens and disabled accounts and refreshes each agent's access. An agent may hold `WS_MAX_CONNECTIONS_PER_STAFF` sockets; a client that cannot take a message within `WS_SEND_TIMEOUT_SECONDS` is dropped; frames over 64 KiB are refused (`--ws-max-size`).
 
 ### Rate limiting
 - Global limit per client IP through `SlowAPIMiddleware` (`RATE_LIMIT_DEFAULT`, `app/core/rate_limit.py` — slowapi enforces default limits only when the middleware is installed); tighter limit on login. The client address is `client_ip()`: `X-Forwarded-For` is ignored unless `TRUSTED_PROXY_COUNT` says how many proxies append to it. `RATE_LIMIT_STORAGE_URI` can point at Redis to share counters between workers.

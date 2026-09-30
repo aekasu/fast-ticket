@@ -4,7 +4,7 @@ Things fast-ticket does not do yet, or does only partly, that someone relying on
 This is a **live list, not a changelog**: when a limit is fixed its entry is *deleted* (git history keeps
 it) and the commit that fixes it says so. Rules for keeping it honest are in `AGENTS.md` → "Known limits".
 
-Last reviewed: 2026-09-30 (after S4: bridge permissions, command ownership).
+Last reviewed: 2026-09-30 (after S5: WebSocket audience, per-process event cursors).
 
 Each entry: what is true today · what it means for you · what will resolve it (a phase from the plan, or
 "by design" if it is a deliberate trade-off).
@@ -21,7 +21,6 @@ Each entry: what is true today · what it means for you · what will resolve it 
 | **The same `Idempotency-Key` with a different request body silently returns the first command** (keys are per agent, but the body is not compared). | A client that reuses a key by mistake is told its second, different request succeeded when it was ignored. | Later (Stripe-style mismatch error) |
 | **The bridge's permission check is proven live by hand, not by an automated test.** Forged inbox rows from an agent with no permissions were all refused (admin, `user.create`, `ticket.create`, `faq.manage`, `canned.manage`), and a static test checks every command's permission against the API's route guard, but no automated test can insert an inbox row. | A regression in the PHP check would show only in that manual run. | A PHP test runner, or a test-only endpoint |
 | **The inbox is unsigned.** A row carries `requested_by_staff_id` and nothing proves the API wrote it. | Anyone with write access to the inbox table can run commands as any agent, including an admin. | Later (optional HMAC) |
-| **WebSocket broadcasts go to every connected client unfiltered**, and the token is only checked when the connection opens. | Any connected agent sees every event; a disabled agent's open connection keeps receiving until it drops. | S5 |
 | **A password change does not revoke tokens already issued** (they live until they expire). | Up to 30 minutes of access after a password reset. (A disabled account, a role change and a demotion *do* apply on the next request.) | By design for now (no revocation list) |
 
 ## Login and abuse protection
@@ -37,7 +36,13 @@ Each entry: what is true today · what it means for you · what will resolve it 
 
 | Limit | Impact | Resolved by |
 |---|---|---|
-| **Each outbox event is claimed by one API process.** | With more than one API worker, only the clients connected to the claiming worker are notified. | Phase 3 (cursor-based consumption) |
+| **WebSocket delivery is best-effort and not replayed.** Each API process starts at the end of the outbox and pushes what arrives after; an event written while a process was down, or before a client connected, is not delivered, and there are no event ids to resume from. | A client that reconnects must refetch what it cares about. | By design (the REST reads are the source of truth) |
+| **Ticket and task events follow the agent's *list* visibility**, and deletions go to administrators only (the row is gone, so no one "can see" it). | An agent who can open a closed ticket only through a referral (page yes, list no) is not told about its changes; an agent is not told when a ticket they could see is deleted. | By design (narrower is safer) |
+| **Each ticket or task event costs one query per connected agent** (`ticket_is_visible`). | Many connected agents and a busy helpdesk mean many small queries per event. | Phase 4 (cache) or a set-based check |
+| **Open connections notice a disabled account or an expired token within `WS_RECHECK_SECONDS` (15 s)**, not instantly. | A disabled agent can keep receiving for up to that long. | Tunable; an event-driven close on `staff.*` events would make it immediate |
+| **WebSocket connection attempts are not rate limited** (the HTTP middleware does not cover them); an agent is capped at `WS_MAX_CONNECTIONS_PER_STAFF`. | An unauthenticated client can open connections at will, each costing a token check. | Later (a connection-rate limit or a proxy rule) |
+| **Every agent login sends administrators a `staff.updated` event** (osTicket's last-login update fires the model signal). | Noise on the admin stream. | Later (drop signal events that change only `lastlogin`) |
+| **The outbox's `status`, `retry_count` and `locked_at` columns are unused.** The API reads the outbox by cursor and never claims or retries a row. | Dead schema in `bridge/schema.php`. | Later (drop them in a schema upgrade) |
 | **No Python event handlers are registered and nothing is cached.** | Every authenticated request runs five small queries to load the agent's `AccessContext` (staff row, extra-department roles, role permissions, teams, visible departments), on top of the request's own. | Phase 4 |
 | **Without PHP's `pcntl` extension the worker exits after each command** and the supervisor restarts it. | Commands still run, but slower and subject to restart backoff; `make doctor` warns. | Install `pcntl` |
 | **osTicket's cron fallback runs about once a minute.** | If no worker runs, a command can wait up to ~60 s. | Run the worker |

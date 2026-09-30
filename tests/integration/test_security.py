@@ -164,7 +164,8 @@ async def test_tampered_token_returns_401():
     """Changing one character of the signature invalidates the token."""
     token = _make_token(permissions=["ticket.create"])
     header, payload, sig = token.rsplit(".", 2)
-    tampered = f"{header}.{payload}.{'X' + sig[1:]}"
+    flipped = "A" if sig[0] != "A" else "B"        # always a different character (a fixed 'X' matched 1 signature in 64)
+    tampered = f"{header}.{payload}.{flipped + sig[1:]}"
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         resp = await ac.get(
             "/api/v1/test-security/needs-ticket-create",

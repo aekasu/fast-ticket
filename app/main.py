@@ -22,9 +22,11 @@ from slowapi.middleware import SlowAPIMiddleware
 
 from app.api.router import api_router
 from app.core.config import settings
+from app.core.access import load_access_context
 from app.core.db import AsyncSessionLocal, create_db_and_tables
 from app.core.rate_limit import limiter
 from app.core.request_limits import BodySizeLimitMiddleware
+from app.core.ws_manager import manager as ws_manager
 from app.integration.osticket.commands_service import InvalidIdempotencyKey
 from app.workers.events import poll_and_process_events, purge_old_events
 
@@ -40,6 +42,23 @@ logger = logging.getLogger(__name__)
 
 
 # ── Background outbox worker ──────────────────────────────────────────────────
+
+
+async def _load_access(staff_id: int):
+    async with AsyncSessionLocal() as session:
+        return await load_access_context(session, staff_id)
+
+
+async def _ws_maintenance() -> None:
+    """Keep open WebSocket connections honest: close expired tokens and disabled accounts, refresh roles."""
+    while True:
+        await asyncio.sleep(settings.WS_RECHECK_SECONDS)
+        try:
+            summary = await ws_manager.revalidate(_load_access)
+            if summary["expired"] or summary["deactivated"]:
+                logger.info("WebSocket revalidation: %s", summary)
+        except Exception:
+            logger.exception("WebSocket revalidation failed — will retry.")
 
 
 def _tables_missing(exc: Exception) -> bool:
@@ -94,11 +113,12 @@ async def lifespan(app: FastAPI):
 
     worker_task = asyncio.create_task(_outbox_worker(), name="osticket-outbox-worker")
     purge_task = asyncio.create_task(_purge_worker(), name="osticket-purge-worker")
+    ws_task = asyncio.create_task(_ws_maintenance(), name="ws-maintenance")
     logger.info("Application startup complete.")
 
     yield
 
-    for task in (worker_task, purge_task):
+    for task in (worker_task, purge_task, ws_task):
         task.cancel()
         try:
             await task

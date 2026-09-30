@@ -30,7 +30,11 @@ class EventRegistry:
             logger.info("No handlers registered for event type '%s' — ignoring.", event_type)
             return
         for handler in tuple(handlers):
-            await handler(payload, session)
+            try:
+                await handler(payload, session)
+            except Exception:
+                # one broken handler must not stop the others (or the delivery that follows)
+                logger.exception("Event handler %s failed for '%s'", getattr(handler, "__qualname__", handler), event_type)
 
 
 # Module-level singletons — import these rather than constructing new instances.

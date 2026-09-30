@@ -65,6 +65,6 @@ There is no PHP unit-test runner, and the Python tests mock the bridge away — 
 2. Add or extend a test in `tests/e2e/test_bridge_domains.py` (create → read back → partial update proves stored fields survive → delete; plus the refusal cases). Run `make test-e2e   # needs OSTICKET_ADMIN_USERNAME/PASSWORD exported (a human sources .env; agents must not read it)`.
 3. Failures show up in the inbox row's `error_message`; debug a handler in isolation by running PHP against osTicket's bootstrap (`api/api.inc.php`) inside the container with `$thisstaff = Staff::lookup(1)`.
 
-`tests/unit/test_bridge_registry.py` statically enforces that every Python command has a registry entry, no entry is unreachable, events stay in their domain, and every registered handler method exists.
+A command whose event concerns a *new kind of aggregate* also needs a row in `app/modules/events/visibility.py` (who may hear about it over the WebSocket) — an unknown aggregate is delivered to administrators only. `tests/unit/test_bridge_registry.py` statically enforces that every Python command has a registry entry, no entry is unreachable, events stay in their domain, and every registered handler method exists.
 
 Commit as `feat(bridge): ...` / `fix(bridge): ...`.

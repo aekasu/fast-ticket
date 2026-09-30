@@ -101,10 +101,19 @@ class Settings(BaseSettings):
     )
 
     # ── Outbox worker ─────────────────────────────────────────────────────────
-    EVENT_POLL_INTERVAL_SECONDS: float = Field(default=3.0, gt=0)
+    EVENT_POLL_INTERVAL_SECONDS: float = Field(default=1.0, gt=0)
     EVENT_BATCH_SIZE: Annotated[int, Field(default=100, gt=0, le=1000)]
-    EVENT_MAX_RETRIES: Annotated[int, Field(default=3, ge=0)]
     EVENT_RETENTION_DAYS: Annotated[int, Field(default=30, gt=0)]
+
+    # ── WebSocket ─────────────────────────────────────────────────────────────
+    WS_RECHECK_SECONDS: float = Field(
+        default=15.0, gt=0,
+        description="How often open connections are re-validated (token expiry, account disabled, role changes).",
+    )
+    WS_MAX_CONNECTIONS_PER_STAFF: int = Field(default=10, ge=1, description="Open sockets one agent may hold.")
+    WS_SEND_TIMEOUT_SECONDS: float = Field(
+        default=5.0, gt=0, description="A client that cannot take a message within this long is dropped."
+    )
 
     @field_validator("JWT_SECRET_KEY")
     @classmethod

@@ -242,6 +242,21 @@ async def get_ticket(session: AsyncSession, ticket_id: int, *, access: "Scope") 
     return dict(row) if row else None
 
 
+async def ticket_is_visible(session: AsyncSession, ticket_id: int, *, access: "Scope") -> bool:
+    """Is this ticket in the agent's ticket list? (Used to decide who is told about an event.)"""
+    sql = (
+        "SELECT 1 FROM ost_ticket t JOIN ost_ticket_status ts ON ts.id = t.status_id "
+        "WHERE t.ticket_id = :ticket_id AND " + ticket_visibility(access, detail=False) + " LIMIT 1"
+    )
+    return (await session.execute(_sql(sql), {"ticket_id": ticket_id})).first() is not None
+
+
+async def task_is_visible(session: AsyncSession, task_id: int, *, access: "Scope") -> bool:
+    """Is this task in the agent's task list? (Used to decide who is told about an event.)"""
+    sql = "SELECT 1 FROM ost_task t WHERE t.id = :task_id AND " + task_visibility(access, detail=False) + " LIMIT 1"
+    return (await session.execute(_sql(sql), {"task_id": task_id})).first() is not None
+
+
 def _visible_ticket(access: "Scope") -> str:
     """``AND EXISTS`` clause: the ticket bound as :ticket_id is one the agent may open."""
     return (

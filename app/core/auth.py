@@ -16,9 +16,9 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.access import load_access_context
+from app.core.access import AccessContext, load_access_context
 from app.core.config import settings
-from app.core.db import get_session
+from app.core.db import AsyncSessionLocal, get_session
 
 logger = logging.getLogger(__name__)
 
@@ -183,12 +183,18 @@ async def get_current_user(
     }
 
 
-def authenticate_websocket(token: str | None) -> dict[str, Any]:
-    """Authenticate a WebSocket connection synchronously.
+async def authenticate_websocket(token: str | None) -> tuple[dict[str, Any], AccessContext]:
+    """Authenticate a WebSocket connection: verify the token, then load what the agent may see *now*.
 
-    Used in the WebSocket endpoint where ``Depends`` is not available.
-    Raises HTTPException(403) if token is invalid.
+    Used in the WebSocket endpoint where ``Depends`` is not available. Returns ``(claims, access)``; raises
+    HTTPException if the token is missing or invalid, or the staff member is gone or disabled — the same
+    rule ``get_current_user`` applies to a REST request.
     """
     if not token:
         raise HTTPException(status_code=403, detail="WebSocket authentication required.")
-    return decode_access_token(token)
+    claims = decode_access_token(token)
+    async with AsyncSessionLocal() as session:
+        access = await load_access_context(session, int(claims["staff_id"]))
+    if access is None or not access.is_active:
+        raise HTTPException(status_code=401, detail="This account is no longer active.")
+    return claims, access
