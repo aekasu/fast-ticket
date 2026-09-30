@@ -24,7 +24,14 @@ require_once INCLUDE_DIR . 'class.staff.php';
 
 // ── Integration key validation ─────────────────────────────────────────────
 
-$expected_key = $_SERVER['FASTAPI_INTEGRATION_KEY'] ?? '';
+// Same lookup as FastApiIntegrationPlugin::integrationKey(): the web server's env if it
+// has one, else the key install.php stored — so a host that doesn't inject env still works.
+$expected_key = getenv('FASTAPI_INTEGRATION_KEY') ?: ($_SERVER['FASTAPI_INTEGRATION_KEY'] ?? '');
+if (!$expected_key) {
+    $res = db_query("SELECT value FROM " . TABLE_PREFIX . "config WHERE namespace='fastapi_integration' AND `key`='integration_key' LIMIT 1");
+    $cfg = $res ? db_fetch_array($res) : null;
+    $expected_key = $cfg ? $cfg['value'] : '';
+}
 $provided_key = $_SERVER['HTTP_X_INTEGRATION_KEY'] ?? '';
 
 if (empty($expected_key) || !hash_equals($expected_key, $provided_key)) {
