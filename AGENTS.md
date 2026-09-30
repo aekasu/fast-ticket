@@ -147,6 +147,7 @@ Read the relevant section **before** implementing any endpoint.
 - `notes/OSTICKET_CAPABILITIES.md` — inventory of osTicket PHP model operations: suitability ratings, permissions, relationships (summary matrix §2, per-domain from §3, unverified items flagged in §8).
 - `notes/INTEGRATION_CAPABILITIES.md` — API ↔ bridge matrix: required commands (§3), events (§4), read-throughs (§5), open decisions (§6).
 - `notes/fast-ticket-bridge-bringup-and-testing.md` — Docker bring-up order, known footguns, testing each hop in isolation.
+- `notes/KNOWN_LIMITS.md` — what fast-ticket does not do yet or does only partly (see "Known limits" below).
 - `notes/install-on-an-existing-osticket.md` — installing the plugin zip on an existing osTicket, worker/cron, least-privilege DB user, `make doctor`.
 
 Implementation priority:
@@ -216,6 +217,24 @@ make bridge-zip   # dist/fastapi_integration-<version>.zip — the plugin, for a
 The stack takes `OSTICKET_TABLE_PREFIX` and the host ports (`API_PORT`, `OSTICKET_PORT`, `MYSQL_PORT`) from the environment, so a second stack can run beside the first (`docker compose -p other up`) — that is how a non-`ost_` prefix is tested end to end. The bridge plugin creates the integration tables itself (`bridge/schema.php`); the API does not (`AUTO_CREATE_SCHEMA=false`).
 
 FastAPI: http://localhost:8000 (`/docs`) · osTicket: http://localhost:8080 (`/scp`) · MySQL on host port 13306.
+
+---
+
+## Known limits
+
+`notes/KNOWN_LIMITS.md` is the single, honest list of things that are not done or only partly done. It is a live
+list, not a changelog.
+
+- **Record a limit when you knowingly leave one.** A shortcut, a deferred check, a "works only for X", an untested
+  path, an accepted risk — add an entry in the same commit (or the one that introduces the gap). Say what is true
+  today, what it means for someone using it, and what will resolve it (a phase or step, or "by design").
+- **Remove a limit when it is fixed**, in the commit that fixes it, and say so in the commit message. Delete the
+  entry; git history keeps it. Don't leave "fixed" entries behind.
+- **Review the whole list at every major update** — the end of a phase or security step, before a PR or merge,
+  after a release, or when the list has not been touched for a while. For each entry ask "is this still true?": check
+  the code, and run the thing if you can. Delete what is solved, correct what changed, and update the
+  `Last reviewed` date. Report what you removed or added.
+- Never soften an entry to make the list look better, and never delete one that is merely inconvenient.
 
 ---
 
