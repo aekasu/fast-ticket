@@ -15,8 +15,8 @@ test-integration:
 	$(PYTHON) -m pytest tests/integration/ -v
 
 # Live end-to-end tests against the running stack (`make start` first). Source .env so the
-# admin login is available. Writes are drained by osTicket's cron about once a minute, so the
-# tests trigger that run themselves (E2E_CRON_CMD) instead of waiting for it:
+# admin login is available. Writes are executed by the osticket-worker service (~1 s); if a command is
+# still pending after 20 s the tests run osTicket's cron themselves (E2E_CRON_CMD):
 #   set -a; . ./.env; set +a; make test-e2e
 test-e2e:
 	E2E_CRON_CMD="docker compose exec -T -u www-data osticket-cron php /var/www/html/api/cron.php" \

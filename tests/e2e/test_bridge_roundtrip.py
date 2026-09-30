@@ -4,6 +4,10 @@ The smallest smoke test of the whole chain (canned responses); the per-domain co
 test_bridge_domains.py. Needs the running stack — see conftest.py.
 """
 
+import json
+import time
+import uuid
+
 import httpx
 import pytest
 
@@ -40,3 +44,22 @@ def test_canned_response_full_lifecycle_through_the_bridge(bridge, uniq):
 
     bridge.command("DELETE", f"/api/v1/canned/{canned_id}")
     assert bridge.get(f"/api/v1/canned/{canned_id}").status_code == 404
+
+
+def test_commands_run_within_seconds_without_cron(bridge, uniq):
+    """The inbox worker, not the once-a-minute cron, executes commands (no cron kick here)."""
+    started = time.monotonic()
+    resp = bridge.client.post(
+        "/api/v1/canned",
+        json={"title": f"e2e latency {uniq}", "response": "latency probe", "is_enabled": False},
+        headers={"Idempotency-Key": uuid.uuid4().hex},
+    )
+    assert resp.status_code == 202
+    command_id = resp.json()["command_id"]
+    detail = bridge.client.get(f"/api/v1/commands/{command_id}", params={"wait": 15}).json()
+    elapsed = time.monotonic() - started
+
+    assert detail["status"] == "done", detail
+    assert elapsed < 10, f"took {elapsed:.1f}s — is the osticket-worker container running?"
+    canned_id = next(v for v in json.loads(detail["result_payload"]).values() if isinstance(v, int))
+    bridge.command("DELETE", f"/api/v1/canned/{canned_id}")

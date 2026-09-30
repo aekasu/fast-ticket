@@ -9,9 +9,11 @@ in pyproject.toml). Run them with:
 Login uses OSTICKET_ADMIN_USERNAME / OSTICKET_ADMIN_PASSWORD from the environment, so the
 tests never read a secret from disk.
 
-Writes are asynchronous: the osTicket cron container drains the inbox about once a minute.
-``make test-e2e`` sets E2E_CRON_CMD so the tests trigger that run themselves; without it
-each write simply waits for the next scheduled run.
+Writes are asynchronous. The osticket-worker container drains the inbox about every second;
+osTicket's cron (about once a minute) is the fallback. The tests wait server-side with
+``GET /commands/{id}?wait=`` and only if a command is still pending after that do they run
+cron themselves (E2E_CRON_CMD, set by ``make test-e2e``) — so a dead worker shows up as
+slow tests, and test_commands_run_within_seconds_without_cron fails outright.
 """
 
 import json
@@ -28,7 +30,7 @@ USERNAME = os.environ.get("OSTICKET_ADMIN_USERNAME", "")
 PASSWORD = os.environ.get("OSTICKET_ADMIN_PASSWORD", "")
 CRON_CMD = os.environ.get("E2E_CRON_CMD", "")
 POLL_TIMEOUT_S = 150
-POLL_INTERVAL_S = 1.5 if CRON_CMD else 3
+SERVER_WAIT_S = 20   # GET /commands/{id}?wait=… holds the request this long
 
 # osTicket verifies that an email's domain has MX records, so reserved test domains
 # (example.test, ...) are rejected by its user and staff forms.
@@ -62,14 +64,13 @@ class Bridge:
         deadline = time.monotonic() + POLL_TIMEOUT_S
         detail: dict = {}
         while time.monotonic() < deadline:
-            resp = self.client.get(f"/api/v1/commands/{command_id}")
+            resp = self.client.get(f"/api/v1/commands/{command_id}", params={"wait": SERVER_WAIT_S})
             assert resp.status_code == 200, resp.text
             detail = resp.json()
             if detail["status"] not in ("pending", "processing"):
                 return detail
             if detail["status"] == "pending":
                 self._kick_cron()
-            time.sleep(POLL_INTERVAL_S)
         pytest.fail(
             f"command {command_id} still '{detail.get('status')}' after {POLL_TIMEOUT_S}s — "
             "is the osticket-cron container running, and is the plugin enabled?"

@@ -12,6 +12,9 @@ osTicket's ORM never writes, read queries against columns that don't exist.
 Needs the running stack — see conftest.py.
 """
 
+import json
+import uuid
+
 import httpx
 import pytest
 
@@ -505,3 +508,26 @@ def test_every_read_endpoint_answers_200(bridge):
 
     assert not failures, failures
     assert bridge.get("/api/v1/search?q=e2e").status_code == 200
+
+
+def test_commands_queued_together_do_not_share_state(bridge, uniq):
+    """osTicket keeps static form state per PHP process (TaskForm::$instance holds the previous
+    task's answers); commands must each run in a clean process. Queue two creates at once so
+    they are drained back to back, then check each task kept its own title."""
+    titles = [f"e2e twin A {uniq}", f"e2e twin B {uniq}"]
+    ids = []
+    for title in titles:
+        resp = bridge.client.post(
+            "/api/v1/tasks/",
+            json={"title": title, "description": "queued together", "dept_id": 1},
+            headers={"Idempotency-Key": uuid.uuid4().hex},
+        )
+        assert resp.status_code == 202
+        ids.append(resp.json()["command_id"])
+    for command_id in ids:
+        done = bridge._wait(command_id)
+        assert done["status"] == "done", done["error_message"]
+        task_id = json.loads(done["result_payload"])["task_id"]
+        bridge._cleanups.append(("DELETE", f"/api/v1/tasks/{task_id}"))
+        got = bridge.read(f"/api/v1/tasks/{task_id}")
+        assert got["title"] == titles[ids.index(command_id)]
