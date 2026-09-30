@@ -627,6 +627,8 @@ async def test_all_write_endpoints_require_auth():
         ("PATCH",  "/1"),
         ("PATCH",  "/1/collaborators/7"),
         ("DELETE", "/1/collaborators/7"),
+        ("PATCH",  "/1/thread/3"),
+        ("POST",   "/1/thread/3/resend"),
         ("POST",   "/1/claim"),
         ("POST",   "/1/release"),
         ("POST",   "/1/refer"),
@@ -706,3 +708,19 @@ async def test_collaborator_update_and_remove_queue_commands():
 async def test_collaborator_list_requires_auth():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         assert (await ac.get(TICKETS_URL + "/1/collaborators")).status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_entry_edit_and_resend_queue_commands():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        edit = await ac.patch(TICKETS_URL + "/5/thread/8", json={"body": "fixed", "resend": True, "signature": "mine"},
+                              headers=_auth(["ticket.reply"]))
+        resend = await ac.post(TICKETS_URL + "/5/thread/8/resend", json={}, headers=_auth(["ticket.reply"]))
+        empty = await ac.patch(TICKETS_URL + "/5/thread/8", json={"body": ""}, headers=_auth(["ticket.reply"]))
+        badsig = await ac.post(TICKETS_URL + "/5/thread/8/resend", json={"signature": "x"}, headers=_auth(["ticket.reply"]))
+        denied = await ac.patch(TICKETS_URL + "/5/thread/8", json={"body": "x"}, headers=_auth([]))
+    assert (edit.status_code, resend.status_code, empty.status_code, badsig.status_code, denied.status_code) == (
+        202, 202, 422, 422, 403)
+    rows = await _inbox_rows()
+    assert [r.command_type for r in rows] == ["ticket.entry.edit", "ticket.entry.resend"]
+    assert json.loads(rows[0].payload) == {"ticket_id": 5, "entry_id": 8, "body": "fixed", "resend": True, "signature": "mine"}

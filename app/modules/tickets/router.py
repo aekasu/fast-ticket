@@ -13,6 +13,7 @@ per-department check when it runs the command):
   ticket.release    (release / unassign)
   ticket.delete     ticket.merge      ticket.markanswered
   ticket.edit       (edit fields, change owner)
+  ticket.reply      also gates thread-entry edit / resend (the bridge applies the exact rule: own post, manager, thread.edit)
 """
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
@@ -29,6 +30,8 @@ from app.modules.tickets.models import (
     TicketClose,
     CollaboratorList,
     TicketCollaboratorAdd,
+    TicketEntryEdit,
+    TicketEntryResend,
     TicketCollaboratorUpdate,
     TicketCreate,
     TicketDetail,
@@ -479,4 +482,42 @@ async def remove_collaborator(
 ):
     return await service.remove_collaborator(
         session, ticket_id, user_id, current_user["staff_id"], idempotency_key
+    )
+
+
+@router.patch(
+    "/{ticket_id}/thread/{entry_id}",
+    response_model=CommandResponse,
+    status_code=202,
+    summary="Edit a thread entry (the entry gets a new id; the old one is hidden)",
+)
+async def edit_entry(
+    ticket_id: int,
+    entry_id: int,
+    body: TicketEntryEdit,
+    current_user: dict = require_perm("ticket.reply"),   # gate; the bridge applies osTicket's exact edit rule
+    session: AsyncSession = Depends(get_session),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    return await service.edit_entry(
+        session, ticket_id, entry_id, body, current_user["staff_id"], idempotency_key
+    )
+
+
+@router.post(
+    "/{ticket_id}/thread/{entry_id}/resend",
+    response_model=CommandResponse,
+    status_code=202,
+    summary="Resend a staff reply to the ticket's recipients",
+)
+async def resend_entry(
+    ticket_id: int,
+    entry_id: int,
+    body: TicketEntryResend,
+    current_user: dict = require_perm("ticket.reply"),
+    session: AsyncSession = Depends(get_session),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    return await service.resend_entry(
+        session, ticket_id, entry_id, body, current_user["staff_id"], idempotency_key
     )

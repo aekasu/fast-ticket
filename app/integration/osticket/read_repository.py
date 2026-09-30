@@ -289,6 +289,7 @@ async def get_ticket_thread(session: AsyncSession, ticket_id: int, *, access: "S
             te.user_id,
             te.ip_address,
             te.created,
+            (te.flags & 2) > 0 AS is_edited,
             CASE
                 WHEN te.staff_id > 0 THEN CONCAT(s.firstname, ' ', s.lastname)
                 WHEN te.user_id  > 0 THEN u.name
@@ -299,6 +300,7 @@ async def get_ticket_thread(session: AsyncSession, ticket_id: int, *, access: "S
         LEFT JOIN ost_staff s ON te.staff_id = s.staff_id AND te.staff_id > 0
         LEFT JOIN ost_user  u ON te.user_id  = u.id       AND te.user_id  > 0
         WHERE th.object_type = 'T' AND th.object_id = :ticket_id
+          AND (te.flags & 4) = 0   -- FLAG_HIDDEN: the superseded version of an edited entry
         {visible}
         ORDER BY te.created ASC, te.id ASC
     """.replace("{visible}", _visible_ticket(access))
@@ -1188,6 +1190,7 @@ async def get_task_thread(session: AsyncSession, task_id: int, *, access: "Scope
             te.user_id,
             te.ip_address,
             te.created,
+            (te.flags & 2) > 0 AS is_edited,
             CASE
                 WHEN te.staff_id > 0 THEN CONCAT(s.firstname, ' ', s.lastname)
                 WHEN te.user_id  > 0 THEN u.name
@@ -1198,6 +1201,7 @@ async def get_task_thread(session: AsyncSession, task_id: int, *, access: "Scope
         LEFT JOIN ost_staff s ON te.staff_id = s.staff_id AND te.staff_id > 0
         LEFT JOIN ost_user  u ON te.user_id  = u.id       AND te.user_id  > 0
         WHERE th.object_type = 'A' AND th.object_id = :task_id
+          AND (te.flags & 4) = 0   -- FLAG_HIDDEN: the superseded version of an edited entry
         {visible}
         ORDER BY te.created ASC, te.id ASC
     """.replace("{visible}", _visible_task(access))

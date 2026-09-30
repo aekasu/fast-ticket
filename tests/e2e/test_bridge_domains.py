@@ -515,6 +515,38 @@ def test_ticket_claim_release_and_refer(bridge, uniq):
     bridge.refuses("POST", f"{url}/refer", {"agent_id": 99999}, because="Unknown selection")
 
 
+def test_ticket_thread_entry_edit_and_resend(bridge, uniq):
+    holder = {}
+    tk = _new_ticket(bridge, uniq, holder)
+    url = f"/api/v1/tickets/{tk}"
+    bridge.command("POST", f"{url}/reply", {"message": f"first draft {uniq}"})
+    bridge.command("POST", f"{url}/note", {"title": "nt", "message": f"a note {uniq}"})
+
+    def entries():
+        return bridge.read(url)["thread"]
+
+    reply = next(e for e in entries() if e["type"] == "R")
+    note = next(e for e in entries() if e["type"] == "N")
+    assert reply["is_edited"] is False
+
+    done = bridge.command("PATCH", f"{url}/thread/{reply['id']}", {"body": f"second draft {uniq}"})
+    assert done["result"]["changed"] is True and done["result"]["new_entry_id"] != reply["id"]
+    thread = entries()
+    replies = [e for e in thread if e["type"] == "R"]
+    assert len(replies) == 1                                   # the superseded version is hidden
+    assert replies[0]["id"] == done["result"]["new_entry_id"] and replies[0]["is_edited"] is True
+    assert f"second draft {uniq}" in replies[0]["body"]
+    assert any(e["id"] == note["id"] for e in thread)          # other entries untouched
+
+    same = bridge.command("PATCH", f"{url}/thread/{replies[0]['id']}", {"body": replies[0]["body"]})
+    assert same["result"]["changed"] is False
+
+    bridge.command("POST", f"{url}/thread/{replies[0]['id']}/resend", {"signature": "none"})
+    bridge.refuses("POST", f"{url}/thread/{note['id']}/resend", {}, because="staff reply")
+    bridge.refuses("PATCH", f"{url}/thread/{note['id']}", {"body": "x", "resend": True}, because="staff reply")
+    bridge.refuses("PATCH", f"{url}/thread/999999", {"body": "x"}, because="not found")
+
+
 def test_ticket_merge_combines_children_into_the_parent_and_closes_them(bridge, uniq):
     holder = {}
     parent = _new_ticket(bridge, uniq, holder, "p")

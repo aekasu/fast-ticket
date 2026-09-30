@@ -84,6 +84,8 @@ POLICY = {
     "POST /api/v1/tickets/{ticket_id}/change-owner": "perm:ticket.edit",
     "POST /api/v1/tickets/{ticket_id}/close": "perm:ticket.close",
     "POST /api/v1/tickets/{ticket_id}/reopen": "perm:ticket.close",
+    "PATCH /api/v1/tickets/{ticket_id}/thread/{entry_id}": "perm:ticket.reply",
+    "POST /api/v1/tickets/{ticket_id}/thread/{entry_id}/resend": "perm:ticket.reply",
     "POST /api/v1/tickets/{ticket_id}/collaborators": "perm:ticket.edit",
     "PATCH /api/v1/tickets/{ticket_id}/collaborators/{user_id}": "perm:ticket.edit",
     "DELETE /api/v1/tickets/{ticket_id}/collaborators/{user_id}": "perm:ticket.edit",

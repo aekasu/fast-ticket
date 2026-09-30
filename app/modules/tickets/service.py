@@ -20,6 +20,8 @@ from app.modules.tickets.models import (
     ThreadEntry,
     CollaboratorList,
     TicketCollaboratorAdd,
+    TicketEntryEdit,
+    TicketEntryResend,
     TicketCollaboratorUpdate,
     TicketCreate,
     TicketDetail,
@@ -91,6 +93,7 @@ def _row_to_thread_entry(row: dict) -> ThreadEntry:
         poster=row.get("poster"),
         ip_address=row.get("ip_address"),
         created=row["created"],
+        is_edited=bool(row.get("is_edited", False)),
     )
 
 
@@ -540,6 +543,46 @@ async def remove_collaborator(
         aggregate_type="ticket",
         aggregate_id=str(ticket_id),
         payload={"ticket_id": ticket_id, "user_id": user_id},
+        requested_by_staff_id=staff_id,
+        idempotency_key=idempotency_key,
+    )
+    return _make_cmd_response(cmd, idempotency_key)
+
+
+async def edit_entry(
+    session: AsyncSession,
+    ticket_id: int,
+    entry_id: int,
+    body: TicketEntryEdit,
+    staff_id: int,
+    idempotency_key: str | None,
+) -> CommandResponse:
+    cmd = await dispatch_command(
+        session=session,
+        command_type="ticket.entry.edit",
+        aggregate_type="ticket",
+        aggregate_id=str(ticket_id),
+        payload={"ticket_id": ticket_id, "entry_id": entry_id, **body.model_dump(exclude_none=True)},
+        requested_by_staff_id=staff_id,
+        idempotency_key=idempotency_key,
+    )
+    return _make_cmd_response(cmd, idempotency_key)
+
+
+async def resend_entry(
+    session: AsyncSession,
+    ticket_id: int,
+    entry_id: int,
+    body: TicketEntryResend,
+    staff_id: int,
+    idempotency_key: str | None,
+) -> CommandResponse:
+    cmd = await dispatch_command(
+        session=session,
+        command_type="ticket.entry.resend",
+        aggregate_type="ticket",
+        aggregate_id=str(ticket_id),
+        payload={"ticket_id": ticket_id, "entry_id": entry_id, **body.model_dump()},
         requested_by_staff_id=staff_id,
         idempotency_key=idempotency_key,
     )

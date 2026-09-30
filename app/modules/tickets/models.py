@@ -7,7 +7,7 @@ Three tiers:
 """
 
 from datetime import datetime
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -82,6 +82,7 @@ class ThreadEntry(BaseModel):
     poster: Optional[str] = None
     ip_address: Optional[str] = None
     created: datetime
+    is_edited: bool = False
 
 
 class Collaborator(BaseModel):
@@ -226,3 +227,16 @@ class TicketCollaboratorUpdate(BaseModel):
         if self.is_active is None and self.is_cc is None:
             raise ValueError("give is_active and/or is_cc")
         return self
+
+
+class TicketEntryEdit(BaseModel):
+    """Edit a thread entry. osTicket writes a new entry and hides the old one, so the id changes."""
+
+    body: str = Field(min_length=1, max_length=100000)
+    title: Optional[str] = Field(default=None, max_length=255)
+    resend: bool = Field(default=False, description="Replies only: email the edited reply again.")
+    signature: Literal["none", "mine", "theirs", "dept"] = "none"
+
+
+class TicketEntryResend(BaseModel):
+    signature: Literal["none", "mine", "theirs", "dept"] = "none"

@@ -31,7 +31,7 @@ Work in this order; for every item follow the "Adding a scoped read" rule in AGE
 - ~~Edit ticket fields~~ done: `PATCH /tickets/{id}` (subject, priority, topic, SLA, source, due date, note). Not yet: other custom form-field answers (see KNOWN_LIMITS).
 - ~~Claim, release, unassign, refer~~ done (`/claim`, `/release` with staff/team flags = unassign, `/refer`). Referral list/remove still open.
 - ~~Collaborators~~ done: `GET/PATCH/DELETE /tickets/{id}/collaborators[/{user_id}]` (active/CC flags, remove).
-- Thread: no attachments (upload/download), no thread-entry edit/resend, no "post client message".
+- Thread: ~~entry edit/resend~~ done (`PATCH /tickets/{id}/thread/{entry_id}`, `POST .../resend`; the thread read now hides superseded versions). Still open: attachments (upload/download), "post client message".
 - Ticket export (PDF/ZIP), edit lock: skip until needed (low).
 
 **B. Tasks / users / orgs / staff depth**

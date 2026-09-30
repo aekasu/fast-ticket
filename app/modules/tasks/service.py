@@ -61,6 +61,7 @@ def _row_to_thread_entry(row: dict) -> ThreadEntry:
         poster=row.get("poster"),
         ip_address=row.get("ip_address"),
         created=row["created"],
+        is_edited=bool(row.get("is_edited", False)),
     )
 
 
