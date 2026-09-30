@@ -23,14 +23,37 @@ if (!defined('FASTAPI_INBOX_TABLE')) {
 }
 
 /**
- * osTicket only bootstraps a plugin through an enabled instance whose config
- * object resolves (PluginInstance::bootstrap), so even a plugin with no
- * settings needs a PluginConfig subclass. The integration key itself lives in
- * the container env / ost_config — see FastApiIntegrationPlugin::integrationKey().
+ * The plugin's admin-panel settings (Admin Panel → Manage → Plugins → FastAPI Integration).
+ *
+ * osTicket only bootstraps a plugin through an enabled instance whose config object
+ * resolves (PluginInstance::bootstrap), so a PluginConfig subclass is required even
+ * with no settings. The one setting is the shared integration key; see
+ * FastApiIntegrationPlugin::integrationKey() for where else it can come from.
  */
 class FastApiIntegrationPluginConfig extends PluginConfig {
     function getOptions() {
-        return array();
+        return array(
+            'integration_key' => new TextboxField(array(
+                'label' => 'Integration key',
+                'hint'  => 'Shared secret between osTicket and fast-ticket (at least 32 characters). '
+                         . 'Leave blank to generate one, save, then copy it into fast-ticket as '
+                         . 'FASTAPI_INTEGRATION_KEY. Not needed here if the web server and the worker '
+                         . 'already have FASTAPI_INTEGRATION_KEY in their environment.',
+                'configuration' => array('size' => 64, 'length' => 128),
+            )),
+        );
+    }
+
+    function pre_save(&$config, &$errors) {
+        $key = trim((string) ($config['integration_key'] ?? ''));
+        if ($key === '')
+            $key = bin2hex(random_bytes(24));
+        elseif (strlen($key) < 32) {
+            $errors['err'] = 'The integration key must be at least 32 characters (or leave it blank to generate one).';
+            return false;
+        }
+        $config['integration_key'] = $key;
+        return true;
     }
 }
 
@@ -40,11 +63,23 @@ class FastApiIntegrationPlugin extends Plugin {
 
     var $config_class = 'FastApiIntegrationPluginConfig';
 
-    /** Integration key from env (compose) or the config row install.php writes. */
+    /**
+     * The shared integration key: the environment (compose, systemd) first, then the value
+     * saved on the plugin's admin-panel settings page, then the legacy row install.php writes.
+     */
     static function integrationKey() {
         $key = getenv('FASTAPI_INTEGRATION_KEY') ?: ($_SERVER['FASTAPI_INTEGRATION_KEY'] ?? '');
         if ($key)
             return $key;
+        // Plugin settings live in the config table under plugin.<plugin id>.instance.<instance id>.
+        $res = db_query(
+            "SELECT c.value FROM " . CONFIG_TABLE . " c"
+            . " JOIN " . PLUGIN_INSTANCE_TABLE . " i ON c.namespace = CONCAT('plugin.', i.plugin_id, '.instance.', i.id)"
+            . " JOIN " . PLUGIN_TABLE . " p ON p.id = i.plugin_id"
+            . " WHERE p.install_path LIKE '%fastapi_integration%' AND c.`key`='integration_key' AND c.value <> ''"
+            . " LIMIT 1");
+        if ($res && ($row = db_fetch_array($res)))
+            return $row['value'];
         $res = db_query("SELECT value FROM " . CONFIG_TABLE . " WHERE namespace='fastapi_integration' AND `key`='integration_key' LIMIT 1");
         $row = $res ? db_fetch_array($res) : null;
         return $row ? $row['value'] : '';
