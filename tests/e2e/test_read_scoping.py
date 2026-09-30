@@ -130,3 +130,65 @@ def test_tasks_follow_osticket_including_its_closed_task_quirk(bridge, uniq):
     # ...but Task::checkStaffPerm lets any agent open a CLOSED task, and its assignee open it in any state
     assert _get(agent_a, f"/api/v1/tasks/{closed_mine}").status_code == 200
     assert _get(agent_a, f"/api/v1/tasks/{closed_other}").status_code == 200
+
+
+def _titles(headers, path, key="title"):
+    resp = _get(headers, path, page_size=200)
+    assert resp.status_code == 200, resp.text
+    return {row[key] for row in resp.json()["items"]}
+
+
+def test_reference_lists_follow_what_osticket_offers_an_agent(bridge, uniq):
+    a_id, a_user = _agent(bridge, uniq, "ra", SUPPORT)                      # Support, Limited Access role
+    b_id, b_user = _agent(bridge, uniq, "rb", SALES)                        # Sales
+    manager = f"e2erc{uniq}"
+    bridge.create(                                                          # Support, All Access role (canned.manage)
+        "/api/v1/staff",
+        {"username": manager, "firstname": "E2E", "lastname": "Rc", "email": f"{manager}@{DELIVERABLE_DOMAIN}",
+         "dept_id": SUPPORT, "role_id": 1, "password": PASSWORD, "is_active": True, "is_admin": False},
+        cleanup="/api/v1/staff/{id}",
+    )
+    maintenance = 3
+    topics = {
+        "sales": f"e2e-private-sales-{uniq}", "mnt": f"e2e-private-maint-{uniq}", "open": f"e2e-open-{uniq}",
+    }
+    bridge.create("/api/v1/topics", {"topic": topics["sales"], "is_public": False, "dept_id": SALES}, cleanup="/api/v1/topics/{id}")
+    bridge.create("/api/v1/topics", {"topic": topics["mnt"], "is_public": False, "dept_id": maintenance}, cleanup="/api/v1/topics/{id}")
+    bridge.create("/api/v1/topics", {"topic": topics["open"], "is_public": True, "dept_id": 0}, cleanup="/api/v1/topics/{id}")
+
+    canned = {}
+    for label, dept, enabled in (("glob", 0, True), ("globoff", 0, False), ("sup", SUPPORT, True), ("sales", SALES, True)):
+        canned[label] = f"e2e-canned-{label}-{uniq}"
+        bridge.create("/api/v1/canned", {"title": canned[label], "response": "text", "dept_id": dept, "is_enabled": enabled},
+                      cleanup="/api/v1/canned/{id}")
+
+    admin = bridge.client.headers
+    agent_a, agent_b, agent_c = login_as(a_user, PASSWORD), login_as(b_user, PASSWORD), login_as(manager, PASSWORD)
+
+    # departments: an agent sees their own, the administrator sees all
+    assert _ids(agent_a, "/api/v1/departments", key="id") == {SUPPORT}
+    assert _ids(agent_b, "/api/v1/departments", key="id") == {SALES}
+    assert {SUPPORT, SALES, maintenance} <= _ids(admin, "/api/v1/departments", key="id")
+    assert _get(agent_a, f"/api/v1/departments/{SUPPORT}").status_code == 403       # the detail stays admin-only
+
+    # help topics: public ones for everyone; a private topic only inside its department
+    seen_a, seen_b = _titles(agent_a, "/api/v1/topics", "topic"), _titles(agent_b, "/api/v1/topics", "topic")
+    assert topics["open"] in seen_a and topics["open"] in seen_b
+    assert topics["sales"] not in seen_a and topics["mnt"] not in seen_a
+    assert topics["sales"] in seen_b and topics["mnt"] not in seen_b
+    assert "Report a Problem / Access Issue" in seen_a                              # osTicket's "Parent / Child" names
+    listed = [row["topic"] for row in _get(agent_a, "/api/v1/topics", page_size=200).json()["items"]]
+    assert listed == sorted(listed, key=str.casefold)                               # alphabetical, osTicket's default
+    assert {topics["sales"], topics["mnt"], topics["open"]} <= _titles(admin, "/api/v1/topics", "topic")   # the Admin Panel sees all
+
+    # priorities: the list is for every agent, the detail is not
+    assert _ids(agent_a, "/api/v1/priorities", key="id")
+    assert _get(agent_a, "/api/v1/priorities/1").status_code == 403
+
+    # canned responses: the reply picker (enabled; global or my department) vs the management list
+    picker = _titles(agent_a, "/api/v1/canned") & set(canned.values())
+    assert picker == {canned["glob"], canned["sup"]}
+    managed = _titles(agent_c, "/api/v1/canned") & set(canned.values())
+    assert managed == {canned["glob"], canned["globoff"], canned["sup"]}            # disabled ones too; not Sales'
+    everything = _titles(admin, "/api/v1/canned") & set(canned.values())
+    assert everything == set(canned.values())                                       # the admin holds canned.manage in all three

@@ -216,14 +216,24 @@ async def delete_faq(
 
 # ── Canned Responses ──────────────────────────────────────────────────────────
 
+def _manages_canned(access) -> bool:
+    """osTicket shows the management page to an agent whose role grants ``canned.manage``; everyone else
+    only picks from enabled responses (``Canned::getCannedResponses``)."""
+    return access.has_role_perm("canned.manage")
+
+
 async def list_canned(
     session: AsyncSession,
     page: int = 1,
     page_size: int = 50,
+    *,
+    access,
 ) -> CannedListResponse:
     page_size = min(page_size, 200)
     offset = (page - 1) * page_size
-    rows = await repo.list_canned(session, limit=page_size, offset=offset)
+    rows = await repo.list_canned(
+        session, access=access, manage=_manages_canned(access), limit=page_size, offset=offset
+    )
     
     items = [
         CannedListItem(
@@ -243,8 +253,8 @@ async def list_canned(
         page_size=page_size,
     )
 
-async def get_canned(session: AsyncSession, canned_id: int) -> CannedDetail | None:
-    row = await repo.get_canned(session, canned_id)
+async def get_canned(session: AsyncSession, canned_id: int, *, access) -> CannedDetail | None:
+    row = await repo.get_canned(session, canned_id, access=access, manage=_manages_canned(access))
     if not row:
         return None
     return CannedDetail(**row)

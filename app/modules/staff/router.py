@@ -1,15 +1,17 @@
 """Staff, Teams, and Departments endpoints.
 
 Permissions — the Admin Panel (osTicket gates these pages on isAdmin(), and so does the API):
-  every route in this module is admin-only, reads included. (Read scoping for non-admin agents —
-  the agent directory, department and team names — arrives with S3; until then it stays admin-only.)
+  every route in this module is admin-only, with one exception: ``GET /departments`` (the list) is the
+  department *name* list osTicket offers agents in its ticket forms, so any agent may read it, narrowed to
+  their own departments unless they hold ``visibility.departments``. A department's detail, and teams and
+  the agent directory, stay admin-only for now (see notes/KNOWN_LIMITS.md).
 """
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_session
-from app.core.security import require_admin
+from app.core.security import require_admin, require_staff
 from app.modules.staff import service
 from app.modules.staff.models import (
     CommandResponse,
@@ -35,10 +37,14 @@ router = APIRouter(tags=["staff"])
 async def list_departments(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200),
-    current_user: dict = require_admin(),
+    current_user: dict = require_staff(),
     session: AsyncSession = Depends(get_session),
 ):
-    return await service.list_departments(session, page=page, page_size=page_size)
+    """The department list. Administrators see every department; an agent sees their own (all of them with
+    ``visibility.departments``) — osTicket's ``Staff::getDepartmentNames``."""
+    return await service.list_departments(
+        session, page=page, page_size=page_size, access=current_user["access"]
+    )
 
 
 @router.get("/departments/{dept_id}", response_model=DepartmentDetail, summary="Get department")

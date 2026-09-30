@@ -83,6 +83,11 @@ class AccessContext:
         """``$staff->canAccessDept()``: limited-access agents never have department access."""
         return not self.assigned_only and dept_id in self.dept_ids
 
+    def depts_granting(self, perm: str) -> frozenset[int]:
+        """Departments in which one of the agent's roles grants ``perm`` (osTicket's canned-response
+        management page lists only these, plus the global ones)."""
+        return frozenset(dept for dept, perms in self.dept_roles.items() if perm in perms)
+
     def is_team_member(self, team_id: int | None) -> bool:
         return bool(team_id) and team_id in self.team_ids
 

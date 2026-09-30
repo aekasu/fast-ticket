@@ -3,6 +3,7 @@
 import logging
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.scope import UNRESTRICTED
 from app.integration.osticket import read_repository as repo
 from app.integration.osticket.commands_service import dispatch_command
 from app.modules.staff.models import (
@@ -41,10 +42,17 @@ async def list_departments(
     session: AsyncSession,
     page: int = 1,
     page_size: int = 50,
+    *,
+    access,
 ) -> DepartmentListResponse:
+    """Departments as the caller may see them: an administrator (the Admin Panel) or an agent with
+    ``visibility.departments`` sees all; anyone else only their own (``Staff::getDepartmentNames``)."""
     page_size = min(page_size, 200)
     offset = (page - 1) * page_size
-    rows = await repo.list_departments(session, limit=page_size, offset=offset)
+    everything = access.is_admin or access.has_global("visibility.departments") or not access.dept_ids
+    rows = await repo.list_departments(
+        session, access=UNRESTRICTED if everything else access, limit=page_size, offset=offset
+    )
     
     items = [
         DepartmentListItem(

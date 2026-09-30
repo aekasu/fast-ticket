@@ -225,3 +225,64 @@ def test_ids_are_inlined_as_integers_only():
     assert "IN (1,2)" in sql and "IN (7)" in sql
     with pytest.raises((ValueError, TypeError)):
         ticket_visibility(AccessContext(staff_id=5, dept_ids=frozenset({"1); DROP TABLE ost_ticket;--"})), detail=False)
+
+
+# ── canned responses ──────────────────────────────────────────────────────────
+
+
+@pytest.fixture(scope="module")
+def canned_db():
+    from app.integration.osticket.read_repository import canned_visibility  # noqa: F401  (imported for the tests below)
+
+    conn = sqlite3.connect(":memory:")
+    conn.execute("CREATE TABLE ost_canned_response (canned_id INTEGER PRIMARY KEY, dept_id INT, isenabled INT)")
+    rows = [(1, 0, 1), (2, 0, 0), (3, 1, 1), (4, 1, 0), (5, 2, 1), (6, 2, 0)]   # global / dept 1 / dept 2 x enabled / disabled
+    conn.executemany("INSERT INTO ost_canned_response VALUES (?,?,?)", rows)
+    return conn
+
+
+def _canned(db, access, *, manage):
+    from app.integration.osticket.read_repository import canned_visibility
+
+    sql = f"SELECT c.canned_id FROM ost_canned_response c WHERE {canned_visibility(access, manage=manage)} ORDER BY 1"
+    return [row[0] for row in db.execute(sql)]
+
+
+def _manager(*, primary=True, extra=False):
+    roles = {DEPT_MINE: frozenset({"canned.manage"} if primary else {"ticket.create"})}
+    depts = {DEPT_MINE}
+    if extra:
+        roles[DEPT_OTHER] = frozenset({"canned.manage"})
+        depts.add(DEPT_OTHER)
+    return AccessContext(staff_id=ME, dept_roles=roles, dept_ids=frozenset(depts))
+
+
+def test_the_reply_picker_offers_enabled_responses_that_are_global_or_in_my_departments(canned_db):
+    assert _canned(canned_db, _manager(), manage=False) == [1, 3]
+
+
+def test_the_management_list_includes_disabled_ones_in_departments_where_i_hold_canned_manage(canned_db):
+    assert _canned(canned_db, _manager(), manage=True) == [1, 2, 3, 4]
+
+
+def test_a_role_in_an_extra_department_extends_the_management_list_to_that_department(canned_db):
+    manager = _manager(primary=False, extra=True)     # canned.manage only through the extra department's role
+    assert _canned(canned_db, manager, manage=True) == [1, 2, 5, 6]
+    assert _canned(canned_db, manager, manage=False) == [1, 3, 5]
+
+
+def test_without_canned_manage_anywhere_the_management_list_is_only_the_global_responses(canned_db):
+    """The management page's `dept.id IN (...)` list is empty; only `dept_id = 0` remains — and it must not
+    become invalid SQL (`IN ()`)."""
+    assert _canned(canned_db, _manager(primary=False), manage=True) == [1, 2]
+
+
+def test_unrestricted_canned_sees_everything(canned_db):
+    assert _canned(canned_db, UNRESTRICTED, manage=True) == [1, 2, 3, 4, 5, 6]
+
+
+def test_in_helper_is_never_invalid_sql_for_an_empty_list():
+    from app.integration.osticket.read_repository import _in
+
+    assert _in("d.id", []) == "1 = 0"
+    assert _in("d.id", [3, 1]) == "d.id IN (1,3)"

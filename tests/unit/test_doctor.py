@@ -33,7 +33,7 @@ def test_every_read_function_can_be_exercised():
 
 
 def test_read_call_kwargs_uses_harmless_values():
-    assert doctor.read_call_kwargs(repo.list_departments) == {"limit": 1, "offset": 0}
+    assert doctor.read_call_kwargs(repo.list_departments) == {"limit": 1, "offset": 0, "access": doctor.DOCTOR_ACCESS}
     assert doctor.read_call_kwargs(repo.get_ticket) == {"ticket_id": 0, "access": doctor.DOCTOR_ACCESS}
     assert doctor.read_call_kwargs(repo.search_all) == {
         "query": "doctor", "limit": 1, "access": doctor.DOCTOR_ACCESS, "include_directory": True,
@@ -109,3 +109,14 @@ async def test_a_database_without_osticket_fails_the_schema_check():
         assert (await doctor.check_osticket_schema(session)).status == doctor.FAIL
         checks = await doctor.check_read_queries(session)
     assert checks[0].status == doctor.FAIL and "list_tickets" in checks[0].detail
+
+
+@pytest.mark.parametrize(
+    "peak, limit, verdict",
+    [(5, 151, doctor.OK), (120, 151, doctor.OK), (121, 151, doctor.WARN), (150, 151, doctor.WARN),
+     (151, 151, doctor.FAIL), (152, 151, doctor.FAIL), (10, 0, doctor.OK)],
+)
+def test_connection_pressure(peak, limit, verdict):
+    """The high-water mark against max_connections: 80% warns, reaching the limit fails (a leaked
+    connection per worker command once did exactly that and made logins answer 500)."""
+    assert doctor.connection_pressure(peak, limit) == verdict

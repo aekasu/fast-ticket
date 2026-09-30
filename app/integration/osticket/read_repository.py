@@ -73,6 +73,11 @@ def _ids(values) -> str:
     return ",".join(str(int(v)) for v in sorted(values))
 
 
+def _in(column: str, ids) -> str:
+    """``column IN (...)``, or a condition that is never true for an empty list (``IN ()`` is invalid SQL)."""
+    return f"{column} IN ({_ids(ids)})" if ids else "1 = 0"
+
+
 def _referral(kind: str, ids) -> str:
     """The ticket's thread (a merged child's thread has type 'C') is referred to agent 'S', team 'E' or dept 'D' in ``ids``."""
     return (
@@ -463,7 +468,12 @@ async def get_staff_teams(session: AsyncSession, staff_id: int) -> list[int]:
 
 # ── Departments ───────────────────────────────────────────────────────────────
 
-async def list_departments(session: AsyncSession, limit: int = 50, offset: int = 0) -> list:
+async def list_departments(
+    session: AsyncSession, *, access: "Scope", limit: int = 50, offset: int = 0
+) -> list:
+    """Departments. ``access`` narrows the list to the departments the agent may see (``Staff::getDepartmentNames``)
+    unless it is ``UNRESTRICTED`` (the Admin Panel's full list)."""
+    visible = "1 = 1" if getattr(access, "unrestricted", False) else _in("d.id", access.dept_ids)
     sql = """
         SELECT
             d.id,
@@ -472,8 +482,9 @@ async def list_departments(session: AsyncSession, limit: int = 50, offset: int =
             d.created,
             d.updated
         FROM ost_department d
+        WHERE {visible}
         ORDER BY d.name ASC LIMIT :limit OFFSET :offset
-    """
+    """.replace("{visible}", visible)
     result = await session.execute(_sql(sql), {"limit": limit, "offset": offset})
     return list(result.mappings().all())
 
@@ -553,6 +564,20 @@ async def list_topics(session: AsyncSession, limit: int = 50, offset: int = 0) -
         ORDER BY ht.topic ASC LIMIT :limit OFFSET :offset
     """
     result = await session.execute(_sql(sql), {"limit": limit, "offset": offset})
+    return list(result.mappings().all())
+
+
+async def list_topic_rows(session: AsyncSession) -> list:
+    """Every help topic in osTicket's own order, with what ``Topic::getHelpTopics()`` reads — the caller
+    applies osTicket's name and visibility rules (``Staff::getTopicNames()``), which are procedural."""
+    sql = """
+        SELECT
+            ht.topic_id, ht.topic_pid, ht.ispublic, COALESCE(ht.flags, 0) AS flags,
+            ht.topic, ht.dept_id, ht.created, ht.updated
+        FROM ost_help_topic ht
+        ORDER BY ht.sort ASC, ht.topic_id ASC
+    """
+    result = await session.execute(_sql(sql))
     return list(result.mappings().all())
 
 
@@ -735,7 +760,24 @@ async def get_faq(session: AsyncSession, faq_id: int) -> dict | None:
 
 # ── Canned Responses ──────────────────────────────────────────────────────────
 
-async def list_canned(session: AsyncSession, limit: int = 50, offset: int = 0) -> list:
+def canned_visibility(access: "Scope", *, manage: bool) -> str:
+    """SQL condition over ``ost_canned_response c``.
+
+    ``manage``  the management page (``include/staff/cannedresponses.inc.php``): global responses plus those of
+                departments where one of the agent's roles grants ``canned.manage`` — enabled or not.
+    otherwise   the reply picker (``Canned::getCannedResponses``): enabled responses that are global or belong
+                to one of the agent's departments.
+    """
+    if getattr(access, "unrestricted", False):
+        return "1 = 1"
+    if manage:
+        return f"(c.dept_id = 0 OR {_in('c.dept_id', access.depts_granting('canned.manage'))})"
+    return f"(c.isenabled = 1 AND (c.dept_id = 0 OR {_in('c.dept_id', access.dept_ids)}))"
+
+
+async def list_canned(
+    session: AsyncSession, *, access: "Scope", manage: bool, limit: int = 50, offset: int = 0
+) -> list:
     sql = """
         SELECT
             c.canned_id AS id,
@@ -745,12 +787,15 @@ async def list_canned(session: AsyncSession, limit: int = 50, offset: int = 0) -
             c.created,
             c.updated
         FROM ost_canned_response c
+        WHERE {visible}
         ORDER BY c.title ASC LIMIT :limit OFFSET :offset
-    """
+    """.replace("{visible}", canned_visibility(access, manage=manage))
     result = await session.execute(_sql(sql), {"limit": limit, "offset": offset})
     return list(result.mappings().all())
 
-async def get_canned(session: AsyncSession, canned_id: int) -> dict | None:
+async def get_canned(
+    session: AsyncSession, canned_id: int, *, access: "Scope", manage: bool
+) -> dict | None:
     sql = """
         SELECT
             c.canned_id AS id,
@@ -762,8 +807,8 @@ async def get_canned(session: AsyncSession, canned_id: int) -> dict | None:
             c.created,
             c.updated
         FROM ost_canned_response c
-        WHERE c.canned_id = :canned_id
-    """
+        WHERE c.canned_id = :canned_id AND {visible}
+    """.replace("{visible}", canned_visibility(access, manage=manage))
     result = await session.execute(_sql(sql), {"canned_id": canned_id})
     row = result.mappings().one_or_none()
     return dict(row) if row else None

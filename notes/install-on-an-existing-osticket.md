@@ -37,7 +37,9 @@ Commands queued by the API wait in the inbox until the plugin runs them. Pick ei
 share an atomic claim):
 
 * **Worker (recommended, ~1 s):** keep `php include/plugins/fastapi_integration/worker.php` running under a
-  supervisor, as the web server's user. systemd:
+  supervisor, as the web server's user. It exits by design after 100 commands or 15 minutes
+  (`FASTAPI_WORKER_MAX_COMMANDS`, `FASTAPI_WORKER_MAX_SECONDS`) so the supervisor gives it a fresh process:
+  use `Restart=always`, not `on-failure`. systemd:
 
   ```ini
   [Service]

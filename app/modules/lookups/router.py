@@ -1,15 +1,16 @@
 """Lookups endpoints.
 
-Permissions — the Admin Panel (isAdmin()): help topics, SLA plans and ticket priorities are admin-only,
-reads included. (Agents see topics/priorities in the ticket forms, dept-filtered; that scoped read
-arrives with S3.)
+Permissions — the Admin Panel (isAdmin()): help topics, SLA plans and ticket priorities are managed by
+administrators only, and their details and SLAs are admin-only to read. The two *lists* an agent needs to
+fill in a ticket form are open to any agent, as in osTicket: ``GET /topics`` (active topics, narrowed by
+department) and ``GET /priorities``.
 """
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_session
-from app.core.security import require_admin
+from app.core.security import require_admin, require_staff
 from app.modules.lookups import service
 from app.modules.lookups.models import (
     CommandResponse,
@@ -35,10 +36,14 @@ router = APIRouter(tags=["lookups"])
 async def list_topics(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200),
-    current_user: dict = require_admin(),
+    current_user: dict = require_staff(),
     session: AsyncSession = Depends(get_session),
 ):
-    return await service.list_topics(session, page=page, page_size=page_size)
+    """Help topics. Administrators get the Admin Panel list (every topic, raw names). An agent gets what osTicket's
+    ticket form offers them: active topics, named "Parent / Child", narrowed by department."""
+    return await service.list_topics(
+        session, page=page, page_size=page_size, access=current_user["access"]
+    )
 
 @router.get("/topics/{topic_id}", response_model=TopicDetail, summary="Get help topic")
 async def get_topic(
@@ -137,9 +142,10 @@ async def delete_sla(
 async def list_priorities(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200),
-    current_user: dict = require_admin(),
+    current_user: dict = require_staff(),
     session: AsyncSession = Depends(get_session),
 ):
+    """Ticket priorities — osTicket offers them to every agent (``Priority::getPriorities``)."""
     return await service.list_priorities(session, page=page, page_size=page_size)
 
 @router.get("/priorities/{priority_id}", response_model=PriorityDetail, summary="Get priority")

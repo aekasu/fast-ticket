@@ -69,6 +69,8 @@ def read_call_kwargs(func: Callable) -> dict | None:
             kwargs[name] = DOCTOR_ACCESS   # a scoped read runs, and matches nothing
         elif name == "include_directory":
             kwargs[name] = True
+        elif name == "manage":
+            kwargs[name] = True    # check_read_queries also runs the other mode
         elif name == "limit":
             kwargs[name] = 1
         elif name == "offset":
@@ -181,12 +183,14 @@ async def check_read_queries(session: AsyncSession) -> list[Check]:
         if kwargs is None:
             skipped.append(name)
             continue
-        try:
-            await func(session, **kwargs)
-            ran += 1
-        except Exception as exc:
-            failures.append(f"{name}: {str(exc).splitlines()[0][:160]}")
-            await session.rollback()
+        variants = [kwargs] + ([{**kwargs, "manage": False}] if "manage" in kwargs else [])
+        for variant in variants:
+            try:
+                await func(session, **variant)
+                ran += 1
+            except Exception as exc:
+                failures.append(f"{name}: {str(exc).splitlines()[0][:160]}")
+                await session.rollback()
     checks = [
         Check(
             "read queries", FAIL if failures else OK,
@@ -254,6 +258,33 @@ async def check_privileges(session: AsyncSession) -> Check:
     )
 
 
+def connection_pressure(max_used: int, limit: int) -> str:
+    """``ok``/``warn``/``fail`` for how close the server has come to refusing connections."""
+    if limit and max_used >= limit:
+        return FAIL
+    if limit and max_used >= limit * 0.8:
+        return WARN
+    return OK
+
+
+async def check_connections(session: AsyncSession) -> Check:
+    """A leak (a worker that never closes its connection) shows up as the high-water mark nearing max_connections,
+    after which the next web request or login is refused with a 500."""
+    name = "database connections"
+    try:
+        status = dict((await session.execute(text("SHOW GLOBAL STATUS LIKE 'Max_used_connections'"))).all())
+        limit = int((await session.execute(text("SELECT @@max_connections"))).scalar_one())
+        current = int((await session.execute(text("SELECT COUNT(*) FROM information_schema.processlist"))).scalar_one())
+    except Exception as exc:
+        return Check(name, WARN, f"could not read connection counters: {str(exc).splitlines()[0][:120]}")
+    peak = int(status.get("Max_used_connections", 0))
+    verdict = connection_pressure(peak, limit)
+    detail = f"{current} open now, peak {peak} of {limit} allowed since the server started"
+    if verdict != OK:
+        detail += " — something may be leaking connections (check the worker), or raise max_connections"
+    return Check(name, verdict, detail)
+
+
 async def check_queue(session: AsyncSession) -> list[Check]:
     checks = []
     try:
@@ -279,5 +310,6 @@ async def run_checks(session: AsyncSession, fetch=None) -> list[Check]:
     checks += await check_read_queries(session)
     checks += await check_handshake(fetch)
     checks.append(await check_privileges(session))
+    checks.append(await check_connections(session))
     checks += await check_queue(session)
     return checks

@@ -4,6 +4,7 @@ import logging
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.integration.osticket import read_repository as repo
+from app.modules.lookups.topic_visibility import visible_topics
 from app.integration.osticket.commands_service import dispatch_command
 from app.modules.lookups.models import (
     CommandResponse,
@@ -41,9 +42,40 @@ async def list_topics(
     session: AsyncSession,
     page: int = 1,
     page_size: int = 50,
+    *,
+    access,
 ) -> TopicListResponse:
+    """Help topics. An administrator gets the Admin Panel's list (every topic, active or not, raw names);
+    an agent gets what osTicket's ticket form offers them (``Staff::getTopicNames``): active topics with their
+    full "Parent / Child" names, narrowed by department unless they hold ``visibility.departments``."""
     page_size = min(page_size, 200)
     offset = (page - 1) * page_size
+    if not access.is_admin:
+        rows = await repo.list_topic_rows(session)
+        by_id = {int(r["topic_id"]): r for r in rows}
+        visible = visible_topics(
+            rows,
+            staff_dept_ids=access.dept_ids,
+            filter_by_department=bool(access.dept_ids) and not access.has_global("visibility.departments"),
+        )
+        # osTicket's default (help_topic_sort_mode 'a') lists topics alphabetically by full name
+        visible.sort(key=lambda entry: entry[1].casefold())
+        return TopicListResponse(
+            items=[
+                TopicListItem(
+                    id=tid,
+                    topic=name,
+                    is_active=True,
+                    is_public=bool(by_id[tid]["ispublic"]),
+                    created=by_id[tid]["created"],
+                    updated=by_id[tid]["updated"],
+                )
+                for tid, name in visible[offset : offset + page_size]
+            ],
+            total=len(visible),
+            page=page,
+            page_size=page_size,
+        )
     rows = await repo.list_topics(session, limit=page_size, offset=offset)
     
     items = [

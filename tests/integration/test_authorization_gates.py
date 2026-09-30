@@ -39,9 +39,9 @@ EVERYTHING_BUT_ADMIN = make_access(5, sorted(ALL_PERMISSIONS), is_admin=False)
 ADMIN_WITH_NOTHING = make_access(5, [], is_admin=True)
 
 ADMIN_PANEL_READS = [
-    "/api/v1/staff", "/api/v1/staff/1", "/api/v1/departments", "/api/v1/departments/1",
-    "/api/v1/teams", "/api/v1/teams/1", "/api/v1/topics", "/api/v1/topics/1", "/api/v1/slas",
-    "/api/v1/slas/1", "/api/v1/priorities", "/api/v1/priorities/1", "/api/v1/forms", "/api/v1/forms/1",
+    "/api/v1/staff", "/api/v1/staff/1", "/api/v1/departments/1",
+    "/api/v1/teams", "/api/v1/teams/1", "/api/v1/topics/1", "/api/v1/slas",
+    "/api/v1/slas/1", "/api/v1/priorities/1", "/api/v1/forms", "/api/v1/forms/1",
     "/api/v1/banlist", "/api/v1/banlist/1", "/api/v1/commands", "/api/v1/commands/1",
 ]
 
@@ -136,18 +136,68 @@ async def test_writing_the_knowledge_base_needs_faq_manage():
 
 
 @pytest.mark.asyncio
-async def test_canned_responses_need_canned_manage_in_any_of_the_agents_roles():
+async def test_canned_managers_get_the_management_list_and_everyone_else_the_reply_picker():
     from app.core.access import AccessContext
 
-    with patch("app.modules.kb.service.repo.list_canned", new=AsyncMock(return_value=[])):
-        assert (await _call("GET", "/api/v1/canned", make_access(5, []))).status_code == 403
+    lst = AsyncMock(return_value=[])
+    with patch("app.modules.kb.service.repo.list_canned", new=lst):
+        plain = make_access(5, [])
+        assert (await _call("GET", "/api/v1/canned", plain)).status_code == 200
+        assert lst.await_args.kwargs["manage"] is False and lst.await_args.kwargs["access"] is plain
+
         assert (await _call("GET", "/api/v1/canned", make_access(5, ["canned.manage"]))).status_code == 200
+        assert lst.await_args.kwargs["manage"] is True
         # granted only by the role held in an *extra* department: still "any of my roles" (hasPerm(.., false))
         extra_only = AccessContext(
             staff_id=5, dept_roles={1: frozenset({"ticket.create"}), 2: frozenset({"canned.manage"})},
             dept_ids=frozenset({1, 2}),
         )
         assert (await _call("GET", "/api/v1/canned", extra_only)).status_code == 200
+        assert lst.await_args.kwargs["manage"] is True
+
+
+@pytest.mark.asyncio
+async def test_canned_writes_still_need_canned_manage():
+    assert (await _call("POST", "/api/v1/canned", make_access(5, []), json={})).status_code == 403
+    assert (await _call("POST", "/api/v1/canned", make_access(5, ["canned.manage"]), json={})).status_code == 422
+
+
+# ── reference lists an agent needs for a ticket form ──────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_any_agent_reads_the_priority_list_but_not_a_priorities_detail():
+    with patch("app.modules.lookups.service.repo.list_priorities", new=AsyncMock(return_value=[])):
+        assert (await _call("GET", "/api/v1/priorities", make_access(5, []))).status_code == 200
+    assert (await _call("GET", "/api/v1/priorities/1", make_access(5, []))).status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_departments_are_narrowed_to_the_agents_own_unless_they_see_all():
+    from app.core.scope import UNRESTRICTED
+
+    lst = AsyncMock(return_value=[])
+    with patch("app.modules.staff.service.repo.list_departments", new=lst):
+        plain = make_access(5, [], dept_ids=frozenset({1}))
+        assert (await _call("GET", "/api/v1/departments", plain)).status_code == 200
+        assert lst.await_args.kwargs["access"] is plain                     # scoped to their departments
+
+        await _call("GET", "/api/v1/departments", make_access(5, ["visibility.departments"]))
+        assert lst.await_args.kwargs["access"] is UNRESTRICTED              # visibility.departments
+
+        await _call("GET", "/api/v1/departments", ADMIN_WITH_NOTHING)
+        assert lst.await_args.kwargs["access"] is UNRESTRICTED              # the Admin Panel lists them all
+
+
+@pytest.mark.asyncio
+async def test_topics_an_admin_sees_every_topic_and_an_agent_sees_the_ticket_form_names():
+    admin_list, agent_rows = AsyncMock(return_value=[]), AsyncMock(return_value=[])
+    with patch("app.modules.lookups.service.repo.list_topics", new=admin_list), \
+         patch("app.modules.lookups.service.repo.list_topic_rows", new=agent_rows):
+        assert (await _call("GET", "/api/v1/topics", ADMIN_WITH_NOTHING)).status_code == 200
+        assert admin_list.await_count == 1 and agent_rows.await_count == 0
+        assert (await _call("GET", "/api/v1/topics", make_access(5, []))).status_code == 200
+        assert admin_list.await_count == 1 and agent_rows.await_count == 1
 
 
 # ── search ────────────────────────────────────────────────────────────────────────────────────────

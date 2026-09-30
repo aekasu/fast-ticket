@@ -4,7 +4,7 @@ Things fast-ticket does not do yet, or does only partly, that someone relying on
 This is a **live list, not a changelog**: when a limit is fixed its entry is *deleted* (git history keeps
 it) and the commit that fixes it says so. Rules for keeping it honest are in `AGENTS.md` → "Known limits".
 
-Last reviewed: 2026-09-30 (after S3, first half: ticket/task/search scoping).
+Last reviewed: 2026-09-30 (after S3: read scoping).
 
 Each entry: what is true today · what it means for you · what will resolve it (a phase from the plan, or
 "by design" if it is a deliberate trade-off).
@@ -13,7 +13,8 @@ Each entry: what is true today · what it means for you · what will resolve it 
 
 | Limit | Impact | Resolved by |
 |---|---|---|
-| **Reference data and canned responses are not yet scoped for non-admins.** Tickets, tasks, their threads and collaborators, and search are narrowed to what osTicket shows the agent. Departments, teams, the agent directory, help topics, SLAs and priorities are still `require_admin()` although osTicket shows agents scoped versions of them, and canned responses (department-specific in osTicket) are shown in full to anyone holding `canned.manage`. | A non-admin agent cannot fetch the topics, priorities, departments or teams to build a "new ticket" form; an agent with `canned.manage` sees other departments' canned responses. Deliberately kept strict (never looser than before) until they are scoped. | S3, second half |
+| **Teams, the agent directory, SLA plans, forms, and the *detail* of departments, topics and priorities are admin-only.** The lists an agent needs to fill in a ticket form (departments, help topics, priorities) and the canned-response picker are open, scoped as osTicket scopes them. | A non-admin agent cannot list teams or agents to build an *assign* form, or read SLAs and forms. Kept strict (never looser than before) until each osTicket rule (the agent directory, the assignable agents and teams) has been read and ported. | Next reference-data pass, as needed |
+| **Help topics are sorted alphabetically by Python's case-folding for agents** (osTicket's default `help_topic_sort_mode`). | An instance set to manual order, or using a non-English collation, lists them in a different order than osTicket's own form. | Read the instance's sort mode |
 | **Organization reads require `user.dir`**, which is stricter than osTicket (it does not gate organization pages by URL). | An agent without the user-directory permission cannot list organizations here though osTicket's page would open for them. | By design (nearest real gate) |
 | **The API checks a role permission as "any of the agent's roles" (`hasPerm($perm, false)`)**; the exact per-department answer is enforced only by the ticket and task bridge handlers. | An agent whose *other* department's role grants a permission passes the API gate for an action in a department where they lack it; the bridge then refuses ticket and task commands, but not the other kinds. | S4 |
 | **Idempotency keys are global; non-admins cannot see their own commands** (`GET /commands` is admin-only), so they cannot poll a write's result; **command payloads are stored in plain text** (a `staff.create` password sits in the inbox and is readable by admins and by anyone with database access). | One agent reusing another's key gets that agent's command back; payload secrets are exposed. | S4 |

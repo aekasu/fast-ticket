@@ -3,7 +3,8 @@
 Permissions:
   knowledge base reads   any enabled agent (osTicket applies no permission to viewing FAQs)
   knowledge base writes  faq.manage      (global permission)
-  canned responses       canned.manage   (role permission — any of the agent's roles)
+  canned responses       reads: any agent, scoped (managers see the management list, others the reply picker);
+                         writes: canned.manage (role permission — any of the agent's roles)
 """
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
@@ -139,18 +140,23 @@ async def delete_faq(
 async def list_canned(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200),
-    current_user: dict = require_perm("canned.manage"),
+    current_user: dict = require_staff(),
     session: AsyncSession = Depends(get_session),
 ):
-    return await service.list_canned(session, page=page, page_size=page_size)
+    """Canned responses. An agent whose role grants ``canned.manage`` gets the management list (global responses
+    plus those of departments where they hold that permission, enabled or not); everyone else gets the reply
+    picker: enabled responses that are global or belong to one of their departments."""
+    return await service.list_canned(
+        session, page=page, page_size=page_size, access=current_user["access"]
+    )
 
 @router.get("/canned/{canned_id}", response_model=CannedDetail, summary="Get canned response")
 async def get_canned(
     canned_id: int,
-    current_user: dict = require_perm("canned.manage"),
+    current_user: dict = require_staff(),
     session: AsyncSession = Depends(get_session),
 ):
-    canned = await service.get_canned(session, canned_id)
+    canned = await service.get_canned(session, canned_id, access=current_user["access"])
     if not canned:
         raise HTTPException(status_code=404, detail="Canned response not found")
     return canned

@@ -117,7 +117,11 @@ def test_a_real_agents_access_follows_their_osticket_role_and_changes_at_once(br
     assert now["department_ids"] == [1]
 
     # the Admin Panel and the user directory are closed to them
-    for path in ("/api/v1/staff", "/api/v1/departments", "/api/v1/banlist", "/api/v1/slas", "/api/v1/commands", "/api/v1/users"):
+    # (the department *name list* is open to every agent, narrowed to their own department)
+    departments = httpx.get(f"{BASE_URL}/api/v1/departments", headers=headers, timeout=30)
+    assert departments.status_code == 200
+    assert [d["id"] for d in departments.json()["items"]] == [1]
+    for path in ("/api/v1/staff", "/api/v1/departments/1", "/api/v1/banlist", "/api/v1/slas", "/api/v1/commands", "/api/v1/users"):
         assert status("GET", path) == 403, path
     # search is open to any agent but scoped: no user.dir, so it can never return people
     searched = httpx.get(f"{BASE_URL}/api/v1/search?q=test", headers=headers, timeout=30)
@@ -126,18 +130,19 @@ def test_a_real_agents_access_follows_their_osticket_role_and_changes_at_once(br
     # any agent may read the knowledge base, but writing it needs faq.manage
     assert status("GET", "/api/v1/kb/faqs") == 200
     assert status("POST", "/api/v1/kb/faqs", json={}) == 403
-    # Limited Access can create tickets (gate passed -> the empty body is then a 422) but not tasks or canned responses
+    # Limited Access can create tickets (gate passed -> the empty body is then a 422) but not tasks, and may read but not write canned responses
     assert status("POST", "/api/v1/tickets/", json={}) == 422
     assert status("POST", "/api/v1/tasks/", json={}) == 403
-    assert status("GET", "/api/v1/canned") == 403
+    assert status("GET", "/api/v1/canned") == 200                       # the reply picker is for every agent
+    assert status("POST", "/api/v1/canned", json={}) == 403               # writing needs canned.manage
 
     # promote to All Access: the same token, the next request
     bridge.command("PATCH", f"/api/v1/staff/{sid}", {"role_id": 1})
-    assert status("GET", "/api/v1/canned") == 200
+    assert status("POST", "/api/v1/canned", json={}) == 422                    # canned.manage: the gate is passed
     assert status("POST", "/api/v1/tasks/", json={}) == 422
     assert "canned.manage" in me()["roles"]["1"]
 
     # demote to View only: nothing they could do a moment ago
     bridge.command("PATCH", f"/api/v1/staff/{sid}", {"role_id": 4})
     assert status("POST", "/api/v1/tickets/", json={}) == 403
-    assert status("GET", "/api/v1/canned") == 403
+    assert status("POST", "/api/v1/canned", json={}) == 403
