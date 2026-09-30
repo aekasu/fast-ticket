@@ -15,13 +15,14 @@ import json
 import logging
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import update
+from sqlalchemy import delete, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from app.core.config import settings
 from app.core.events import registry
 from app.core.ws_manager import manager as ws_manager
+from app.integration.osticket.commands import IntegrationInbox
 from app.integration.osticket.models import IntegrationOutbox
 
 logger = logging.getLogger(__name__)
@@ -207,21 +208,25 @@ async def poll_and_process_events(session_factory) -> dict:
 
 
 async def purge_old_events(session_factory, ttl_days: int | None = None) -> int:
-    """Delete processed/failed events older than ``ttl_days``.
+    """Bulk-delete finished outbox events and inbox commands older than ``ttl_days``.
 
-    Returns the number of deleted rows.
+    Pending/processing rows are never touched. Returns the number of outbox rows
+    deleted (inbox rows are purged alongside, on the same retention).
     """
     ttl_days = ttl_days or settings.EVENT_RETENTION_DAYS
     cutoff = _now() - timedelta(days=ttl_days)
     async with session_factory() as session:
-        result = await session.execute(
-            select(IntegrationOutbox).where(
+        outbox = await session.execute(
+            delete(IntegrationOutbox).where(
                 IntegrationOutbox.status.in_(["processed", "failed"]),
                 IntegrationOutbox.created_at < cutoff,
             )
         )
-        events = result.scalars().all()
-        for event in events:
-            await session.delete(event)
+        await session.execute(
+            delete(IntegrationInbox).where(
+                IntegrationInbox.status.in_(["done", "failed"]),
+                IntegrationInbox.created_at < cutoff,
+            )
+        )
         await session.commit()
-    return len(events)
+    return outbox.rowcount

@@ -11,6 +11,7 @@ import pytest
 import pytest_asyncio
 from sqlmodel import select
 
+from app.integration.osticket.commands import IntegrationInbox
 from app.integration.osticket.models import IntegrationOutbox
 from app.workers.events import poll_and_process_events, purge_old_events
 from tests.conftest import TestingSessionLocal
@@ -178,6 +179,29 @@ async def test_purge_removes_old_processed_events():
         remaining = result.scalars().all()
     assert len(remaining) == 1
     assert remaining[0].aggregate_id == "100"
+
+
+@pytest.mark.asyncio
+async def test_purge_also_clears_finished_inbox_rows_but_never_pending_ones():
+    old_time = _utcnow() - timedelta(days=35)
+    async with TestingSessionLocal() as session:
+        session.add_all([
+            IntegrationInbox(command_type="ticket.close", aggregate_type="ticket",
+                             aggregate_id="1", status="done", created_at=old_time),
+            IntegrationInbox(command_type="ticket.close", aggregate_type="ticket",
+                             aggregate_id="2", status="failed", created_at=old_time),
+            IntegrationInbox(command_type="ticket.close", aggregate_type="ticket",
+                             aggregate_id="3", status="pending", created_at=old_time),
+            IntegrationInbox(command_type="ticket.close", aggregate_type="ticket",
+                             aggregate_id="4", status="done", created_at=_utcnow()),
+        ])
+        await session.commit()
+
+    await purge_old_events(TestingSessionLocal, ttl_days=30)
+
+    async with TestingSessionLocal() as session:
+        remaining = (await session.execute(select(IntegrationInbox))).scalars().all()
+    assert sorted(r.aggregate_id for r in remaining) == ["3", "4"]
 
 
 @pytest.mark.asyncio

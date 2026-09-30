@@ -122,6 +122,7 @@ class FastApiIntegrationPlugin extends Plugin {
 
         error_log("[FastAPI Integration] Processing command #{$inbox_id}: {$command_type}");
 
+        $this->runningCommand = true;
         try {
             // Act as the staff member who made the API request. osTicket's models read the
             // global $thisstaff for permission checks and to attribute replies, notes and
@@ -438,6 +439,8 @@ class FastApiIntegrationPlugin extends Plugin {
                 db_input($e->getMessage()),
                 $inbox_id
             ));
+        } finally {
+            $this->runningCommand = false;
         }
     }
 
@@ -496,9 +499,12 @@ class FastApiIntegrationPlugin extends Plugin {
         $this->handleModelEvent('deleted', $object);
     }
 
+    /** True while a command runs: it emits its own result event, so signals would duplicate it. */
+    private $runningCommand = false;
+
     private function handleModelEvent($action, $object) {
-        if (!is_object($object)) return;
-        
+        if (!is_object($object) || $this->runningCommand) return;
+
         $class = get_class($object);
         $typeMap = [
             'Ticket' => 'ticket',
@@ -530,10 +536,26 @@ class FastApiIntegrationPlugin extends Plugin {
 
         if (!$aggregate_id) return;
 
-        // Serialize full model state for payload
-        $payload = method_exists($object, 'ht') ? $object->ht : (array)$object;
-        
-        $this->emitOutboxEvent($event_type, $aggregate_type, $aggregate_id, $payload);
+        $this->emitOutboxEvent($event_type, $aggregate_type, $aggregate_id, self::safePayload($object));
+    }
+
+    /** Column names never sent to the outbox (it is broadcast over WebSocket). */
+    const SENSITIVE_KEY = '/pass|hash|secret|token|salt|key|signature|backend/i';
+
+    /**
+     * Scalar column values of a model, minus anything credential-like. Staff::$ht holds
+     * `passwd`, so the raw row must never be the payload.
+     */
+    private static function safePayload($object) {
+        $ht = (isset($object->ht) && is_array($object->ht)) ? $object->ht : [];
+        $safe = [];
+        foreach ($ht as $column => $value) {
+            if (is_scalar($value) || $value === null) {
+                if (!preg_match(self::SENSITIVE_KEY, (string) $column))
+                    $safe[$column] = $value;
+            }
+        }
+        return $safe;
     }
 
     /**

@@ -20,7 +20,7 @@ CREATE TABLE IF NOT EXISTS `ost_integration_inbox` (
     `created_at`            DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `processed_at`          DATETIME        NULL,
     PRIMARY KEY (`id`),
-    INDEX `idx_inbox_status` (`status`),
+    INDEX `idx_inbox_status` (`status`, `id`),
     INDEX `idx_inbox_claimed_by` (`claimed_by`),
     INDEX `idx_inbox_command_type` (`command_type`),
     INDEX `idx_inbox_aggregate` (`aggregate_type`, `aggregate_id`)
@@ -41,7 +41,7 @@ CREATE TABLE IF NOT EXISTS `ost_integration_outbox` (
     `locked_at`             DATETIME        NULL COMMENT 'Set when a worker claims this event',
     `processed_at`          DATETIME        NULL,
     PRIMARY KEY (`id`),
-    INDEX `idx_outbox_status` (`status`),
+    INDEX `idx_outbox_status` (`status`, `created_at`),
     INDEX `idx_outbox_event_type` (`event_type`),
     INDEX `idx_outbox_aggregate` (`aggregate_type`, `aggregate_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

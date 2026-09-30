@@ -22,7 +22,7 @@ from app.api.router import api_router
 from app.core.config import settings
 from app.core.db import AsyncSessionLocal, create_db_and_tables
 from app.core.rate_limit import limiter
-from app.workers.events import poll_and_process_events
+from app.workers.events import poll_and_process_events, purge_old_events
 
 logging.basicConfig(
     level=logging.INFO,
@@ -49,6 +49,18 @@ async def _outbox_worker() -> None:
         await asyncio.sleep(settings.EVENT_POLL_INTERVAL_SECONDS)
 
 
+async def _purge_worker() -> None:
+    """Hourly retention purge of finished inbox/outbox rows."""
+    while True:
+        try:
+            deleted = await purge_old_events(AsyncSessionLocal)
+            if deleted:
+                logger.info("Purged %d old outbox events", deleted)
+        except Exception:
+            logger.exception("Retention purge failed — will retry next hour.")
+        await asyncio.sleep(3600)
+
+
 # ── Lifespan ──────────────────────────────────────────────────────────────────
 
 
@@ -59,15 +71,17 @@ async def lifespan(app: FastAPI):
         await create_db_and_tables()
 
     worker_task = asyncio.create_task(_outbox_worker(), name="osticket-outbox-worker")
+    purge_task = asyncio.create_task(_purge_worker(), name="osticket-purge-worker")
     logger.info("Application startup complete.")
 
     yield
 
-    worker_task.cancel()
-    try:
-        await worker_task
-    except asyncio.CancelledError:
-        pass
+    for task in (worker_task, purge_task):
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
     logger.info("Application shutdown complete.")
 
 
