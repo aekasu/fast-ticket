@@ -42,6 +42,8 @@ return [
     'ticket.collaborator.add' => ['tickets', 'FastApiTicketHandler', 'addCollaborator', 'ticket.collaborator_added', 'role:ticket.edit'],
     'ticket.collaborator.update' => ['tickets', 'FastApiTicketHandler', 'updateCollaborator', 'ticket.collaborator_updated', 'role:ticket.edit'],
     'ticket.collaborator.remove' => ['tickets', 'FastApiTicketHandler', 'removeCollaborator', 'ticket.collaborator_removed', 'role:ticket.edit'],
+    'ticket.entry.edit'       => ['tickets', 'FastApiTicketHandler', 'editEntry', 'ticket.entry_edited', 'role:ticket.reply'],
+    'ticket.entry.resend'     => ['tickets', 'FastApiTicketHandler', 'resendEntry', 'ticket.entry_resent', 'role:ticket.reply'],
 
     'task.create'             => ['tasks', 'FastApiTaskHandler', 'create', 'task.created', 'role:task.create'],
     'task.assign'             => ['tasks', 'FastApiTaskHandler', 'assign', 'task.assigned', 'role:task.assign'],
