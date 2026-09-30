@@ -13,7 +13,8 @@
  * keeps the previous task's answers, ...), so after any command has run this worker
  * re-executes itself in place (pcntl_exec: same PID, so the supervisor never notices)
  * instead of running the next one in a dirty process. While idle it just sleeps and polls.
- * It exits (0) after FASTAPI_WORKER_MAX_SECONDS or when memory grows, and on any
+ * It exits (0) after FASTAPI_WORKER_MAX_SECONDS, after FASTAPI_WORKER_MAX_COMMANDS commands (default 100 —
+ * each re-exec leaks one file descriptor, so the chain is bounded), or when memory grows, and on any
  * unexpected error (1), so the supervisor (docker `restart: unless-stopped`, systemd
  * `Restart=always`) gives it a fresh process and database connection.
  *
@@ -52,6 +53,11 @@ if (in_array('--one', $argv ?? [], true)) {
 }
 
 $max_seconds = (int) (getenv('FASTAPI_WORKER_MAX_SECONDS') ?: 900);
+// Commands run since the supervisor last started this process (carried across the re-execs as --run=N).
+// PHP keeps its own script file open across pcntl_exec, so every re-exec leaks one descriptor; after this
+// many commands the worker exits instead and the supervisor starts a fresh process with a clean table.
+$max_commands = (int) (getenv('FASTAPI_WORKER_MAX_COMMANDS') ?: 100);
+$run          = (int) (getopt('', ['run:'])['run'] ?? 0);
 $idle_usleep = (int) (getenv('FASTAPI_WORKER_IDLE_MS') ?: 500) * 1000;
 $max_memory  = 192 * 1024 * 1024;
 $started     = time();
@@ -74,10 +80,16 @@ while (!$stop && (time() - $started) < $max_seconds && memory_get_usage(true) < 
         exit(1);
     }
     if ($ran) {
-        // Start the next command in a clean process (see the header).
-        if (function_exists('pcntl_exec'))
-            pcntl_exec(PHP_BINARY, [__FILE__]);
-        break;   // no pcntl: exit and let the supervisor restart us
+        // Close the database connection FIRST. pcntl_exec replaces the process image but keeps every open
+        // descriptor, and a mysqli socket is not close-on-exec: without this each command leaked one
+        // connection until the worker recycled, and a busy run exhausted max_connections — the next web
+        // request (a login) then got a 500.
+        db_close();
+        // Start the next command in a clean process (see the header) — unless it is time to recycle.
+        if (function_exists('pcntl_exec') && $run + 1 < $max_commands)
+            pcntl_exec(PHP_BINARY, [__FILE__, '--run=' . ($run + 1)]);
+        error_log('[FastAPI Integration] Inbox worker exiting (' . ($run + 1) . ' commands: recycle).');
+        exit(0);   // no pcntl, or time to recycle: the supervisor restarts us
     }
     usleep($idle_usleep);
 }

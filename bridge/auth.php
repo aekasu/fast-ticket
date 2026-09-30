@@ -154,7 +154,8 @@ if ($staff->forcePasswdChange())
 try {
     $ost->logDebug(_S('Agent Login'),
         sprintf(_S("%s logged in [%s], via %s"), $staff->getUserName(), $client_ip, 'fast-ticket API'));
-    Signal::send('person.login', $staff, ['type' => 'login']);
+    $type = ['type' => 'login'];   // Signal::send takes its data by reference: a literal array is an Error
+    Signal::send('person.login', $staff, $type);
     Signal::send('auth.login.succeeded', $staff);
     $staff->onLogin($used_backend);   // last login time
 } catch (Throwable $e) {
