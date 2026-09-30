@@ -76,7 +76,7 @@ async def _inbox_rows() -> list[IntegrationInbox]:
 async def test_list_departments_returns_200():
     with patch("app.modules.staff.service.repo.list_departments", new=AsyncMock(return_value=[MOCK_DEPT])):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-            resp = await ac.get("/api/v1/departments", headers=_auth(["dept.create"]))
+            resp = await ac.get("/api/v1/departments", headers=_auth(is_admin=True))
     assert resp.status_code == 200
     data = resp.json()
     assert len(data["items"]) == 1
@@ -87,7 +87,7 @@ async def test_list_departments_returns_200():
 async def test_get_department_returns_detail():
     with patch("app.modules.staff.service.repo.get_department", new=AsyncMock(return_value=MOCK_DEPT)):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-            resp = await ac.get("/api/v1/departments/1", headers=_auth(["dept.create"]))
+            resp = await ac.get("/api/v1/departments/1", headers=_auth(is_admin=True))
     assert resp.status_code == 200
     data = resp.json()
     assert data["name"] == "Support"
@@ -100,7 +100,7 @@ async def test_create_department_queues_command():
         resp = await ac.post(
             "/api/v1/departments",
             json={"name": "Sales"},
-            headers=_auth(["dept.create"]),
+            headers=_auth(is_admin=True),
         )
     assert resp.status_code == 202
     rows = await _inbox_rows()
@@ -115,7 +115,7 @@ async def test_update_department_queues_command():
         resp = await ac.patch(
             "/api/v1/departments/2",
             json={"name": "IT Support"},
-            headers=_auth(["dept.edit"]),
+            headers=_auth(is_admin=True),
         )
     assert resp.status_code == 202
     rows = await _inbox_rows()
@@ -126,7 +126,7 @@ async def test_update_department_queues_command():
 @pytest.mark.asyncio
 async def test_delete_department_queues_command():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-        resp = await ac.delete("/api/v1/departments/3", headers=_auth(["dept.delete"]))
+        resp = await ac.delete("/api/v1/departments/3", headers=_auth(is_admin=True))
     assert resp.status_code == 202
     rows = await _inbox_rows()
     assert rows[0].command_type == "dept.delete"
@@ -139,7 +139,7 @@ async def test_delete_department_queues_command():
 async def test_list_teams_returns_200():
     with patch("app.modules.staff.service.repo.list_teams", new=AsyncMock(return_value=[MOCK_TEAM])):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-            resp = await ac.get("/api/v1/teams", headers=_auth(["team.create"]))
+            resp = await ac.get("/api/v1/teams", headers=_auth(is_admin=True))
     assert resp.status_code == 200
     data = resp.json()
     assert len(data["items"]) == 1
@@ -153,7 +153,7 @@ async def test_get_team_returns_detail():
         patch("app.modules.staff.service.repo.get_team_members", new=AsyncMock(return_value=[5, 6]))
     ):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-            resp = await ac.get("/api/v1/teams/1", headers=_auth(["team.create"]))
+            resp = await ac.get("/api/v1/teams/1", headers=_auth(is_admin=True))
     assert resp.status_code == 200
     data = resp.json()
     assert data["name"] == "Level 1 Support"
@@ -166,7 +166,7 @@ async def test_create_team_queues_command():
         resp = await ac.post(
             "/api/v1/teams",
             json={"name": "L2 Support", "members": [5]},
-            headers=_auth(["team.create"]),
+            headers=_auth(is_admin=True),
         )
     assert resp.status_code == 202
     rows = await _inbox_rows()
@@ -182,7 +182,7 @@ async def test_update_team_queues_command():
         resp = await ac.patch(
             "/api/v1/teams/2",
             json={"name": "Updated Team"},
-            headers=_auth(["team.edit"]),
+            headers=_auth(is_admin=True),
         )
     assert resp.status_code == 202
     rows = await _inbox_rows()
@@ -193,7 +193,7 @@ async def test_update_team_queues_command():
 @pytest.mark.asyncio
 async def test_delete_team_queues_command():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-        resp = await ac.delete("/api/v1/teams/3", headers=_auth(["team.delete"]))
+        resp = await ac.delete("/api/v1/teams/3", headers=_auth(is_admin=True))
     assert resp.status_code == 202
     rows = await _inbox_rows()
     assert rows[0].command_type == "team.delete"
@@ -206,7 +206,7 @@ async def test_delete_team_queues_command():
 async def test_list_staff_returns_200():
     with patch("app.modules.staff.service.repo.list_staff", new=AsyncMock(return_value=[MOCK_STAFF])):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-            resp = await ac.get("/api/v1/staff", headers=_auth(["staff.create"]))
+            resp = await ac.get("/api/v1/staff", headers=_auth(is_admin=True))
     assert resp.status_code == 200
     data = resp.json()
     assert len(data["items"]) == 1
@@ -220,7 +220,7 @@ async def test_get_staff_returns_detail():
         patch("app.modules.staff.service.repo.get_staff_teams", new=AsyncMock(return_value=[1]))
     ):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-            resp = await ac.get("/api/v1/staff/5", headers=_auth(["staff.create"]))
+            resp = await ac.get("/api/v1/staff/5", headers=_auth(is_admin=True))
     assert resp.status_code == 200
     data = resp.json()
     assert data["username"] == "agent"
@@ -241,7 +241,7 @@ async def test_create_staff_queues_command():
                 "role_id": 1,
                 "password": "secure_password",
             },
-            headers=_auth(["staff.create"]),
+            headers=_auth(is_admin=True),
         )
     assert resp.status_code == 202
     rows = await _inbox_rows()
@@ -256,7 +256,7 @@ async def test_update_staff_queues_command():
         resp = await ac.patch(
             "/api/v1/staff/6",
             json={"firstname": "Updated"},
-            headers=_auth(["staff.edit"]),
+            headers=_auth(is_admin=True),
         )
     assert resp.status_code == 202
     rows = await _inbox_rows()
@@ -267,7 +267,7 @@ async def test_update_staff_queues_command():
 @pytest.mark.asyncio
 async def test_delete_staff_queues_command():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-        resp = await ac.delete("/api/v1/staff/7", headers=_auth(["staff.delete"]))
+        resp = await ac.delete("/api/v1/staff/7", headers=_auth(is_admin=True))
     assert resp.status_code == 202
     rows = await _inbox_rows()
     assert rows[0].command_type == "staff.delete"

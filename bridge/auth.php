@@ -161,28 +161,8 @@ try {
     error_log('[FastAPI Integration] login bookkeeping failed: ' . $e->getMessage());
 }
 
-// ── Build permission list ──────────────────────────────────────────────────
-
-$permissions = [];
-$is_admin = (bool) $staff->isAdmin();
-
-if (!$is_admin) {
-    // Fetch role permissions from the role table
-    $role_id = $staff->get('role_id');
-    if ($role_id) {
-        $role_result = db_query("SELECT permissions FROM " . ROLE_TABLE . " WHERE id=" . db_input($role_id));
-        if ($role_row = db_fetch_array($role_result)) {
-            $perm_map = json_decode($role_row['permissions'], true) ?: [];
-            foreach ($perm_map as $key => $val) {
-                if ($val) {
-                    $permissions[] = $key;
-                }
-            }
-        }
-    }
-}
-
-// ── Return staff profile ───────────────────────────────────────────────────
+// ── Return the staff identity ──────────────────────────────────────────────
+// No permissions here: the API reads what an agent may do from osTicket's tables on every request.
 
 fastapi_auth_respond(200, [
     'staff_id'   => (int) $staff->getId(),
@@ -190,6 +170,5 @@ fastapi_auth_respond(200, [
     'firstname'  => $staff->getFirstName(),
     'lastname'   => $staff->getLastName(),
     'email'      => $staff->getEmail(),
-    'is_admin'   => $is_admin,
-    'permissions'=> $permissions,
+    'is_admin'   => (bool) $staff->isAdmin(),
 ]);

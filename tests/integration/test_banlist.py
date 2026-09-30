@@ -48,7 +48,7 @@ async def _inbox_rows() -> list[IntegrationInbox]:
 async def test_list_banlist_returns_200():
     with patch("app.modules.banlist.service.repo.list_banlist", new=AsyncMock(return_value=[MOCK_BANLIST])):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-            resp = await ac.get("/api/v1/banlist", headers=_auth(["banlist.manage"]))
+            resp = await ac.get("/api/v1/banlist", headers=_auth(is_admin=True))
     assert resp.status_code == 200
     data = resp.json()
     assert len(data["items"]) == 1
@@ -59,7 +59,7 @@ async def test_list_banlist_returns_200():
 async def test_get_banlist_entry_returns_detail():
     with patch("app.modules.banlist.service.repo.get_banlist_entry", new=AsyncMock(return_value=MOCK_BANLIST)):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-            resp = await ac.get("/api/v1/banlist/1", headers=_auth(["banlist.manage"]))
+            resp = await ac.get("/api/v1/banlist/1", headers=_auth(is_admin=True))
     assert resp.status_code == 200
     data = resp.json()
     assert data["val"] == "spammer@example.com"
@@ -72,7 +72,7 @@ async def test_create_banlist_entry_queues_command():
         resp = await ac.post(
             "/api/v1/banlist",
             json={"val": "new@spam.local"},
-            headers=_auth(["banlist.manage"]),
+            headers=_auth(is_admin=True),
         )
     assert resp.status_code == 202
     rows = await _inbox_rows()
@@ -87,7 +87,7 @@ async def test_update_banlist_entry_queues_command():
         resp = await ac.patch(
             "/api/v1/banlist/2",
             json={"is_active": False},
-            headers=_auth(["banlist.manage"]),
+            headers=_auth(is_admin=True),
         )
     assert resp.status_code == 202
     rows = await _inbox_rows()
@@ -98,7 +98,7 @@ async def test_update_banlist_entry_queues_command():
 @pytest.mark.asyncio
 async def test_delete_banlist_entry_queues_command():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-        resp = await ac.delete("/api/v1/banlist/3", headers=_auth(["banlist.manage"]))
+        resp = await ac.delete("/api/v1/banlist/3", headers=_auth(is_admin=True))
     assert resp.status_code == 202
     rows = await _inbox_rows()
     assert rows[0].command_type == "banlist.delete"

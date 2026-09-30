@@ -1,14 +1,13 @@
 """Forms endpoints.
 
-Permissions:
-  form.manage
+Permissions — Dynamic Forms are in the Admin Panel (isAdmin()): admin-only.
 """
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_session
-from app.core.security import require_perm
+from app.core.security import require_admin
 from app.modules.forms import service
 from app.modules.forms.models import (
     CommandResponse,
@@ -24,7 +23,7 @@ router = APIRouter(tags=["forms"])
 async def list_forms(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200),
-    current_user: dict = require_perm("form.manage"),
+    current_user: dict = require_admin(),
     session: AsyncSession = Depends(get_session),
 ):
     return await service.list_forms(session, page=page, page_size=page_size)
@@ -32,7 +31,7 @@ async def list_forms(
 @router.get("/forms/{form_id}", response_model=FormDetail, summary="Get form")
 async def get_form(
     form_id: int,
-    current_user: dict = require_perm("form.manage"),
+    current_user: dict = require_admin(),
     session: AsyncSession = Depends(get_session),
 ):
     form = await service.get_form(session, form_id)
@@ -43,7 +42,7 @@ async def get_form(
 @router.post("/forms", response_model=CommandResponse, status_code=202, summary="Create form")
 async def create_form(
     body: FormCreate,
-    current_user: dict = require_perm("form.manage"),
+    current_user: dict = require_admin(),
     session: AsyncSession = Depends(get_session),
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
@@ -53,7 +52,7 @@ async def create_form(
 async def update_form(
     form_id: int,
     body: FormUpdate,
-    current_user: dict = require_perm("form.manage"),
+    current_user: dict = require_admin(),
     session: AsyncSession = Depends(get_session),
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
@@ -62,7 +61,7 @@ async def update_form(
 @router.delete("/forms/{form_id}", response_model=CommandResponse, status_code=202, summary="Delete form")
 async def delete_form(
     form_id: int,
-    current_user: dict = require_perm("form.manage"),
+    current_user: dict = require_admin(),
     session: AsyncSession = Depends(get_session),
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):

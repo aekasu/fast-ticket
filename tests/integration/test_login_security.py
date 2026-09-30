@@ -235,10 +235,13 @@ async def test_a_valid_token_for_an_active_agent_works():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("state", [False, None])   # disabled, or deleted
+@pytest.mark.parametrize("state", ["disabled", None])   # disabled, or deleted
 async def test_a_valid_token_stops_working_when_the_agent_is_disabled_or_deleted(state):
+    from tests.conftest import make_access
+
+    state = make_access(7, is_active=False) if state == "disabled" else None
     token = create_access_token(IDENTITY, timedelta(minutes=5))
-    with patch("app.core.auth.repo.get_staff_active", new=AsyncMock(return_value=state)):
+    with patch("app.core.auth.load_access_context", new=AsyncMock(return_value=state)):
         async with _client() as ac:
             resp = await ac.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {token}"})
     assert resp.status_code == 401
@@ -249,7 +252,7 @@ async def test_a_valid_token_stops_working_when_the_agent_is_disabled_or_deleted
 @pytest.mark.asyncio
 async def test_revocation_applies_to_permission_protected_routes_too():
     token = create_access_token({**IDENTITY, "permissions": ["commands.read"]}, timedelta(minutes=5))
-    with patch("app.core.auth.repo.get_staff_active", new=AsyncMock(return_value=False)):
+    with patch("app.core.auth.load_access_context", new=AsyncMock(return_value=None)):
         async with _client() as ac:
             resp = await ac.get("/api/v1/commands", headers={"Authorization": f"Bearer {token}"})
     assert resp.status_code == 401

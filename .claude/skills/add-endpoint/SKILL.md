@@ -61,7 +61,7 @@ async def assign_task(
     return await service.assign_task(session, task_id, body, current_user["staff_id"], idempotency_key)
 ```
 
-- Permission: `require_perm("<perm>")`, or `require_admin()` where osTicket has no finer `PERM_*`. Update the permission map in the router's module docstring.
+- Permission: find the osTicket page that does the same job (`/var/www/html/scp/*.php`, and its `include/staff/*.inc.php`) and use *its* gate — `require_perm("<osTicket key>")` (keys and whether each is global or role: `app/core/permissions.py`; an unknown key fails at import), `require_admin()` for Admin Panel pages (`admin.inc.php`), `require_staff()` for reads osTicket does not gate. There is no admin bypass. Update the permission map in the router's module docstring.
 - Path param is the internal int PK, never the display `number`.
 - Router stays thin. No imports from other routers.
 - New module → mount it in `app/api/v1/router.py`.

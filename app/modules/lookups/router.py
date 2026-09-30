@@ -1,16 +1,15 @@
 """Lookups endpoints.
 
-Permissions:
-  topic.manage
-  sla.manage
-  priority.manage
+Permissions — the Admin Panel (isAdmin()): help topics, SLA plans and ticket priorities are admin-only,
+reads included. (Agents see topics/priorities in the ticket forms, dept-filtered; that scoped read
+arrives with S3.)
 """
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_session
-from app.core.security import require_perm
+from app.core.security import require_admin
 from app.modules.lookups import service
 from app.modules.lookups.models import (
     CommandResponse,
@@ -36,7 +35,7 @@ router = APIRouter(tags=["lookups"])
 async def list_topics(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200),
-    current_user: dict = require_perm("topic.manage"),
+    current_user: dict = require_admin(),
     session: AsyncSession = Depends(get_session),
 ):
     return await service.list_topics(session, page=page, page_size=page_size)
@@ -44,7 +43,7 @@ async def list_topics(
 @router.get("/topics/{topic_id}", response_model=TopicDetail, summary="Get help topic")
 async def get_topic(
     topic_id: int,
-    current_user: dict = require_perm("topic.manage"),
+    current_user: dict = require_admin(),
     session: AsyncSession = Depends(get_session),
 ):
     topic = await service.get_topic(session, topic_id)
@@ -55,7 +54,7 @@ async def get_topic(
 @router.post("/topics", response_model=CommandResponse, status_code=202, summary="Create help topic")
 async def create_topic(
     body: TopicCreate,
-    current_user: dict = require_perm("topic.manage"),
+    current_user: dict = require_admin(),
     session: AsyncSession = Depends(get_session),
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
@@ -65,7 +64,7 @@ async def create_topic(
 async def update_topic(
     topic_id: int,
     body: TopicUpdate,
-    current_user: dict = require_perm("topic.manage"),
+    current_user: dict = require_admin(),
     session: AsyncSession = Depends(get_session),
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
@@ -74,7 +73,7 @@ async def update_topic(
 @router.delete("/topics/{topic_id}", response_model=CommandResponse, status_code=202, summary="Delete help topic")
 async def delete_topic(
     topic_id: int,
-    current_user: dict = require_perm("topic.manage"),
+    current_user: dict = require_admin(),
     session: AsyncSession = Depends(get_session),
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
@@ -87,7 +86,7 @@ async def delete_topic(
 async def list_slas(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200),
-    current_user: dict = require_perm("sla.manage"),
+    current_user: dict = require_admin(),
     session: AsyncSession = Depends(get_session),
 ):
     return await service.list_slas(session, page=page, page_size=page_size)
@@ -95,7 +94,7 @@ async def list_slas(
 @router.get("/slas/{sla_id}", response_model=SLADetail, summary="Get SLA")
 async def get_sla(
     sla_id: int,
-    current_user: dict = require_perm("sla.manage"),
+    current_user: dict = require_admin(),
     session: AsyncSession = Depends(get_session),
 ):
     sla = await service.get_sla(session, sla_id)
@@ -106,7 +105,7 @@ async def get_sla(
 @router.post("/slas", response_model=CommandResponse, status_code=202, summary="Create SLA")
 async def create_sla(
     body: SLACreate,
-    current_user: dict = require_perm("sla.manage"),
+    current_user: dict = require_admin(),
     session: AsyncSession = Depends(get_session),
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
@@ -116,7 +115,7 @@ async def create_sla(
 async def update_sla(
     sla_id: int,
     body: SLAUpdate,
-    current_user: dict = require_perm("sla.manage"),
+    current_user: dict = require_admin(),
     session: AsyncSession = Depends(get_session),
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
@@ -125,7 +124,7 @@ async def update_sla(
 @router.delete("/slas/{sla_id}", response_model=CommandResponse, status_code=202, summary="Delete SLA")
 async def delete_sla(
     sla_id: int,
-    current_user: dict = require_perm("sla.manage"),
+    current_user: dict = require_admin(),
     session: AsyncSession = Depends(get_session),
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
@@ -138,7 +137,7 @@ async def delete_sla(
 async def list_priorities(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200),
-    current_user: dict = require_perm("priority.manage"),
+    current_user: dict = require_admin(),
     session: AsyncSession = Depends(get_session),
 ):
     return await service.list_priorities(session, page=page, page_size=page_size)
@@ -146,7 +145,7 @@ async def list_priorities(
 @router.get("/priorities/{priority_id}", response_model=PriorityDetail, summary="Get priority")
 async def get_priority(
     priority_id: int,
-    current_user: dict = require_perm("priority.manage"),
+    current_user: dict = require_admin(),
     session: AsyncSession = Depends(get_session),
 ):
     priority = await service.get_priority(session, priority_id)
@@ -157,7 +156,7 @@ async def get_priority(
 @router.post("/priorities", response_model=CommandResponse, status_code=202, summary="Create priority")
 async def create_priority(
     body: PriorityCreate,
-    current_user: dict = require_perm("priority.manage"),
+    current_user: dict = require_admin(),
     session: AsyncSession = Depends(get_session),
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
@@ -167,7 +166,7 @@ async def create_priority(
 async def update_priority(
     priority_id: int,
     body: PriorityUpdate,
-    current_user: dict = require_perm("priority.manage"),
+    current_user: dict = require_admin(),
     session: AsyncSession = Depends(get_session),
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
@@ -176,7 +175,7 @@ async def update_priority(
 @router.delete("/priorities/{priority_id}", response_model=CommandResponse, status_code=202, summary="Delete priority")
 async def delete_priority(
     priority_id: int,
-    current_user: dict = require_perm("priority.manage"),
+    current_user: dict = require_admin(),
     session: AsyncSession = Depends(get_session),
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):

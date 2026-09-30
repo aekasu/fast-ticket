@@ -193,14 +193,73 @@ async def get_ticket_collaborators(session: AsyncSession, ticket_id: int) -> lis
 # ── Staff ─────────────────────────────────────────────────────────────────────
 
 
-async def get_staff_active(session: AsyncSession, staff_id: int) -> bool | None:
-    """Whether the staff member exists and is enabled (None: no such staff member)."""
-    row = (
+async def get_staff_access_rows(session: AsyncSession, staff_id: int) -> dict | None:
+    """Everything that decides what one staff member may do, or None if there is no such staff member.
+
+    Mirrors the queries behind osTicket's Staff::getRoles(), getDepartments() and getTeams()
+    (include/class.staff.php): the staff row (flags and global permissions), the extra-department
+    access rows, the permissions of every role involved, team membership, and the departments the
+    agent can see — primary, extra and managed departments plus their sub-departments (a department's
+    ``path`` is ``/<ancestor ids>/<own id>/``).
+    """
+    params = {"sid": staff_id}
+    staff = (
         await session.execute(
-            _sql("SELECT isactive FROM ost_staff WHERE staff_id = :sid"), {"sid": staff_id}
+            _sql(
+                "SELECT staff_id, username, firstname, lastname, email, isactive, isadmin, dept_id, "
+                "role_id, assigned_only, permissions FROM ost_staff WHERE staff_id = :sid"
+            ),
+            params,
         )
-    ).first()
-    return None if row is None else bool(row[0])
+    ).mappings().first()
+    if staff is None:
+        return None
+
+    dept_access = (
+        await session.execute(
+            _sql("SELECT dept_id, role_id FROM ost_staff_dept_access WHERE staff_id = :sid"), params
+        )
+    ).mappings().all()
+
+    role_ids = {int(staff["role_id"] or 0)} | {int(r["role_id"] or 0) for r in dept_access}
+    roles: dict[int, str | None] = {}
+    if role_ids - {0}:
+        role_rows = (
+            await session.execute(
+                _sql("SELECT id, permissions FROM ost_role WHERE id IN (" + ",".join(str(int(i)) for i in role_ids if i) + ")")
+            )
+        ).all()
+        roles = {int(r[0]): r[1] for r in role_rows}
+
+    team_ids = [
+        int(r[0])
+        for r in (
+            await session.execute(_sql("SELECT team_id FROM ost_team_member WHERE staff_id = :sid"), params)
+        ).all()
+    ]
+
+    dept_ids = [
+        int(r[0])
+        for r in (
+            await session.execute(
+                _sql(
+                    "SELECT DISTINCT d.id FROM ost_staff s "
+                    "LEFT JOIN ost_staff_dept_access g ON s.staff_id = g.staff_id "
+                    "INNER JOIN ost_department d ON (LOCATE(CONCAT('/', s.dept_id, '/'), d.path) "
+                    "OR d.manager_id = s.staff_id OR LOCATE(CONCAT('/', g.dept_id, '/'), d.path)) "
+                    "WHERE s.staff_id = :sid"
+                ),
+                params,
+            )
+        ).all()
+    ]
+    return {
+        "staff": dict(staff),
+        "dept_access": [dict(r) for r in dept_access],
+        "roles": roles,
+        "team_ids": team_ids,
+        "dept_ids": dept_ids,
+    }
 
 
 async def get_staff_permissions(

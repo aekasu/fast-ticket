@@ -4,7 +4,7 @@ Things fast-ticket does not do yet, or does only partly, that someone relying on
 This is a **live list, not a changelog**: when a limit is fixed its entry is *deleted* (git history keeps
 it) and the commit that fixes it says so. Rules for keeping it honest are in `AGENTS.md` → "Known limits".
 
-Last reviewed: 2026-09-30 (after security steps S0–S1).
+Last reviewed: 2026-09-30 (after security steps S0–S2).
 
 Each entry: what is true today · what it means for you · what will resolve it (a phase from the plan, or
 "by design" if it is a deliberate trade-off).
@@ -14,14 +14,15 @@ Each entry: what is true today · what it means for you · what will resolve it 
 | Limit | Impact | Resolved by |
 |---|---|---|
 | **Reads are not scoped by department, team or assignment.** Any agent holding the permission a read route uses sees *every* ticket, task, user, organization and thread — osTicket itself limits an agent to their departments, their assignments and referrals, and to assigned-only for limited agents. | An agent restricted to one department can list another department's tickets through the API. Writes are safer: ticket and task handlers ask osTicket. | S3 |
-| **Read routes are guarded by write permissions as stand-ins** (`GET /tickets` needs `ticket.create`, `GET /staff` needs `staff.create`), and about a third of the permission keys the API checks (`kb.manage`, `banlist.manage`, `topic.manage`, `sla.manage`, `dept.*`, `team.*`, `staff.*`, `commands.read`, …) are not osTicket permissions at all. | Those routes are effectively admin-only (fails closed), and agents holding the real permissions (`faq.manage`, `emails.banlist`, `user.dir`, …) cannot use them. | S2 |
-| **Permissions and the admin flag are read at login and carried in the token** (up to `ACCESS_TOKEN_EXPIRE_MINUTES`, default 30), and only from the agent's *primary* role — osTicket roles are per department. | A demotion or role change takes effect at the next login; per-department roles are ignored. (Disabling or deleting an agent *is* enforced on every request.) | S2 |
-| **`GET /search` accepts any valid token** with no permission check and no scoping. | Any signed-in agent can search every ticket, user and organization. | S2 / S3 |
-| **Idempotency keys are global, `GET /commands` is not limited to your own commands, and command payloads are stored in plain text** (a `staff.create` password sits in the inbox and is readable with `commands.read`). | One agent reusing another's key gets that agent's command back; payload secrets are exposed to anyone who can read commands or the database. | S4 |
+| **Ticket and task reads still use `ticket.create` / `task.create` as stand-in gates, and reference data is admin-only.** Departments, teams, the agent directory, help topics, SLAs and priorities are `require_admin()` although osTicket shows agents scoped versions of them. | An agent who cannot create tickets but may view them in osTicket cannot list them here; a non-admin agent cannot fetch the topics or priorities to build a "new ticket" form. Deliberately kept strict (never looser than before) until S3 can scope them. | S3 |
+| **`GET /search` is limited to holders of `search.all` and administrators.** | Other agents cannot search at all, because results are not yet narrowed to what an agent may see. | S3 |
+| **Organization reads require `user.dir`**, which is stricter than osTicket (it does not gate organization pages by URL). | An agent without the user-directory permission cannot list organizations here though osTicket's page would open for them. | By design (nearest real gate) |
+| **The API checks a role permission as "any of the agent's roles" (`hasPerm($perm, false)`)**; the exact per-department answer is enforced only by the ticket and task bridge handlers. | An agent whose *other* department's role grants a permission passes the API gate for an action in a department where they lack it; the bridge then refuses ticket and task commands, but not the other kinds. | S4 |
+| **Idempotency keys are global; non-admins cannot see their own commands** (`GET /commands` is admin-only), so they cannot poll a write's result; **command payloads are stored in plain text** (a `staff.create` password sits in the inbox and is readable by admins and by anyone with database access). | One agent reusing another's key gets that agent's command back; payload secrets are exposed. | S4 |
 | **Only ticket and task bridge handlers check the requesting agent's permission in PHP.** Users, organizations, KB, staff, departments, teams, topics, SLAs, priorities, forms and banlist run whatever the API queues. | The Python layer is the only guard for those; a bug there, or anyone able to insert an inbox row, acts as any agent. | S4 |
 | **The inbox is unsigned.** A row carries `requested_by_staff_id` and nothing proves the API wrote it. | Anyone with write access to the inbox table can run commands as any agent, including an admin. | S4 (optional HMAC) |
 | **WebSocket broadcasts go to every connected client unfiltered**, and the token is only checked when the connection opens. | Any connected agent sees every event; a disabled agent's open connection keeps receiving until it drops. | S5 |
-| **A password change does not revoke tokens already issued** (they live until they expire). | Up to 30 minutes of access after a password reset. | By design for now (no refresh/revocation list); revisit with S2 |
+| **A password change does not revoke tokens already issued** (they live until they expire). | Up to 30 minutes of access after a password reset. (A disabled account, a role change and a demotion *do* apply on the next request.) | By design for now (no revocation list) |
 
 ## Login and abuse protection
 
@@ -37,7 +38,7 @@ Each entry: what is true today · what it means for you · what will resolve it 
 | Limit | Impact | Resolved by |
 |---|---|---|
 | **Each outbox event is claimed by one API process.** | With more than one API worker, only the clients connected to the claiming worker are notified. | Phase 3 (cursor-based consumption) |
-| **No Python event handlers are registered and nothing is cached.** | Every request queries the database, including the per-request "is this agent active" check. | Phase 4 |
+| **No Python event handlers are registered and nothing is cached.** | Every authenticated request runs five small queries to load the agent's `AccessContext` (staff row, extra-department roles, role permissions, teams, visible departments), on top of the request's own. | Phase 4 |
 | **Without PHP's `pcntl` extension the worker exits after each command** and the supervisor restarts it. | Commands still run, but slower and subject to restart backoff; `make doctor` warns. | Install `pcntl` |
 | **osTicket's cron fallback runs about once a minute.** | If no worker runs, a command can wait up to ~60 s. | Run the worker |
 

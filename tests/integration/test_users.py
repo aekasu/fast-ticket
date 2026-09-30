@@ -64,7 +64,7 @@ async def _inbox_rows() -> list[IntegrationInbox]:
 async def test_list_orgs_returns_200():
     with patch("app.modules.users.service.repo.list_organizations", new=AsyncMock(return_value=[MOCK_ORG])):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-            resp = await ac.get("/api/v1/orgs", headers=_auth(["org.create"]))
+            resp = await ac.get("/api/v1/orgs", headers=_auth(["user.dir"]))
     assert resp.status_code == 200
     data = resp.json()
     assert len(data["items"]) == 1
@@ -75,7 +75,7 @@ async def test_list_orgs_returns_200():
 async def test_get_org_returns_detail():
     with patch("app.modules.users.service.repo.get_organization", new=AsyncMock(return_value=MOCK_ORG)):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-            resp = await ac.get("/api/v1/orgs/1", headers=_auth(["org.create"]))
+            resp = await ac.get("/api/v1/orgs/1", headers=_auth(["user.dir"]))
     assert resp.status_code == 200
     data = resp.json()
     assert data["name"] == "Acme Corp"
@@ -129,7 +129,7 @@ async def test_delete_org_queues_command():
 async def test_list_users_returns_200():
     with patch("app.modules.users.service.repo.list_users", new=AsyncMock(return_value=[MOCK_USER])):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-            resp = await ac.get("/api/v1/users", headers=_auth(["user.create"]))
+            resp = await ac.get("/api/v1/users", headers=_auth(["user.dir"]))
     assert resp.status_code == 200
     data = resp.json()
     assert len(data["items"]) == 1
@@ -140,7 +140,7 @@ async def test_list_users_returns_200():
 async def test_get_user_returns_detail():
     with patch("app.modules.users.service.repo.get_user", new=AsyncMock(return_value=MOCK_USER)):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-            resp = await ac.get("/api/v1/users/1", headers=_auth(["user.create"]))
+            resp = await ac.get("/api/v1/users/1", headers=_auth(["user.dir"]))
     assert resp.status_code == 200
     data = resp.json()
     assert data["name"] == "Wile E. Coyote"

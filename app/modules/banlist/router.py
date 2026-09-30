@@ -1,14 +1,14 @@
 """Banlist endpoints.
 
-Permissions:
-  banlist.manage
+Permissions — the banlist page is in the Admin Panel (isAdmin()): admin-only. (``emails.banlist`` is
+osTicket's separate "ban this sender" action on a ticket, not banlist management.)
 """
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_session
-from app.core.security import require_perm
+from app.core.security import require_admin
 from app.modules.banlist import service
 from app.modules.banlist.models import (
     CommandResponse,
@@ -24,7 +24,7 @@ router = APIRouter(tags=["banlist"])
 async def list_banlist(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200),
-    current_user: dict = require_perm("banlist.manage"),
+    current_user: dict = require_admin(),
     session: AsyncSession = Depends(get_session),
 ):
     return await service.list_banlist(session, page=page, page_size=page_size)
@@ -32,7 +32,7 @@ async def list_banlist(
 @router.get("/banlist/{ban_id}", response_model=BanlistDetail, summary="Get banlist entry")
 async def get_banlist_entry(
     ban_id: int,
-    current_user: dict = require_perm("banlist.manage"),
+    current_user: dict = require_admin(),
     session: AsyncSession = Depends(get_session),
 ):
     entry = await service.get_banlist_entry(session, ban_id)
@@ -43,7 +43,7 @@ async def get_banlist_entry(
 @router.post("/banlist", response_model=CommandResponse, status_code=202, summary="Create banlist entry")
 async def create_banlist_entry(
     body: BanlistCreate,
-    current_user: dict = require_perm("banlist.manage"),
+    current_user: dict = require_admin(),
     session: AsyncSession = Depends(get_session),
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
@@ -53,7 +53,7 @@ async def create_banlist_entry(
 async def update_banlist_entry(
     ban_id: int,
     body: BanlistUpdate,
-    current_user: dict = require_perm("banlist.manage"),
+    current_user: dict = require_admin(),
     session: AsyncSession = Depends(get_session),
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
@@ -62,7 +62,7 @@ async def update_banlist_entry(
 @router.delete("/banlist/{ban_id}", response_model=CommandResponse, status_code=202, summary="Delete banlist entry")
 async def delete_banlist_entry(
     ban_id: int,
-    current_user: dict = require_perm("banlist.manage"),
+    current_user: dict = require_admin(),
     session: AsyncSession = Depends(get_session),
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):

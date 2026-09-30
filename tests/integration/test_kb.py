@@ -72,7 +72,7 @@ async def _inbox_rows() -> list[IntegrationInbox]:
 async def test_list_categories_returns_200():
     with patch("app.modules.kb.service.repo.list_categories", new=AsyncMock(return_value=[MOCK_CAT])):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-            resp = await ac.get("/api/v1/kb/categories", headers=_auth(["kb.manage"]))
+            resp = await ac.get("/api/v1/kb/categories", headers=_auth())
     assert resp.status_code == 200
     data = resp.json()
     assert len(data["items"]) == 1
@@ -83,7 +83,7 @@ async def test_list_categories_returns_200():
 async def test_get_category_returns_detail():
     with patch("app.modules.kb.service.repo.get_category", new=AsyncMock(return_value=MOCK_CAT)):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-            resp = await ac.get("/api/v1/kb/categories/1", headers=_auth(["kb.manage"]))
+            resp = await ac.get("/api/v1/kb/categories/1", headers=_auth())
     assert resp.status_code == 200
     data = resp.json()
     assert data["name"] == "General Settings"
@@ -96,7 +96,7 @@ async def test_create_category_queues_command():
         resp = await ac.post(
             "/api/v1/kb/categories",
             json={"name": "Billing"},
-            headers=_auth(["kb.manage"]),
+            headers=_auth(["faq.manage"]),
         )
     assert resp.status_code == 202
     rows = await _inbox_rows()
@@ -111,7 +111,7 @@ async def test_update_category_queues_command():
         resp = await ac.patch(
             "/api/v1/kb/categories/2",
             json={"description": "Updated"},
-            headers=_auth(["kb.manage"]),
+            headers=_auth(["faq.manage"]),
         )
     assert resp.status_code == 202
     rows = await _inbox_rows()
@@ -122,7 +122,7 @@ async def test_update_category_queues_command():
 @pytest.mark.asyncio
 async def test_delete_category_queues_command():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-        resp = await ac.delete("/api/v1/kb/categories/3", headers=_auth(["kb.manage"]))
+        resp = await ac.delete("/api/v1/kb/categories/3", headers=_auth(["faq.manage"]))
     assert resp.status_code == 202
     rows = await _inbox_rows()
     assert rows[0].command_type == "kb.category.delete"
@@ -135,7 +135,7 @@ async def test_delete_category_queues_command():
 async def test_list_faqs_returns_200():
     with patch("app.modules.kb.service.repo.list_faqs", new=AsyncMock(return_value=[MOCK_FAQ])):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-            resp = await ac.get("/api/v1/kb/faqs", headers=_auth(["kb.manage"]))
+            resp = await ac.get("/api/v1/kb/faqs", headers=_auth())
     assert resp.status_code == 200
     data = resp.json()
     assert len(data["items"]) == 1
@@ -146,7 +146,7 @@ async def test_list_faqs_returns_200():
 async def test_get_faq_returns_detail():
     with patch("app.modules.kb.service.repo.get_faq", new=AsyncMock(return_value=MOCK_FAQ)):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-            resp = await ac.get("/api/v1/kb/faqs/1", headers=_auth(["kb.manage"]))
+            resp = await ac.get("/api/v1/kb/faqs/1", headers=_auth())
     assert resp.status_code == 200
     data = resp.json()
     assert data["question"] == "How to reset password?"
@@ -159,7 +159,7 @@ async def test_create_faq_queues_command():
         resp = await ac.post(
             "/api/v1/kb/faqs",
             json={"category_id": 1, "question": "Q?", "answer": "A!"},
-            headers=_auth(["kb.manage"]),
+            headers=_auth(["faq.manage"]),
         )
     assert resp.status_code == 202
     rows = await _inbox_rows()
@@ -174,7 +174,7 @@ async def test_update_faq_queues_command():
         resp = await ac.patch(
             "/api/v1/kb/faqs/2",
             json={"answer": "New A!"},
-            headers=_auth(["kb.manage"]),
+            headers=_auth(["faq.manage"]),
         )
     assert resp.status_code == 202
     rows = await _inbox_rows()
@@ -185,7 +185,7 @@ async def test_update_faq_queues_command():
 @pytest.mark.asyncio
 async def test_delete_faq_queues_command():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-        resp = await ac.delete("/api/v1/kb/faqs/3", headers=_auth(["kb.manage"]))
+        resp = await ac.delete("/api/v1/kb/faqs/3", headers=_auth(["faq.manage"]))
     assert resp.status_code == 202
     rows = await _inbox_rows()
     assert rows[0].command_type == "kb.faq.delete"

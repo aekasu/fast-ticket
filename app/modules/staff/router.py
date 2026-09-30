@@ -1,22 +1,15 @@
 """Staff, Teams, and Departments endpoints.
 
-Permissions:
-  staff.create
-  staff.edit
-  staff.delete
-  team.create
-  team.edit
-  team.delete
-  dept.create
-  dept.edit
-  dept.delete
+Permissions — the Admin Panel (osTicket gates these pages on isAdmin(), and so does the API):
+  every route in this module is admin-only, reads included. (Read scoping for non-admin agents —
+  the agent directory, department and team names — arrives with S3; until then it stays admin-only.)
 """
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_session
-from app.core.security import require_perm
+from app.core.security import require_admin
 from app.modules.staff import service
 from app.modules.staff.models import (
     CommandResponse,
@@ -42,7 +35,7 @@ router = APIRouter(tags=["staff"])
 async def list_departments(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200),
-    current_user: dict = require_perm("dept.create"),
+    current_user: dict = require_admin(),
     session: AsyncSession = Depends(get_session),
 ):
     return await service.list_departments(session, page=page, page_size=page_size)
@@ -51,7 +44,7 @@ async def list_departments(
 @router.get("/departments/{dept_id}", response_model=DepartmentDetail, summary="Get department")
 async def get_department(
     dept_id: int,
-    current_user: dict = require_perm("dept.create"),
+    current_user: dict = require_admin(),
     session: AsyncSession = Depends(get_session),
 ):
     dept = await service.get_department(session, dept_id)
@@ -63,7 +56,7 @@ async def get_department(
 @router.post("/departments", response_model=CommandResponse, status_code=202, summary="Create department")
 async def create_department(
     body: DepartmentCreate,
-    current_user: dict = require_perm("dept.create"),
+    current_user: dict = require_admin(),
     session: AsyncSession = Depends(get_session),
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
@@ -74,7 +67,7 @@ async def create_department(
 async def update_department(
     dept_id: int,
     body: DepartmentUpdate,
-    current_user: dict = require_perm("dept.edit"),
+    current_user: dict = require_admin(),
     session: AsyncSession = Depends(get_session),
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
@@ -84,7 +77,7 @@ async def update_department(
 @router.delete("/departments/{dept_id}", response_model=CommandResponse, status_code=202, summary="Delete department")
 async def delete_department(
     dept_id: int,
-    current_user: dict = require_perm("dept.delete"),
+    current_user: dict = require_admin(),
     session: AsyncSession = Depends(get_session),
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
@@ -97,7 +90,7 @@ async def delete_department(
 async def list_teams(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200),
-    current_user: dict = require_perm("team.create"),
+    current_user: dict = require_admin(),
     session: AsyncSession = Depends(get_session),
 ):
     return await service.list_teams(session, page=page, page_size=page_size)
@@ -106,7 +99,7 @@ async def list_teams(
 @router.get("/teams/{team_id}", response_model=TeamDetail, summary="Get team")
 async def get_team(
     team_id: int,
-    current_user: dict = require_perm("team.create"),
+    current_user: dict = require_admin(),
     session: AsyncSession = Depends(get_session),
 ):
     team = await service.get_team(session, team_id)
@@ -118,7 +111,7 @@ async def get_team(
 @router.post("/teams", response_model=CommandResponse, status_code=202, summary="Create team")
 async def create_team(
     body: TeamCreate,
-    current_user: dict = require_perm("team.create"),
+    current_user: dict = require_admin(),
     session: AsyncSession = Depends(get_session),
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
@@ -129,7 +122,7 @@ async def create_team(
 async def update_team(
     team_id: int,
     body: TeamUpdate,
-    current_user: dict = require_perm("team.edit"),
+    current_user: dict = require_admin(),
     session: AsyncSession = Depends(get_session),
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
@@ -139,7 +132,7 @@ async def update_team(
 @router.delete("/teams/{team_id}", response_model=CommandResponse, status_code=202, summary="Delete team")
 async def delete_team(
     team_id: int,
-    current_user: dict = require_perm("team.delete"),
+    current_user: dict = require_admin(),
     session: AsyncSession = Depends(get_session),
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
@@ -152,7 +145,7 @@ async def delete_team(
 async def list_staff(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200),
-    current_user: dict = require_perm("staff.create"),
+    current_user: dict = require_admin(),
     session: AsyncSession = Depends(get_session),
 ):
     return await service.list_staff(session, page=page, page_size=page_size)
@@ -161,7 +154,7 @@ async def list_staff(
 @router.get("/staff/{staff_id}", response_model=StaffDetail, summary="Get staff")
 async def get_staff(
     staff_id: int,
-    current_user: dict = require_perm("staff.create"),
+    current_user: dict = require_admin(),
     session: AsyncSession = Depends(get_session),
 ):
     staff = await service.get_staff(session, staff_id)
@@ -173,7 +166,7 @@ async def get_staff(
 @router.post("/staff", response_model=CommandResponse, status_code=202, summary="Create staff")
 async def create_staff(
     body: StaffCreate,
-    current_user: dict = require_perm("staff.create"),
+    current_user: dict = require_admin(),
     session: AsyncSession = Depends(get_session),
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
@@ -184,7 +177,7 @@ async def create_staff(
 async def update_staff(
     staff_id: int,
     body: StaffUpdate,
-    current_user: dict = require_perm("staff.edit"),
+    current_user: dict = require_admin(),
     session: AsyncSession = Depends(get_session),
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
@@ -194,7 +187,7 @@ async def update_staff(
 @router.delete("/staff/{staff_id}", response_model=CommandResponse, status_code=202, summary="Delete staff")
 async def delete_staff(
     staff_id: int,
-    current_user: dict = require_perm("staff.delete"),
+    current_user: dict = require_admin(),
     session: AsyncSession = Depends(get_session),
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):

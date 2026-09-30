@@ -1,14 +1,14 @@
 """Commands endpoints.
 
-Permissions:
-  system.manage (or commands.manage depending on how you want to scope it; let's use 'commands.read')
+Permissions — the command inbox is this API's own plumbing, not an osTicket object: admin-only.
+(Scoping to "your own commands" for non-admins arrives with S4.)
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_session
-from app.core.security import require_perm
+from app.core.security import require_admin
 from app.modules.commands import service
 from app.modules.commands.models import (
     CommandDetail,
@@ -21,7 +21,7 @@ router = APIRouter(tags=["commands"])
 async def list_commands(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200),
-    current_user: dict = require_perm("commands.read"),
+    current_user: dict = require_admin(),
     session: AsyncSession = Depends(get_session),
 ):
     return await service.list_commands(session, page=page, page_size=page_size)
@@ -35,7 +35,7 @@ async def get_command(
         le=30,
         description="Seconds to hold the request while the command is still pending/processing.",
     ),
-    current_user: dict = require_perm("commands.read"),
+    current_user: dict = require_admin(),
     session: AsyncSession = Depends(get_session),
 ):
     command = await service.wait_for_command(session, command_id, wait)

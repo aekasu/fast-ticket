@@ -44,7 +44,7 @@ def _auth(perms: list[str] | None = None, is_admin: bool = False) -> dict:
 async def test_list_commands_returns_200():
     with patch("app.modules.commands.service.repo.list_commands", new=AsyncMock(return_value=[MOCK_COMMAND])):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-            resp = await ac.get("/api/v1/commands", headers=_auth(["commands.read"]))
+            resp = await ac.get("/api/v1/commands", headers=_auth(is_admin=True))
     assert resp.status_code == 200
     data = resp.json()
     assert len(data["items"]) == 1
@@ -55,7 +55,7 @@ async def test_list_commands_returns_200():
 async def test_get_command_returns_detail():
     with patch("app.modules.commands.service.repo.get_command", new=AsyncMock(return_value=MOCK_COMMAND)):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-            resp = await ac.get("/api/v1/commands/1", headers=_auth(["commands.read"]))
+            resp = await ac.get("/api/v1/commands/1", headers=_auth(is_admin=True))
     assert resp.status_code == 200
     data = resp.json()
     assert data["command_type"] == "ticket.create"
@@ -68,7 +68,7 @@ async def test_get_command_wait_returns_as_soon_as_the_command_finishes():
     repo = AsyncMock(side_effect=[MOCK_COMMAND, {**MOCK_COMMAND, "status": "processing"}, done])
     with patch("app.modules.commands.service.repo.get_command", new=repo):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-            resp = await ac.get("/api/v1/commands/1?wait=10", headers=_auth(["commands.read"]))
+            resp = await ac.get("/api/v1/commands/1?wait=10", headers=_auth(is_admin=True))
     assert resp.status_code == 200
     assert resp.json()["status"] == "done"
     assert resp.json()["result_payload"] == '{"ticket_id": 7}'
@@ -80,7 +80,7 @@ async def test_get_command_wait_gives_up_and_returns_the_pending_row():
     repo = AsyncMock(return_value=MOCK_COMMAND)
     with patch("app.modules.commands.service.repo.get_command", new=repo):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-            resp = await ac.get("/api/v1/commands/1?wait=0.3", headers=_auth(["commands.read"]))
+            resp = await ac.get("/api/v1/commands/1?wait=0.3", headers=_auth(is_admin=True))
     assert resp.status_code == 200
     assert resp.json()["status"] == "pending"
     assert repo.await_count >= 2
@@ -91,7 +91,7 @@ async def test_get_command_without_wait_reads_once():
     repo = AsyncMock(return_value=MOCK_COMMAND)
     with patch("app.modules.commands.service.repo.get_command", new=repo):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-            resp = await ac.get("/api/v1/commands/1", headers=_auth(["commands.read"]))
+            resp = await ac.get("/api/v1/commands/1", headers=_auth(is_admin=True))
     assert resp.status_code == 200
     assert repo.await_count == 1
 
@@ -100,7 +100,7 @@ async def test_get_command_without_wait_reads_once():
 @pytest.mark.parametrize("wait", ["-1", "31", "abc"])
 async def test_get_command_rejects_an_invalid_wait(wait):
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-        resp = await ac.get(f"/api/v1/commands/1?wait={wait}", headers=_auth(["commands.read"]))
+        resp = await ac.get(f"/api/v1/commands/1?wait={wait}", headers=_auth(is_admin=True))
     assert resp.status_code == 422
 
 
@@ -108,7 +108,7 @@ async def test_get_command_rejects_an_invalid_wait(wait):
 async def test_get_command_wait_on_a_missing_command_is_404():
     with patch("app.modules.commands.service.repo.get_command", new=AsyncMock(return_value=None)):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-            resp = await ac.get("/api/v1/commands/99?wait=5", headers=_auth(["commands.read"]))
+            resp = await ac.get("/api/v1/commands/99?wait=5", headers=_auth(is_admin=True))
     assert resp.status_code == 404
 
 

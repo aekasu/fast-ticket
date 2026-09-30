@@ -1,12 +1,10 @@
 """User and Organization endpoints.
 
-Permissions:
-  org.create
-  org.edit
-  org.delete
-  user.create
-  user.edit
-  user.delete
+Permissions (global permissions on the staff member — ``Staff::hasPerm($key)``):
+  reads          user.dir      the user/organization directory (osTicket does not gate organization
+                               pages by URL; the API uses the directory permission as the nearest gate)
+  users          user.create   user.edit   user.delete
+  organizations  org.create    org.edit    org.delete
 """
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
@@ -35,7 +33,7 @@ router = APIRouter(tags=["users"])
 async def list_organizations(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200),
-    current_user: dict = require_perm("org.create"), # any org perm is fine
+    current_user: dict = require_perm("user.dir"), # any org perm is fine
     session: AsyncSession = Depends(get_session),
 ):
     return await service.list_organizations(session, page=page, page_size=page_size)
@@ -44,7 +42,7 @@ async def list_organizations(
 @router.get("/orgs/{org_id}", response_model=OrganizationDetail, summary="Get organization")
 async def get_organization(
     org_id: int,
-    current_user: dict = require_perm("org.create"),
+    current_user: dict = require_perm("user.dir"),
     session: AsyncSession = Depends(get_session),
 ):
     org = await service.get_organization(session, org_id)
@@ -91,7 +89,7 @@ async def list_users(
     org_id: int | None = Query(default=None, description="Filter by organization ID"),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200),
-    current_user: dict = require_perm("user.create"), # any user perm is fine
+    current_user: dict = require_perm("user.dir"), # any user perm is fine
     session: AsyncSession = Depends(get_session),
 ):
     return await service.list_users(session, org_id=org_id, page=page, page_size=page_size)
@@ -100,7 +98,7 @@ async def list_users(
 @router.get("/users/{user_id}", response_model=UserDetail, summary="Get user")
 async def get_user(
     user_id: int,
-    current_user: dict = require_perm("user.create"),
+    current_user: dict = require_perm("user.dir"),
     session: AsyncSession = Depends(get_session),
 ):
     user = await service.get_user(session, user_id)

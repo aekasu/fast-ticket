@@ -8,7 +8,7 @@ FastAPI (Python 3.12, uv) in front of osTicket. **Reads** are `SELECT`-only SQL 
 
 ## Review / generation rules
 
-- Every route has `current_user: dict = require_perm("<perm>")` or `require_admin()` (from `app/core/security.py`), or an explicit `# no permission required: <why>` comment.
+- Every route has `current_user: dict = require_perm("<osTicket key>")`, `require_admin()` or `require_staff()` (from `app/core/security.py`), or an explicit `# no permission required: <why>` comment. Keys must be real osTicket permissions (`app/core/permissions.py`); there is no admin bypass; access is read from osTicket on every request, not from the token.
 - Request bodies are Pydantic models with explicit, constrained fields. No `Any`, no raw `dict` bodies.
 - Write routes: `status_code=202`, `response_model=CommandResponse`, accept `Idempotency-Key` header and pass it to `dispatch_command`.
 - No `INSERT`/`UPDATE`/`DELETE` against `ost_*` tables other than `ost_integration_inbox` / `ost_integration_outbox`.

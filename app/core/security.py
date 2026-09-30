@@ -1,77 +1,73 @@
 """Permission enforcement dependencies.
 
-Every non-public route must use one of the dependencies defined here.
-Admins (is_admin=True in JWT claims) bypass all permission checks.
+Every non-public route must use one of the dependencies defined here:
 
-Usage:
-    @router.post("/tickets/")
-    async def create_ticket(
-        body: TicketCreate,
-        current_user: dict = require_perm("ticket.create"),
-    ):
-        ...
+    require_perm("user.create")          # an osTicket permission (see app/core/permissions.py)
+    require_perm("search.all", admin_ok=True)
+    require_admin()                       # the Admin Panel: osTicket gates those pages on isAdmin()
+    require_staff()                       # any enabled agent (reads whose visibility is scoped in the query)
 
-Permission keys mirror osTicket's internal PERM_* constants but are expressed
-as dot-namespaced strings.  The full mapping is in notes/OSTICKET_CAPABILITIES.md §8.1.4.
+What the caller may do is read from ``AccessContext`` (app/core/access.py), loaded from osTicket's own
+tables on each request — not from the login token — and evaluated the way osTicket's ``Staff::hasPerm``
+does. There is **no blanket admin bypass** in ``require_perm``: osTicket has none. An administrator's
+power over the Admin Panel is ``require_admin()``; for everything else they hold the permissions they
+were given.
 
-Defined constants (add here as new domains are implemented):
-
-  ticket.create      ticket.reply       ticket.edit
-  ticket.close       ticket.delete      ticket.transfer
-  ticket.assign      ticket.merge       ticket.markanswered
-
-  task.create        task.assign        task.close        task.delete
-
-  user.create        user.edit          user.delete
-  user.dir           user.manage
-
-  org.create         org.edit           org.delete
-
-  faq.manage         canned.manage      emails.banlist
-
-  visibility.agents  visibility.departments
+``require_perm`` raises ``ValueError`` at import for a key osTicket does not have, so a guard that can
+never be satisfied fails loudly at startup rather than quietly locking everyone out.
 """
 
 from fastapi import Depends, HTTPException
 
 from app.core.auth import get_current_user
+from app.core.permissions import permission_kind
 
 
-def require_perm(perm: str):
-    """Return a FastAPI dependency that enforces a single osTicket permission.
+def require_perm(perm: str, *, admin_ok: bool = False):
+    """Return a FastAPI dependency that enforces one osTicket permission.
 
-    Admin staff (is_admin=True) always pass regardless of the permission key.
-
-    Args:
-        perm: Dot-namespaced permission string, e.g. ``"ticket.reply"``.
-
-    Returns:
-        A ``Depends(...)`` object usable as a default value in route signatures.
+    A *global* permission (``user.*``, ``org.*``, ``faq.manage``, ...) must be on the staff member's own
+    permission map; a *role* permission (``ticket.*``, ``task.*``, ``canned.manage``, ...) must be granted
+    by at least one of their roles. ``admin_ok=True`` additionally lets administrators through, for the
+    few routes where osTicket's own behaviour for an admin without the permission is undefined.
     """
+    kind = permission_kind(perm)   # fails at import for an unknown key
 
     async def _check(current_user: dict = Depends(get_current_user)) -> dict:
-        if current_user.get("is_admin"):
+        access = current_user["access"]
+        if admin_ok and access.is_admin:
             return current_user
-        if perm not in current_user.get("permissions", []):
-            raise HTTPException(
-                status_code=403,
-                detail=f"Permission required: {perm}",
-            )
+        granted = access.has_global(perm) if kind == "global" else access.has_role_perm(perm)
+        if not granted:
+            raise HTTPException(status_code=403, detail=f"Permission required: {perm}")
         return current_user
 
     return Depends(_check)
 
 
 def require_admin():
-    """Dependency: staff must have is_admin=True.
+    """Dependency: the staff member must be an administrator (osTicket's ``isAdmin()``).
 
-    Use for endpoints that have no finer-grained PERM_* equivalent in osTicket
-    (e.g. staff/team management).
+    For Admin Panel resources — staff, departments, teams, help topics, SLAs, priorities, forms,
+    the banlist — which osTicket lets administrators manage and nobody else.
     """
 
     async def _check(current_user: dict = Depends(get_current_user)) -> dict:
-        if not current_user.get("is_admin"):
+        if not current_user["access"].is_admin:
             raise HTTPException(status_code=403, detail="Admin access required.")
+        return current_user
+
+    return Depends(_check)
+
+
+def require_staff():
+    """Dependency: any enabled agent.
+
+    For reads where osTicket applies no permission at all (the knowledge base) or where visibility is
+    narrowed by the query itself rather than by a permission (read scoping, S3).
+    """
+
+    async def _check(current_user: dict = Depends(get_current_user)) -> dict:
         return current_user
 
     return Depends(_check)

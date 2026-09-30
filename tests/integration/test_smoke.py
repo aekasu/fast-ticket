@@ -25,7 +25,7 @@ async def test_auth_me_requires_token():
 
 @pytest.mark.asyncio
 async def test_auth_me_returns_claims_with_valid_token():
-    """/api/v1/auth/me returns the JWT claims for a valid token."""
+    """/api/v1/auth/me returns the caller's identity and current access for a valid token."""
     from datetime import timedelta
     from app.core.auth import create_access_token
 
@@ -48,7 +48,7 @@ async def test_auth_me_returns_claims_with_valid_token():
     data = resp.json()
     assert data["staff_id"] == 7
     assert data["username"] == "smoketest"
-    assert "ticket.create" in data["permissions"]
+    assert "ticket.create" in data["roles"]["1"]
 
 
 @pytest.mark.asyncio

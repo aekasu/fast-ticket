@@ -1,15 +1,16 @@
 """Knowledgebase and Canned Responses endpoints.
 
 Permissions:
-  kb.manage
-  canned.manage
+  knowledge base reads   any enabled agent (osTicket applies no permission to viewing FAQs)
+  knowledge base writes  faq.manage      (global permission)
+  canned responses       canned.manage   (role permission — any of the agent's roles)
 """
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_session
-from app.core.security import require_perm
+from app.core.security import require_perm, require_staff
 from app.modules.kb import service
 from app.modules.kb.models import (
     CommandResponse,
@@ -35,7 +36,7 @@ router = APIRouter(tags=["kb"])
 async def list_categories(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200),
-    current_user: dict = require_perm("kb.manage"),
+    current_user: dict = require_staff(),
     session: AsyncSession = Depends(get_session),
 ):
     return await service.list_categories(session, page=page, page_size=page_size)
@@ -43,7 +44,7 @@ async def list_categories(
 @router.get("/kb/categories/{category_id}", response_model=CategoryDetail, summary="Get KB category")
 async def get_category(
     category_id: int,
-    current_user: dict = require_perm("kb.manage"),
+    current_user: dict = require_staff(),
     session: AsyncSession = Depends(get_session),
 ):
     cat = await service.get_category(session, category_id)
@@ -54,7 +55,7 @@ async def get_category(
 @router.post("/kb/categories", response_model=CommandResponse, status_code=202, summary="Create KB category")
 async def create_category(
     body: CategoryCreate,
-    current_user: dict = require_perm("kb.manage"),
+    current_user: dict = require_perm("faq.manage"),
     session: AsyncSession = Depends(get_session),
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
@@ -64,7 +65,7 @@ async def create_category(
 async def update_category(
     category_id: int,
     body: CategoryUpdate,
-    current_user: dict = require_perm("kb.manage"),
+    current_user: dict = require_perm("faq.manage"),
     session: AsyncSession = Depends(get_session),
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
@@ -73,7 +74,7 @@ async def update_category(
 @router.delete("/kb/categories/{category_id}", response_model=CommandResponse, status_code=202, summary="Delete KB category")
 async def delete_category(
     category_id: int,
-    current_user: dict = require_perm("kb.manage"),
+    current_user: dict = require_perm("faq.manage"),
     session: AsyncSession = Depends(get_session),
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
@@ -87,7 +88,7 @@ async def list_faqs(
     category_id: int | None = Query(default=None, description="Filter by category ID"),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200),
-    current_user: dict = require_perm("kb.manage"),
+    current_user: dict = require_staff(),
     session: AsyncSession = Depends(get_session),
 ):
     return await service.list_faqs(session, category_id=category_id, page=page, page_size=page_size)
@@ -95,7 +96,7 @@ async def list_faqs(
 @router.get("/kb/faqs/{faq_id}", response_model=FAQDetail, summary="Get FAQ")
 async def get_faq(
     faq_id: int,
-    current_user: dict = require_perm("kb.manage"),
+    current_user: dict = require_staff(),
     session: AsyncSession = Depends(get_session),
 ):
     faq = await service.get_faq(session, faq_id)
@@ -106,7 +107,7 @@ async def get_faq(
 @router.post("/kb/faqs", response_model=CommandResponse, status_code=202, summary="Create FAQ")
 async def create_faq(
     body: FAQCreate,
-    current_user: dict = require_perm("kb.manage"),
+    current_user: dict = require_perm("faq.manage"),
     session: AsyncSession = Depends(get_session),
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
@@ -116,7 +117,7 @@ async def create_faq(
 async def update_faq(
     faq_id: int,
     body: FAQUpdate,
-    current_user: dict = require_perm("kb.manage"),
+    current_user: dict = require_perm("faq.manage"),
     session: AsyncSession = Depends(get_session),
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
@@ -125,7 +126,7 @@ async def update_faq(
 @router.delete("/kb/faqs/{faq_id}", response_model=CommandResponse, status_code=202, summary="Delete FAQ")
 async def delete_faq(
     faq_id: int,
-    current_user: dict = require_perm("kb.manage"),
+    current_user: dict = require_perm("faq.manage"),
     session: AsyncSession = Depends(get_session),
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):

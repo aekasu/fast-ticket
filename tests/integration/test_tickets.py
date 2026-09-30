@@ -145,14 +145,14 @@ async def test_list_tickets_requires_permission():
 
 
 @pytest.mark.asyncio
-async def test_list_tickets_admin_bypasses_perm():
-    """Admin can list tickets without explicit ticket.create permission."""
+async def test_list_tickets_admin_without_the_permission_is_refused():
+    """No admin bypass: osTicket's hasPerm() has none (read scoping, S3, replaces this stand-in gate)."""
     with (
         patch("app.modules.tickets.service.repo.list_tickets", new=AsyncMock(return_value=[])),
     ):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             resp = await ac.get(TICKETS_URL + "/", headers=_admin_auth())
-    assert resp.status_code == 200
+    assert resp.status_code == 403
 
 
 @pytest.mark.asyncio

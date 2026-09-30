@@ -113,13 +113,15 @@ Security is implemented **in tandem** with each domain, not as a later layer.
 - `JWT_SECRET_KEY` must be set in production, at least 32 characters (startup fails if missing and `REQUIRE_JWT_SECRET=true` — the compose api sets it).
 
 ### Authorization
-- JWT claims carry `staff_id`, `username`, `is_admin`, `permissions` (osTicket `PERM_*`-derived keys).
-- Every route declares its permission as a default-value dependency:
+- The token carries identity only. What an agent may do is an `AccessContext` (`app/core/access.py`) **loaded from osTicket's tables on every request** and mirroring `Staff::hasPerm()`, `getRoles()`, `getDepartments()`, `getTeams()` and `isAccessLimited()`; `current_user["access"]` holds it and `GET /api/v1/auth/me` shows it. A role change, demotion or disabled account applies on the next request.
+- osTicket has **two kinds of permission** (`app/core/permissions.py`): *global* ones stored on the staff member (`user.*`, `org.*`, `faq.manage`, `emails.banlist`, `visibility.*`, `search.all`, `stats.agents`) and *role* ones stored on their roles, per department (`ticket.*`, `task.*`, `thread.edit`, `canned.manage`). `require_perm` asks the right place for each.
+- Every route declares its gate as a default-value dependency, chosen by reading the osTicket page that does the same job (`scp/*.php`), not by guessing:
   ```python
-  current_user: dict = require_perm("task.assign"),   # NOT Depends(require_perm(...))
-  current_user: dict = require_admin(),               # when osTicket has no finer PERM_* (staff/teams)
+  current_user: dict = require_perm("user.create"),   # NOT Depends(require_perm(...)); a real osTicket key or it fails at import
+  current_user: dict = require_admin(),               # Admin Panel pages (admin.inc.php -> isAdmin()): staff, departments, teams, topics, SLAs, priorities, forms, banlist
+  current_user: dict = require_staff(),               # any enabled agent (KB reads; reads scoped in the query by S3)
   ```
-- `app/core/security.py` houses all permission dependencies. Admins pass every `require_perm`.
+- `app/core/security.py` houses the dependencies. **There is no admin bypass in `require_perm`** — osTicket's `hasPerm()` has none; an admin's power is the Admin Panel (`require_admin`), and an admin holds the other permissions they were given.
 - Document the module's permission map in the router's module docstring.
 - The coarse "any authenticated staff can do anything" model from the predecessor is **not acceptable**.
 
@@ -256,7 +258,7 @@ list, not a changelog.
 - No osTicket-schema models or SQL outside `app/integration/`.
 - Don't expose queue query-builder, sequences, sessions, draft autosave, or raw config bulk-write.
 - Don't skip the idempotency check in `dispatch_command`.
-- Don't merge a route without `require_perm(...)` / `require_admin()` (or an explicit `# no permission required: <why>` comment).
+- Don't merge a route without `require_perm(...)` / `require_admin()` / `require_staff()` (or an explicit `# no permission required: <why>` comment), and don't invent a permission key — use osTicket's (`app/core/permissions.py`) or `require_admin()`.
 - No `Any` in request schemas — every field explicitly typed and constrained.
 - Don't define the integration tables anywhere but `bridge/schema.php` (the SQLModel classes must mirror it; a test compares the columns), and don't put a `DEFAULT` on a TEXT column there (MySQL < 8.0.13).
 - Don't add a command type in Python without the matching `bridge/registry.php` entry (and vice versa) — `tests/unit/test_bridge_registry.py` enforces it.

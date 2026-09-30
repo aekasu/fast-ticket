@@ -109,11 +109,12 @@ async def test_list_tasks_requires_permission():
 
 
 @pytest.mark.asyncio
-async def test_list_tasks_admin_bypasses_perm():
+async def test_list_tasks_admin_without_the_permission_is_refused():
+    """No admin bypass: osTicket's hasPerm() has none."""
     with patch("app.modules.tasks.service.repo.list_tasks", new=AsyncMock(return_value=[])):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             resp = await ac.get(TASKS_URL + "/", headers=_admin())
-    assert resp.status_code == 200
+    assert resp.status_code == 403
 
 
 @pytest.mark.asyncio

@@ -37,8 +37,8 @@ async def login(
     - Uses ``application/x-www-form-urlencoded`` (OAuth2 password flow).
     - Credentials are forwarded to the PHP bridge for validation against
       osTicket's native ``Staff`` model.
-    - Permissions are embedded in the JWT claims so no DB round-trip is
-      needed on subsequent requests.
+    - The token carries identity only; what the agent may do is read from osTicket on every
+      request (``GET /me`` shows what the API currently thinks you may do).
     - **Rate-limited to 10 requests/minute per IP**, and an account/address pair that fails
       ``LOGIN_MAX_ATTEMPTS`` times is locked out for ``LOGIN_LOCKOUT_SECONDS`` — ``429`` with
       ``Retry-After``.
@@ -64,6 +64,7 @@ async def login(
             login_throttle.record_failure(form_data.username, address)
         raise
     login_throttle.record_success(form_data.username, address)
+    identity = {key: identity[key] for key in ("staff_id", "username", "name", "email")}
     token = create_access_token(identity, timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES))
     return {
         "access_token": token,
@@ -72,12 +73,12 @@ async def login(
     }
 
 
-@router.get("/me", summary="Return the current authenticated user's claims")
+@router.get("/me", summary="Who you are and what osTicket currently lets you do")
 async def me(current_user: dict = Depends(get_current_user)):
-    """Return JWT claims for the authenticated staff member.
+    """The authenticated agent's identity and current access, read from osTicket just now.
 
-    No DB round-trip — claims are read directly from the signed token.
-    Returns the same shape as the ``/login`` response's decoded payload:
-    ``staff_id``, ``username``, ``name``, ``email``, ``is_admin``, ``permissions``.
+    ``is_admin``; ``global_permissions`` (user.*, org.*, faq.manage, ...); ``roles`` (department id ->
+    that department's role permissions); ``department_ids`` and ``team_ids`` the agent can see;
+    ``assigned_only`` for limited-access agents.
     """
-    return current_user
+    return current_user["access"].summary()

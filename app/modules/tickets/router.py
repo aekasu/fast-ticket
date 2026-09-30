@@ -3,7 +3,9 @@
 All writes return CommandResponse — the command is queued for async PHP execution.
 All reads query osTicket's tables directly via read_repository.
 
-Permission map (mirrors osTicket PERM_* constants):
+Permission map (role permissions — any of the agent's roles; the bridge applies osTicket's exact
+per-department check when it runs the command). Reads still use ``ticket.create`` as a stand-in until
+read scoping (S3) replaces it with osTicket's department/assignment visibility:
   ticket.create     ticket.reply      ticket.note (→ ticket.reply used for notes)
   ticket.close      ticket.assign     ticket.transfer
   ticket.delete     ticket.merge      ticket.markanswered

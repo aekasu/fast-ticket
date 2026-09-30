@@ -1,9 +1,8 @@
 """Authentication: osTicket bridge login + JWT mint/decode.
 
-The permission set for each staff member is fetched from the osTicket DB at login
-time and embedded in the JWT claims. This avoids a DB round-trip on every request;
-the trade-off is that permission changes don't take effect until the next login.
-Token expiry (ACCESS_TOKEN_EXPIRE_MINUTES) bounds the staleness window.
+The login token proves who the caller is and carries no permissions. What they may do is
+read from osTicket's tables on every request (``AccessContext``, app/core/access.py), so a
+role change, a demotion or a disabled account takes effect on the very next request.
 """
 
 import logging
@@ -17,9 +16,9 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.access import load_access_context
 from app.core.config import settings
 from app.core.db import get_session
-from app.integration.osticket import read_repository as repo
 
 logger = logging.getLogger(__name__)
 
@@ -95,7 +94,7 @@ async def authenticate_with_osticket(username: str, password: str) -> dict[str, 
     """Validate staff credentials against the PHP bridge auth endpoint.
 
     Returns a dict with at minimum:
-        staff_id, username, firstname, lastname, email, is_admin, permissions
+        staff_id, username, firstname, lastname, email, is_admin
 
     Raises ``LoginRefused`` when the bridge refuses the login (401/403 with a reason),
     HTTPException(503) if the bridge is unreachable and 502 if it misbehaves.
@@ -145,7 +144,6 @@ async def authenticate_with_osticket(username: str, password: str) -> dict[str, 
         "name": f"{data.get('firstname', '')} {data.get('lastname', '')}".strip(),
         "email": data.get("email", ""),
         "is_admin": bool(data.get("is_admin", False)),
-        "permissions": list(data.get("permissions", [])),
     }
 
 
@@ -156,20 +154,33 @@ async def get_current_user(
     token: str = Depends(oauth2_scheme),
     session: AsyncSession = Depends(get_session),
 ) -> dict[str, Any]:
-    """Dependency: decode the Bearer token, confirm the account is still enabled, return the claims.
+    """Dependency: verify the Bearer token, then load what the staff member may do *now*.
 
-    Raises 401 if the token is missing, malformed or expired, or if the staff member has been
-    disabled or deleted since it was issued — a valid signature alone is not enough, so
-    deactivating an agent in osTicket cuts off their API access on their very next request.
+    The token proves who they are (and that we issued it); it carries no permissions. Access is read
+    from osTicket's tables on every request (``AccessContext``), so disabling or deleting an agent, or
+    changing their role, takes effect on their very next request. Raises 401 if the token is missing,
+    malformed or expired, or the staff member is gone or disabled.
+
+    Returns the identity plus ``access`` (the ``AccessContext``); ``require_perm`` and friends read
+    that, and so should any service that needs to know what the caller may see.
     """
     claims = decode_access_token(token)
-    if not await repo.get_staff_active(session, int(claims["staff_id"])):
+    access = await load_access_context(session, int(claims["staff_id"]))
+    if access is None or not access.is_active:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="This account is no longer active.",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    return claims
+    return {
+        "staff_id": access.staff_id,
+        "username": access.username,
+        "name": access.name,
+        "email": access.email,
+        "is_admin": access.is_admin,
+        "permissions": access.all_permissions(),
+        "access": access,
+    }
 
 
 def authenticate_websocket(token: str | None) -> dict[str, Any]:

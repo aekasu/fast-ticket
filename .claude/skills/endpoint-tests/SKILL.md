@@ -14,7 +14,7 @@ Tests live in `tests/integration/test_<domain>.py` (HTTP-level) and `tests/unit/
 | Happy path | 200 (read) / 202 (write) with correct shape |
 | No `Authorization` header | 401 |
 | Valid token, missing permission | 403 (`"Permission required: <perm>"`) |
-| Admin token without the perm | passes (admins bypass `require_perm`) — at least once per module |
+| Admin **without** the perm (a `require_perm` route) | 403 — there is no admin bypass; osTicket's `hasPerm()` has none. `require_admin` routes: non-admin holding every permission → 403, admin holding none → passes |
 | Invalid body / query (missing field, too long, `ge` violated) | 422 |
 | Write + same `Idempotency-Key` twice | same `command_id`, exactly **one** inbox row |
 | Read of missing resource | 404 |
@@ -38,6 +38,8 @@ def _auth(perms=None, is_admin=False):
     return {"Authorization": f"Bearer {_token(perms or [], is_admin)}"}
 ```
 …or the `auth_user(permissions=[...])` / `admin_user` fixtures plus the `client` fixture from `tests/conftest.py`. Use the JWT helper when the test must exercise real token decoding (401s, expiry).
+
+Production tokens carry identity only; the `permissions` / `is_admin` claims in `_token` above are a **test seam**: an autouse fixture in `tests/conftest.py` turns them into the `AccessContext` osTicket's tables would give. `make_access(...)` builds one directly, and raises for a key osTicket does not have. To test a permission changing between requests, or a staff member being disabled, patch `app.core.auth.load_access_context` (see `tests/integration/test_authorization_gates.py`). `admin_user` is an administrator with every permission on, like the installer's account.
 
 Reads — never hit a real osTicket DB; patch the repo **as imported by the service**:
 ```python

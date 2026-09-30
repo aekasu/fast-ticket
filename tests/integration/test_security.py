@@ -91,9 +91,21 @@ async def test_require_perm_returns_403_with_empty_permissions():
 
 
 @pytest.mark.asyncio
-async def test_admin_bypasses_require_perm():
-    """is_admin=True bypasses any require_perm check."""
-    token = _make_token(is_admin=True, permissions=[])  # no explicit perms
+async def test_admin_does_not_bypass_require_perm():
+    """osTicket's hasPerm() has no admin bypass, so neither does require_perm: an administrator
+    holds the permissions they were given, and gets the Admin Panel through require_admin()."""
+    token = _make_token(is_admin=True, permissions=[])  # an admin with no permissions switched on
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        resp = await ac.get(
+            "/api/v1/test-security/needs-ticket-create",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_an_admin_holding_the_permission_passes():
+    token = _make_token(is_admin=True, permissions=["ticket.create"])
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         resp = await ac.get(
             "/api/v1/test-security/needs-ticket-create",

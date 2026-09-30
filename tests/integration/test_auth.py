@@ -103,70 +103,28 @@ async def test_login_response_contains_expires_in():
 
 
 @pytest.mark.asyncio
-async def test_login_token_embeds_permissions():
-    """The JWT returned by /login contains the staff's permission list."""
+@pytest.mark.parametrize("identity", [MOCK_IDENTITY, ADMIN_IDENTITY])
+async def test_login_token_carries_identity_only(identity):
+    """The token proves who the agent is. What they may do is read from osTicket on every request,
+    so neither permissions nor the admin flag are baked into it (they would go stale)."""
     import jwt as pyjwt
     from app.core.config import settings
 
     with patch(
         "app.modules.auth.router.authenticate_with_osticket",
-        new=AsyncMock(return_value=MOCK_IDENTITY),
-    ):
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-            resp = await ac.post(AUTH_URL, data=_form())
-
-    token = resp.json()["access_token"]
-    claims = pyjwt.decode(
-        token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM],
-        options={"require": ["exp", "staff_id"]},
-    )
-    assert claims["staff_id"] == 42
-    assert claims["username"] == "jdoe"
-    assert "ticket.create" in claims["permissions"]
-    assert "ticket.reply" in claims["permissions"]
-    assert "task.create" in claims["permissions"]
-    assert claims["is_admin"] is False
-
-
-@pytest.mark.asyncio
-async def test_login_admin_token_embeds_is_admin():
-    """Admin identity results in is_admin=True in the token claims."""
-    import jwt as pyjwt
-    from app.core.config import settings
-
-    with patch(
-        "app.modules.auth.router.authenticate_with_osticket",
-        new=AsyncMock(return_value=ADMIN_IDENTITY),
-    ):
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-            resp = await ac.post(AUTH_URL, data=_form())
-
-    token = resp.json()["access_token"]
-    claims = pyjwt.decode(
-        token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM],
-        options={"require": ["exp"]},
-    )
-    assert claims["is_admin"] is True
-
-
-@pytest.mark.asyncio
-async def test_login_empty_permissions_are_embedded():
-    """Admins get an empty permissions list (they bypass all perm checks)."""
-    import jwt as pyjwt
-    from app.core.config import settings
-
-    with patch(
-        "app.modules.auth.router.authenticate_with_osticket",
-        new=AsyncMock(return_value=ADMIN_IDENTITY),
+        new=AsyncMock(return_value=identity),
     ):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             resp = await ac.post(AUTH_URL, data=_form())
 
     claims = pyjwt.decode(
-        resp.json()["access_token"], settings.JWT_SECRET_KEY,
-        algorithms=[settings.JWT_ALGORITHM], options={"require": ["exp"]},
+        resp.json()["access_token"], settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM],
+        issuer="fast-ticket", options={"require": ["exp", "staff_id"]},
     )
-    assert claims["permissions"] == []
+    assert claims["staff_id"] == identity["staff_id"]
+    assert claims["username"] == identity["username"]
+    assert "permissions" not in claims
+    assert "is_admin" not in claims
 
 
 # ── Login — error cases ────────────────────────────────────────────────────────
@@ -272,8 +230,8 @@ async def test_login_rate_limit_response_body():
 # ── /me — claims round-trip ────────────────────────────────────────────────────
 
 @pytest.mark.asyncio
-async def test_me_returns_all_claim_fields():
-    """/me returns the full set of JWT claims without a DB round-trip."""
+async def test_me_reports_current_access():
+    """/me shows what osTicket currently lets the agent do (read on this request, not from the token)."""
     token = _valid_token()
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         resp = await ac.get(ME_URL, headers={"Authorization": f"Bearer {token}"})
@@ -283,8 +241,10 @@ async def test_me_returns_all_claim_fields():
     assert data["username"] == MOCK_IDENTITY["username"]
     assert data["name"] == MOCK_IDENTITY["name"]
     assert data["email"] == MOCK_IDENTITY["email"]
-    assert data["is_admin"] == MOCK_IDENTITY["is_admin"]
-    assert set(data["permissions"]) == set(MOCK_IDENTITY["permissions"])
+    assert data["is_admin"] is False
+    assert data["assigned_only"] is False
+    roles = {perm for perms in data["roles"].values() for perm in perms}
+    assert roles == {p for p in MOCK_IDENTITY["permissions"] if p.startswith(("ticket.", "task."))}
 
 
 @pytest.mark.asyncio

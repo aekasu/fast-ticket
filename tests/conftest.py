@@ -57,14 +57,79 @@ async def setup_db():
 # ── Auth override ──────────────────────────────────────────────────────────────
 
 
-@pytest.fixture(autouse=True)
-def _staff_is_active_by_default():
-    """``get_current_user`` confirms the staff member is still enabled in osTicket; there is no
-    osTicket database here, so every staff id is active unless a test says otherwise."""
-    from unittest.mock import AsyncMock, patch
+def make_access(
+    staff_id: int = 1,
+    permissions: list[str] | None = None,
+    is_admin: bool = False,
+    *,
+    username: str = "test-agent",
+    name: str = "Test Agent",
+    email: str = "agent@example.local",
+    is_active: bool = True,
+    dept_ids: frozenset[int] = frozenset({1}),
+    assigned_only: bool = False,
+):
+    """An AccessContext for a test, from a flat permission list.
 
-    with patch("app.core.auth.repo.get_staff_active", new=AsyncMock(return_value=True)):
-        yield
+    Global permissions (user.*, org.*, faq.manage, ...) go on the staff member, role permissions
+    (ticket.*, task.*, canned.manage) on their role in department 1. A key osTicket does not have raises,
+    so a test cannot quietly grant something that does not exist.
+    """
+    from app.core.access import AccessContext
+    from app.core.permissions import ALL_PERMISSIONS, GLOBAL_PERMISSIONS, ROLE_PERMISSIONS
+
+    wanted = set(permissions or [])
+    unknown = wanted - ALL_PERMISSIONS
+    if unknown:
+        raise ValueError(f"not osTicket permission keys: {sorted(unknown)}")
+    return AccessContext(
+        staff_id=staff_id,
+        username=username,
+        name=name,
+        email=email,
+        is_active=is_active,
+        is_admin=is_admin,
+        global_perms=frozenset(wanted & GLOBAL_PERMISSIONS),
+        primary_dept_id=1,
+        dept_roles={1: frozenset(wanted & ROLE_PERMISSIONS)},
+        dept_ids=dept_ids,
+        assigned_only=assigned_only,
+    )
+
+
+@pytest.fixture(autouse=True)
+def _access_from_test_token(monkeypatch):
+    """Stand in for osTicket's tables when a test uses a real signed token.
+
+    Production tokens carry identity only; ``get_current_user`` then loads the staff member's access
+    from osTicket. There is no osTicket database here, so this reads the ``permissions`` and
+    ``is_admin`` claims a *test* put in its token instead — which is why test tokens carry them and
+    real ones do not. Tests of revocation or of a changing role patch ``app.core.auth.load_access_context``
+    themselves.
+    """
+    from app.core import auth
+
+    seen: dict = {}
+    real_decode = auth.decode_access_token
+
+    def spy(token):
+        claims = real_decode(token)
+        seen["claims"] = claims
+        return claims
+
+    async def fake_load(session, staff_id):
+        claims = seen.get("claims", {})
+        return make_access(
+            staff_id,
+            claims.get("permissions"),
+            bool(claims.get("is_admin")),
+            username=claims.get("username", "test-agent"),
+            name=claims.get("name", "Test Agent"),
+            email=claims.get("email", "agent@example.local"),
+        )
+
+    monkeypatch.setattr(auth, "decode_access_token", spy)
+    monkeypatch.setattr(auth, "load_access_context", fake_load)
 
 
 @pytest.fixture(autouse=True)
@@ -93,6 +158,10 @@ def auth_user():
         is_admin: bool = False,
         permissions: list[str] | None = None,
     ):
+        access = make_access(
+            staff_id, permissions, is_admin, username=username, name=name, email=email
+        )
+
         async def _fake_user():
             return {
                 "staff_id": staff_id,
@@ -100,7 +169,8 @@ def auth_user():
                 "name": name,
                 "email": email,
                 "is_admin": is_admin,
-                "permissions": permissions or [],
+                "permissions": access.all_permissions(),
+                "access": access,
             }
 
         app.dependency_overrides[get_current_user] = _fake_user
@@ -111,8 +181,11 @@ def auth_user():
 
 @pytest.fixture
 def admin_user(auth_user):
-    """Convenience: installs an admin auth override."""
-    auth_user(is_admin=True)
+    """An administrator with every permission switched on — like the account osTicket's installer
+    creates. (There is no admin bypass in ``require_perm``: osTicket has none.)"""
+    from app.core.permissions import ALL_PERMISSIONS
+
+    auth_user(is_admin=True, permissions=sorted(ALL_PERMISSIONS))
 
 
 # ── HTTP client ────────────────────────────────────────────────────────────────

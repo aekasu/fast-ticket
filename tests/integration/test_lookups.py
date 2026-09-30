@@ -73,7 +73,7 @@ async def _inbox_rows() -> list[IntegrationInbox]:
 async def test_list_topics_returns_200():
     with patch("app.modules.lookups.service.repo.list_topics", new=AsyncMock(return_value=[MOCK_TOPIC])):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-            resp = await ac.get("/api/v1/topics", headers=_auth(["topic.manage"]))
+            resp = await ac.get("/api/v1/topics", headers=_auth(is_admin=True))
     assert resp.status_code == 200
     data = resp.json()
     assert len(data["items"]) == 1
@@ -84,7 +84,7 @@ async def test_list_topics_returns_200():
 async def test_get_topic_returns_detail():
     with patch("app.modules.lookups.service.repo.get_topic", new=AsyncMock(return_value=MOCK_TOPIC)):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-            resp = await ac.get("/api/v1/topics/1", headers=_auth(["topic.manage"]))
+            resp = await ac.get("/api/v1/topics/1", headers=_auth(is_admin=True))
     assert resp.status_code == 200
     data = resp.json()
     assert data["topic"] == "General Inquiry"
@@ -97,7 +97,7 @@ async def test_create_topic_queues_command():
         resp = await ac.post(
             "/api/v1/topics",
             json={"topic": "Billing"},
-            headers=_auth(["topic.manage"]),
+            headers=_auth(is_admin=True),
         )
     assert resp.status_code == 202
     rows = await _inbox_rows()
@@ -112,7 +112,7 @@ async def test_update_topic_queues_command():
         resp = await ac.patch(
             "/api/v1/topics/2",
             json={"topic": "Support"},
-            headers=_auth(["topic.manage"]),
+            headers=_auth(is_admin=True),
         )
     assert resp.status_code == 202
     rows = await _inbox_rows()
@@ -123,7 +123,7 @@ async def test_update_topic_queues_command():
 @pytest.mark.asyncio
 async def test_delete_topic_queues_command():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-        resp = await ac.delete("/api/v1/topics/3", headers=_auth(["topic.manage"]))
+        resp = await ac.delete("/api/v1/topics/3", headers=_auth(is_admin=True))
     assert resp.status_code == 202
     rows = await _inbox_rows()
     assert rows[0].command_type == "topic.delete"
@@ -136,7 +136,7 @@ async def test_delete_topic_queues_command():
 async def test_list_slas_returns_200():
     with patch("app.modules.lookups.service.repo.list_slas", new=AsyncMock(return_value=[MOCK_SLA])):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-            resp = await ac.get("/api/v1/slas", headers=_auth(["sla.manage"]))
+            resp = await ac.get("/api/v1/slas", headers=_auth(is_admin=True))
     assert resp.status_code == 200
     data = resp.json()
     assert len(data["items"]) == 1
@@ -147,7 +147,7 @@ async def test_list_slas_returns_200():
 async def test_get_sla_returns_detail():
     with patch("app.modules.lookups.service.repo.get_sla", new=AsyncMock(return_value=MOCK_SLA)):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-            resp = await ac.get("/api/v1/slas/1", headers=_auth(["sla.manage"]))
+            resp = await ac.get("/api/v1/slas/1", headers=_auth(is_admin=True))
     assert resp.status_code == 200
     data = resp.json()
     assert data["name"] == "Standard SLA"
@@ -160,7 +160,7 @@ async def test_create_sla_queues_command():
         resp = await ac.post(
             "/api/v1/slas",
             json={"name": "Urgent", "grace_period": 2},
-            headers=_auth(["sla.manage"]),
+            headers=_auth(is_admin=True),
         )
     assert resp.status_code == 202
     rows = await _inbox_rows()
@@ -176,7 +176,7 @@ async def test_update_sla_queues_command():
         resp = await ac.patch(
             "/api/v1/slas/2",
             json={"grace_period": 24},
-            headers=_auth(["sla.manage"]),
+            headers=_auth(is_admin=True),
         )
     assert resp.status_code == 202
     rows = await _inbox_rows()
@@ -187,7 +187,7 @@ async def test_update_sla_queues_command():
 @pytest.mark.asyncio
 async def test_delete_sla_queues_command():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-        resp = await ac.delete("/api/v1/slas/3", headers=_auth(["sla.manage"]))
+        resp = await ac.delete("/api/v1/slas/3", headers=_auth(is_admin=True))
     assert resp.status_code == 202
     rows = await _inbox_rows()
     assert rows[0].command_type == "sla.delete"
@@ -200,7 +200,7 @@ async def test_delete_sla_queues_command():
 async def test_list_priorities_returns_200():
     with patch("app.modules.lookups.service.repo.list_priorities", new=AsyncMock(return_value=[MOCK_PRIORITY])):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-            resp = await ac.get("/api/v1/priorities", headers=_auth(["priority.manage"]))
+            resp = await ac.get("/api/v1/priorities", headers=_auth(is_admin=True))
     assert resp.status_code == 200
     data = resp.json()
     assert len(data["items"]) == 1
@@ -211,7 +211,7 @@ async def test_list_priorities_returns_200():
 async def test_get_priority_returns_detail():
     with patch("app.modules.lookups.service.repo.get_priority", new=AsyncMock(return_value=MOCK_PRIORITY)):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-            resp = await ac.get("/api/v1/priorities/1", headers=_auth(["priority.manage"]))
+            resp = await ac.get("/api/v1/priorities/1", headers=_auth(is_admin=True))
     assert resp.status_code == 200
     data = resp.json()
     assert data["name"] == "Low"
@@ -223,7 +223,7 @@ async def test_create_priority_queues_command():
         resp = await ac.post(
             "/api/v1/priorities",
             json={"name": "Critical", "urgency": 4},
-            headers=_auth(["priority.manage"]),
+            headers=_auth(is_admin=True),
         )
     assert resp.status_code == 202
     rows = await _inbox_rows()
@@ -239,7 +239,7 @@ async def test_update_priority_queues_command():
         resp = await ac.patch(
             "/api/v1/priorities/2",
             json={"name": "Medium"},
-            headers=_auth(["priority.manage"]),
+            headers=_auth(is_admin=True),
         )
     assert resp.status_code == 202
     rows = await _inbox_rows()
@@ -250,7 +250,7 @@ async def test_update_priority_queues_command():
 @pytest.mark.asyncio
 async def test_delete_priority_queues_command():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-        resp = await ac.delete("/api/v1/priorities/3", headers=_auth(["priority.manage"]))
+        resp = await ac.delete("/api/v1/priorities/3", headers=_auth(is_admin=True))
     assert resp.status_code == 202
     rows = await _inbox_rows()
     assert rows[0].command_type == "priority.delete"

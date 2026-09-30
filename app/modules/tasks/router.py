@@ -1,6 +1,6 @@
 """Task endpoints.
 
-Permission map:
+Permission map (role permissions; reads use ``task.create`` as a stand-in until read scoping, S3):
   task.create  — create tasks
   task.close   — close / reopen tasks
   task.assign  — assign tasks to staff

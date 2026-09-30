@@ -30,7 +30,7 @@ async def test_global_search_returns_200():
     ]
     with patch("app.modules.search.service.repo.search_all", new=AsyncMock(return_value=mock_results)):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-            resp = await ac.get("/api/v1/search?q=test", headers=_auth())
+            resp = await ac.get("/api/v1/search?q=test", headers=_auth(["search.all"]))
     
     assert resp.status_code == 200
     data = resp.json()
@@ -55,5 +55,5 @@ async def test_search_requires_auth():
 @pytest.mark.asyncio
 async def test_search_requires_minimum_length():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-        resp = await ac.get("/api/v1/search?q=a", headers=_auth())
+        resp = await ac.get("/api/v1/search?q=a", headers=_auth(["search.all"]))
     assert resp.status_code == 422  # validation error for min_length=2
