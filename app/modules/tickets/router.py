@@ -27,7 +27,9 @@ from app.modules.tickets.models import (
     TicketAssignTeam,
     TicketChangeOwner,
     TicketClose,
+    CollaboratorList,
     TicketCollaboratorAdd,
+    TicketCollaboratorUpdate,
     TicketCreate,
     TicketDetail,
     TicketListResponse,
@@ -101,6 +103,22 @@ async def get_ticket(
     if ticket is None:
         raise HTTPException(status_code=404, detail=f"Ticket {ticket_id} not found.")
     return ticket
+
+
+@router.get(
+    "/{ticket_id}/collaborators",
+    response_model=CollaboratorList,
+    summary="List a ticket's collaborators",
+)
+async def list_collaborators(
+    ticket_id: int,
+    current_user: dict = require_staff(),
+    session: AsyncSession = Depends(get_session),
+):
+    result = await service.list_collaborators(session, ticket_id, access=current_user["access"])
+    if result is None:
+        raise HTTPException(status_code=404, detail=f"Ticket {ticket_id} not found.")
+    return result
 
 
 # ── Writes ─────────────────────────────────────────────────────────────────────
@@ -418,10 +436,47 @@ async def mark_unanswered(
 async def add_collaborator(
     ticket_id: int,
     body: TicketCollaboratorAdd,
-    current_user: dict = require_perm("ticket.reply"),
+    current_user: dict = require_perm("ticket.edit"),
     session: AsyncSession = Depends(get_session),
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
     return await service.add_collaborator(
         session, ticket_id, body, current_user["staff_id"], idempotency_key
+    )
+
+
+@router.patch(
+    "/{ticket_id}/collaborators/{user_id}",
+    response_model=CommandResponse,
+    status_code=202,
+    summary="Change a collaborator's active / CC flags",
+)
+async def update_collaborator(
+    ticket_id: int,
+    user_id: int,
+    body: TicketCollaboratorUpdate,
+    current_user: dict = require_perm("ticket.edit"),
+    session: AsyncSession = Depends(get_session),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    return await service.update_collaborator(
+        session, ticket_id, user_id, body, current_user["staff_id"], idempotency_key
+    )
+
+
+@router.delete(
+    "/{ticket_id}/collaborators/{user_id}",
+    response_model=CommandResponse,
+    status_code=202,
+    summary="Remove a collaborator from a ticket",
+)
+async def remove_collaborator(
+    ticket_id: int,
+    user_id: int,
+    current_user: dict = require_perm("ticket.edit"),
+    session: AsyncSession = Depends(get_session),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    return await service.remove_collaborator(
+        session, ticket_id, user_id, current_user["staff_id"], idempotency_key
     )

@@ -431,6 +431,21 @@ def test_ticket_lifecycle(bridge, uniq):
     bridge.command("POST", f"/api/v1/tickets/{tk}/collaborators", {"user_id": collab})
     assert any(c["user_id"] == collab for c in bridge.read(f"/api/v1/tickets/{tk}")["collaborators"])
 
+    url = f"/api/v1/tickets/{tk}/collaborators"
+    listed = bridge.read(url)["collaborators"]
+    assert [(c["user_id"], c["is_active"], c["is_cc"]) for c in listed] == [(collab, True, True)]
+    bridge.command("PATCH", f"{url}/{collab}", {"is_active": False})
+    listed = bridge.read(url)["collaborators"]
+    assert (listed[0]["is_active"], listed[0]["is_cc"]) == (False, True)     # only the one flag changed
+    bridge.command("PATCH", f"{url}/{collab}", {"is_active": True, "is_cc": False})
+    listed = bridge.read(url)["collaborators"]
+    assert (listed[0]["is_active"], listed[0]["is_cc"]) == (True, False)
+    bridge.refuses("PATCH", f"{url}/999999", {"is_active": False}, because="not a collaborator")
+    bridge.command("DELETE", f"{url}/{collab}")
+    assert bridge.read(url)["collaborators"] == []
+    bridge.refuses("DELETE", f"{url}/{collab}", None, because="not a collaborator")
+    bridge.command("POST", f"/api/v1/tickets/{tk}/collaborators", {"user_id": collab})   # back, as the rest of the test expects
+
     bridge.command("POST", f"/api/v1/tickets/{tk}/answered")
     assert bridge.read(f"/api/v1/tickets/{tk}")["is_answered"] is True
     bridge.command("POST", f"/api/v1/tickets/{tk}/unanswered")

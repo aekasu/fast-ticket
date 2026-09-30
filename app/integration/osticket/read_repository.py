@@ -313,7 +313,9 @@ async def get_ticket_collaborators(session: AsyncSession, ticket_id: int, *, acc
             c.id,
             c.user_id,
             u.name,
-            COALESCE(ue.address, '') AS email
+            COALESCE(ue.address, '') AS email,
+            (c.flags & 1) > 0 AS is_active,
+            (c.flags & 2) > 0 AS is_cc
         FROM ost_thread_collaborator c
         JOIN ost_thread th ON th.id = c.thread_id AND th.object_type = 'T'
         JOIN ost_user u ON c.user_id = u.id

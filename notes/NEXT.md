@@ -30,7 +30,7 @@ Work in this order; for every item follow the "Adding a scoped read" rule in AGE
 **A. Ticket lifecycle gaps (agents live here) — do first**
 - ~~Edit ticket fields~~ done: `PATCH /tickets/{id}` (subject, priority, topic, SLA, source, due date, note). Not yet: other custom form-field answers (see KNOWN_LIMITS).
 - ~~Claim, release, unassign, refer~~ done (`/claim`, `/release` with staff/team flags = unassign, `/refer`). Referral list/remove still open.
-- Collaborators: only `add`; no list, update or remove.
+- ~~Collaborators~~ done: `GET/PATCH/DELETE /tickets/{id}/collaborators[/{user_id}]` (active/CC flags, remove).
 - Thread: no attachments (upload/download), no thread-entry edit/resend, no "post client message".
 - Ticket export (PDF/ZIP), edit lock: skip until needed (low).
 

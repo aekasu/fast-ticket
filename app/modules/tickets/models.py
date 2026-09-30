@@ -89,6 +89,12 @@ class Collaborator(BaseModel):
     user_id: int
     name: str
     email: str
+    is_active: bool = True
+    is_cc: bool = True
+
+
+class CollaboratorList(BaseModel):
+    collaborators: list[Collaborator]
 
 
 class TicketDetail(TicketListItem):
@@ -206,4 +212,17 @@ class TicketRefer(BaseModel):
     def _one_referee(self):
         if sum(v is not None for v in (self.agent_id, self.team_id, self.dept_id)) != 1:
             raise ValueError("give exactly one of agent_id, team_id, dept_id")
+        return self
+
+
+class TicketCollaboratorUpdate(BaseModel):
+    """Absent = leave as is. ``is_active`` false stops the collaborator receiving the thread."""
+
+    is_active: Optional[bool] = None
+    is_cc: Optional[bool] = None
+
+    @model_validator(mode="after")
+    def _something_to_change(self):
+        if self.is_active is None and self.is_cc is None:
+            raise ValueError("give is_active and/or is_cc")
         return self

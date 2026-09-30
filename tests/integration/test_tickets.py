@@ -563,7 +563,7 @@ async def test_add_collaborator_queues_command():
         resp = await ac.post(
             TICKETS_URL + "/6/collaborators",
             json={"user_id": 15},
-            headers=_auth(["ticket.reply"]),
+            headers=_auth(["ticket.edit"]),
         )
     assert resp.status_code == 202
     rows = await _inbox_rows()
@@ -625,6 +625,8 @@ async def test_all_write_endpoints_require_auth():
         ("POST",   "/1/transfer"),
         ("POST",   "/1/change-owner"),
         ("PATCH",  "/1"),
+        ("PATCH",  "/1/collaborators/7"),
+        ("DELETE", "/1/collaborators/7"),
         ("POST",   "/1/claim"),
         ("POST",   "/1/release"),
         ("POST",   "/1/refer"),
@@ -666,3 +668,41 @@ async def test_release_and_refer_validate_and_check_permission():
         zero = await ac.post(TICKETS_URL + "/5/refer", json={}, headers=_auth(["ticket.assign"]))
         denied = await ac.post(TICKETS_URL + "/5/release", json={"staff": True}, headers=_auth(["ticket.assign"]))
     assert (none.status_code, two.status_code, zero.status_code, denied.status_code) == (422, 422, 422, 403)
+
+
+@pytest.mark.asyncio
+async def test_collaborator_list_is_scoped_and_404s_for_an_invisible_ticket():
+    collab = AsyncMock(return_value=[{"id": 1, "user_id": 7, "name": "U", "email": "u@example.com",
+                                      "is_active": 0, "is_cc": 1}])
+    row = {"ticket_id": 9}
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        with patch("app.modules.tickets.service.repo.get_ticket", new=AsyncMock(return_value=None)):
+            missing = await ac.get(TICKETS_URL + "/9/collaborators", headers=_auth([]))
+        with patch("app.modules.tickets.service.repo.get_ticket", new=AsyncMock(return_value=row)), \
+             patch("app.modules.tickets.service.repo.get_ticket_collaborators", new=collab):
+            ok = await ac.get(TICKETS_URL + "/9/collaborators", headers=_auth([]))
+    assert missing.status_code == 404
+    assert ok.json() == {"collaborators": [{"id": 1, "user_id": 7, "name": "U", "email": "u@example.com",
+                                            "is_active": False, "is_cc": True}]}
+    assert collab.await_args.kwargs["access"].staff_id == 5
+
+
+@pytest.mark.asyncio
+async def test_collaborator_update_and_remove_queue_commands():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        upd = await ac.patch(TICKETS_URL + "/5/collaborators/7", json={"is_active": False},
+                             headers=_auth(["ticket.edit"]))
+        rem = await ac.delete(TICKETS_URL + "/5/collaborators/7", headers=_auth(["ticket.edit"]))
+        empty = await ac.patch(TICKETS_URL + "/5/collaborators/7", json={}, headers=_auth(["ticket.edit"]))
+        denied = await ac.delete(TICKETS_URL + "/5/collaborators/7", headers=_auth(["ticket.reply"]))
+    assert (upd.status_code, rem.status_code, empty.status_code, denied.status_code) == (202, 202, 422, 403)
+    rows = await _inbox_rows()
+    assert [r.command_type for r in rows] == ["ticket.collaborator.update", "ticket.collaborator.remove"]
+    assert json.loads(rows[0].payload) == {"ticket_id": 5, "user_id": 7, "is_active": False}
+    assert json.loads(rows[1].payload) == {"ticket_id": 5, "user_id": 7}
+
+
+@pytest.mark.asyncio
+async def test_collaborator_list_requires_auth():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        assert (await ac.get(TICKETS_URL + "/1/collaborators")).status_code == 401
