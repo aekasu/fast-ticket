@@ -73,6 +73,7 @@ POLICY = {
 
     # ── tickets ────────────────────────────────────────────────────────────
     "POST /api/v1/tickets/": "perm:ticket.create", "DELETE /api/v1/tickets/{ticket_id}": "perm:ticket.delete",
+    "PATCH /api/v1/tickets/{ticket_id}": "perm:ticket.edit",
     "POST /api/v1/tickets/{ticket_id}/answered": "perm:ticket.markanswered",
     "POST /api/v1/tickets/{ticket_id}/unanswered": "perm:ticket.markanswered",
     "POST /api/v1/tickets/{ticket_id}/assign": "perm:ticket.assign",

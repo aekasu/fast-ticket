@@ -8,6 +8,7 @@ extracted from the request header (may be None if the client didn't supply one).
 """
 
 import logging
+from datetime import timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -32,6 +33,7 @@ from app.modules.tickets.models import (
     TicketMerge,
     TicketReopen,
     TicketTransfer,
+    TicketUpdate,
 )
 
 logger = logging.getLogger(__name__)
@@ -62,6 +64,8 @@ def _row_to_list_item(row: dict) -> TicketListItem:
         topic_name=row.get("topic_name"),
         sla_id=row.get("sla_id"),
         sla_name=row.get("sla_name"),
+        priority_id=row.get("priority_id"),
+        priority_name=row.get("priority_name"),
         source=row.get("source") or "",
         is_answered=bool(row.get("is_answered", 0)),
         created=row["created"],
@@ -304,6 +308,31 @@ async def transfer_ticket(
         aggregate_type="ticket",
         aggregate_id=str(ticket_id),
         payload={"ticket_id": ticket_id, **body.model_dump()},
+        requested_by_staff_id=staff_id,
+        idempotency_key=idempotency_key,
+    )
+    return _make_cmd_response(cmd, idempotency_key)
+
+
+async def update_ticket(
+    session: AsyncSession,
+    ticket_id: int,
+    body: TicketUpdate,
+    staff_id: int,
+    idempotency_key: str | None,
+) -> CommandResponse:
+    fields = body.model_dump(exclude_unset=True)
+    if "due_date" in fields and fields["due_date"] is not None:
+        due = fields["due_date"]  # naive = UTC
+        if due.tzinfo is not None:
+            due = due.astimezone(timezone.utc)
+        fields["due_date"] = due.strftime("%Y-%m-%d %H:%M:%S")
+    cmd = await dispatch_command(
+        session=session,
+        command_type="ticket.update",
+        aggregate_type="ticket",
+        aggregate_id=str(ticket_id),
+        payload={"ticket_id": ticket_id, **fields},
         requested_by_staff_id=staff_id,
         idempotency_key=idempotency_key,
     )

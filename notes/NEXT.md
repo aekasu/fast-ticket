@@ -28,7 +28,7 @@ edit page has, and whether each handler matches the page — check that when you
 Work in this order; for every item follow the "Adding a scoped read" rule in AGENTS.md and the add-endpoint skill.
 
 **A. Ticket lifecycle gaps (agents live here) — do first**
-- Edit ticket fields (`Ticket::update` — subject, priority, SLA, topic, due date, form answers): no `PATCH /tickets/{id}`.
+- ~~Edit ticket fields~~ done: `PATCH /tickets/{id}` (subject, priority, topic, SLA, source, due date, note). Not yet: other custom form-field answers (see KNOWN_LIMITS).
 - Claim, release (unassign), unassign, refer: `assign`/`assign-team` exist, the rest do not.
 - Collaborators: only `add`; no list, update or remove.
 - Thread: no attachments (upload/download), no thread-entry edit/resend, no "post client message".

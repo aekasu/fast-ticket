@@ -455,6 +455,40 @@ async def test_change_owner_queues_command():
 
 
 @pytest.mark.asyncio
+async def test_update_ticket_queues_only_the_given_fields():
+    """PATCH /tickets/{id} queues ticket.update with just the fields sent (null due_date kept)."""
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        resp = await ac.patch(
+            TICKETS_URL + "/5",
+            json={"subject": "New subject", "priority_id": 3, "due_date": None},
+            headers={**_auth(["ticket.edit"]), "Idempotency-Key": "upd-1"},
+        )
+        again = await ac.patch(
+            TICKETS_URL + "/5",
+            json={"subject": "New subject", "priority_id": 3, "due_date": None},
+            headers={**_auth(["ticket.edit"]), "Idempotency-Key": "upd-1"},
+        )
+    assert resp.status_code == 202
+    assert again.json()["command_id"] == resp.json()["command_id"]
+    rows = await _inbox_rows()
+    assert len(rows) == 1
+    assert rows[0].command_type == "ticket.update"
+    assert rows[0].aggregate_id == "5"
+    assert json.loads(rows[0].payload) == {
+        "ticket_id": 5, "subject": "New subject", "priority_id": 3, "due_date": None,
+    }
+
+
+@pytest.mark.asyncio
+async def test_update_ticket_rejects_bad_input_and_missing_perm():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        bad = await ac.patch(TICKETS_URL + "/5", json={"subject": ""}, headers=_auth(["ticket.edit"]))
+        denied = await ac.patch(TICKETS_URL + "/5", json={"subject": "x"}, headers=_auth(["ticket.reply"]))
+    assert bad.status_code == 422
+    assert denied.status_code == 403
+
+
+@pytest.mark.asyncio
 async def test_delete_ticket_queues_command():
     """DELETE /tickets/{id} queues a ticket.delete command."""
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
@@ -590,6 +624,7 @@ async def test_all_write_endpoints_require_auth():
         ("POST",   "/1/assign-team"),
         ("POST",   "/1/transfer"),
         ("POST",   "/1/change-owner"),
+        ("PATCH",  "/1"),
         ("DELETE", "/1"),
         ("POST",   "/1/merge"),
         ("POST",   "/1/answered"),

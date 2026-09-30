@@ -11,7 +11,7 @@ per-department check when it runs the command):
   ticket.create     ticket.reply      ticket.note (→ ticket.reply used for notes)
   ticket.close      ticket.assign     ticket.transfer
   ticket.delete     ticket.merge      ticket.markanswered
-  ticket.edit       (change owner uses ticket.edit)
+  ticket.edit       (edit fields, change owner)
 """
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
@@ -35,6 +35,7 @@ from app.modules.tickets.models import (
     TicketReopen,
     TicketReply,
     TicketTransfer,
+    TicketUpdate,
 )
 
 router = APIRouter(tags=["tickets"])
@@ -240,6 +241,24 @@ async def transfer_ticket(
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
     return await service.transfer_ticket(
+        session, ticket_id, body, current_user["staff_id"], idempotency_key
+    )
+
+
+@router.patch(
+    "/{ticket_id}",
+    response_model=CommandResponse,
+    status_code=202,
+    summary="Edit a ticket (subject, priority, topic, SLA, source, due date)",
+)
+async def update_ticket(
+    ticket_id: int,
+    body: TicketUpdate,
+    current_user: dict = require_perm("ticket.edit"),
+    session: AsyncSession = Depends(get_session),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    return await service.update_ticket(
         session, ticket_id, body, current_user["staff_id"], idempotency_key
     )
 

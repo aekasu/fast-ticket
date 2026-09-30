@@ -165,6 +165,8 @@ _TICKET_SELECT = """
         ht.topic                     AS topic_name,
         sp.id                        AS sla_id,
         sp.name                      AS sla_name,
+        pr.priority_id               AS priority_id,
+        pr.priority_desc             AS priority_name,
         t.source,
         t.isanswered                 AS is_answered,
         t.created,
@@ -181,6 +183,8 @@ _TICKET_SELECT = """
     LEFT JOIN ost_user u         ON t.user_id  = u.id
     LEFT JOIN ost_help_topic ht  ON t.topic_id = ht.topic_id
     LEFT JOIN ost_sla sp         ON t.sla_id   = sp.id
+    -- the priority is an answer of the ticket form too (cdata holds its id)
+    LEFT JOIN ost_ticket_priority pr ON pr.priority_id = c.priority
 """
 
 

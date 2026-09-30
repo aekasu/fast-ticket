@@ -446,6 +446,32 @@ def test_ticket_lifecycle(bridge, uniq):
     assert bridge.get(f"/api/v1/tickets/{tk}").status_code == 404
 
 
+def test_ticket_patch_edits_fields_and_keeps_the_rest(bridge, uniq):
+    holder = {}
+    tk = _new_ticket(bridge, uniq, holder)
+    before = bridge.read(f"/api/v1/tickets/{tk}")
+
+    bridge.command("PATCH", f"/api/v1/tickets/{tk}", {"subject": f"edited {uniq}", "priority_id": 3})
+    got = bridge.read(f"/api/v1/tickets/{tk}")
+    assert (got["subject"], got["priority_id"]) == (f"edited {uniq}", 3)
+    assert (got["topic_id"], got["source"], got["user_id"]) == (before["topic_id"], before["source"], before["user_id"])
+
+    bridge.command("PATCH", f"/api/v1/tickets/{tk}", {"due_date": "2031-03-04T05:06:07Z", "source": "Phone"})
+    got = bridge.read(f"/api/v1/tickets/{tk}")
+    assert got["due_date"].startswith("2031-03-04T05:06:07") and got["source"] == "Phone"
+    assert (got["subject"], got["priority_id"]) == (f"edited {uniq}", 3)   # untouched by the second edit
+
+    bridge.command("PATCH", f"/api/v1/tickets/{tk}", {"note": "only a note"})
+    assert bridge.read(f"/api/v1/tickets/{tk}")["due_date"].startswith("2031-03-04T05:06:07")
+
+    bridge.command("PATCH", f"/api/v1/tickets/{tk}", {"due_date": None})
+    assert bridge.read(f"/api/v1/tickets/{tk}")["due_date"] is None
+
+    bridge.refuses("PATCH", f"/api/v1/tickets/{tk}", {"priority_id": 9999}, because="Priority not found")
+    bridge.refuses("PATCH", f"/api/v1/tickets/{tk}", {"topic_id": 9999}, because="topic not found")
+    bridge.refuses("PATCH", f"/api/v1/tickets/{tk}", {"due_date": "2001-01-01T00:00:00Z"}, because="must be in the future")
+
+
 def test_ticket_merge_combines_children_into_the_parent_and_closes_them(bridge, uniq):
     holder = {}
     parent = _new_ticket(bridge, uniq, holder, "p")

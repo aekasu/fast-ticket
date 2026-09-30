@@ -62,6 +62,8 @@ class TicketListItem(BaseModel):
     topic_name: Optional[str] = None
     sla_id: Optional[int] = None
     sla_name: Optional[str] = None
+    priority_id: Optional[int] = None
+    priority_name: Optional[str] = None
     source: str = ""
     is_answered: bool = False
     created: datetime
@@ -160,3 +162,15 @@ class TicketMerge(BaseModel):
 
 class TicketCollaboratorAdd(BaseModel):
     user_id: int = Field(gt=0)
+
+
+class TicketUpdate(BaseModel):
+    """Partial edit (osTicket's ticket edit page). Absent = leave as is; ``due_date: null`` clears it."""
+
+    subject: Optional[str] = Field(default=None, min_length=1, max_length=255)
+    priority_id: Optional[int] = Field(default=None, gt=0)
+    topic_id: Optional[int] = Field(default=None, gt=0)
+    sla_id: Optional[int] = Field(default=None, ge=0, description="0 = no SLA plan.")
+    source: Optional[str] = Field(default=None, min_length=1, max_length=32)
+    due_date: Optional[datetime] = Field(default=None, description="Must be in the future; null clears it.")
+    note: Optional[str] = Field(default=None, max_length=10000, description="Logged as an internal note.")
