@@ -394,42 +394,6 @@ async def get_staff_access_rows(session: AsyncSession, staff_id: int) -> dict | 
     }
 
 
-async def get_staff_permissions(
-    session: AsyncSession, staff_id: int
-) -> tuple[list[str], bool]:
-    """Return (permissions_list, is_admin) for a staff member.
-
-    Called at login time to embed permissions into the JWT.
-    """
-    result = await session.execute(
-        _sql("SELECT isadmin, role_id FROM ost_staff WHERE staff_id = :sid"),
-        {"sid": staff_id},
-    )
-    row = result.mappings().one_or_none()
-    if row is None:
-        return [], False
-
-    is_admin = bool(row["isadmin"])
-    if is_admin:
-        return [], True
-
-    role_id = row["role_id"]
-    if not role_id:
-        return [], False
-
-    role_result = await session.execute(
-        _sql("SELECT permissions FROM ost_role WHERE id = :rid"),
-        {"rid": role_id},
-    )
-    role_row = role_result.mappings().one_or_none()
-    if role_row is None:
-        return [], False
-
-    perm_map: dict = json.loads(role_row["permissions"] or "{}")
-    enabled = [k for k, v in perm_map.items() if v]
-    return enabled, False
-
-
 async def list_staff(session: AsyncSession, limit: int = 50, offset: int = 0) -> list:
     sql = """
         SELECT

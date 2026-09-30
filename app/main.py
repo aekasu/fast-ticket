@@ -26,6 +26,7 @@ from app.core.access import load_access_context
 from app.core.db import AsyncSessionLocal, create_db_and_tables
 from app.core.rate_limit import limiter
 from app.core.request_limits import BodySizeLimitMiddleware
+from app.core.security_headers import SecurityHeadersMiddleware
 from app.core.ws_manager import manager as ws_manager
 from app.integration.osticket.commands_service import InvalidIdempotencyKey
 from app.workers.events import poll_and_process_events, purge_old_events
@@ -134,8 +135,9 @@ app = FastAPI(
     title="fast-ticket",
     summary="FastAPI wrapper over osTicket — REST API for the osTicket integration bridge.",
     version="0.1.0",
-    docs_url="/docs",
-    redoc_url="/redoc",
+    docs_url="/docs" if settings.API_DOCS_ENABLED else None,
+    redoc_url="/redoc" if settings.API_DOCS_ENABLED else None,
+    openapi_url="/openapi.json" if settings.API_DOCS_ENABLED else None,
     lifespan=lifespan,
 )
 
@@ -161,6 +163,9 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PATCH", "DELETE"],
     allow_headers=["Authorization", "Content-Type", "Idempotency-Key"],
 )
+
+# Outermost, so even a 413 or 429 from the middlewares inside it carries the headers.
+app.add_middleware(SecurityHeadersMiddleware)
 
 # Routes
 app.include_router(api_router, prefix="/api")

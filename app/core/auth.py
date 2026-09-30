@@ -59,13 +59,17 @@ def create_access_token(identity: dict[str, Any], expires_delta: timedelta | Non
 def decode_access_token(token: str) -> dict[str, Any]:
     """Decode and verify a JWT.  Raises HTTPException on failure."""
     try:
-        return jwt.decode(
+        claims = jwt.decode(
             token,
             settings.JWT_SECRET_KEY,
             algorithms=[settings.JWT_ALGORITHM],
             issuer=TOKEN_ISSUER,
             options={"require": ["exp", "staff_id", "iss"]},
         )
+        staff_id = claims["staff_id"]
+        if isinstance(staff_id, bool) or not isinstance(staff_id, int) or staff_id <= 0:
+            raise jwt.InvalidTokenError("staff_id is not a positive integer")
+        return claims
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token has expired.")
     except jwt.InvalidTokenError as exc:

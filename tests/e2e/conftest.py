@@ -118,9 +118,12 @@ class Bridge:
 
     def cleanup(self) -> None:
         # newest first, so dependants (e.g. a ticket) go before what they depend on
-        for method, path in reversed(self._cleanups):
+        for entry in reversed(self._cleanups):
             try:
-                self.send(method, path)
+                if callable(entry):           # a non-API cleanup (e.g. SQL for rows the API cannot create)
+                    entry()
+                else:
+                    self.send(*entry)
             except Exception:  # best effort: never mask the real test failure
                 pass
         self._cleanups.clear()

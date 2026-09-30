@@ -146,6 +146,16 @@ Security is implemented **in tandem** with each domain, not as a later layer.
 ### CORS
 - `CORS_ORIGINS` comma-separated; empty = locked down. `allow_credentials=True` only when explicitly needed.
 
+### Response hardening
+- `app/core/security_headers.py` adds `Cache-Control: no-store`, `X-Content-Type-Options`, `X-Frame-Options: DENY` and `Referrer-Policy: no-referrer` to every response (a route's own value wins). `API_DOCS_ENABLED=false` removes `/docs`, `/redoc` and `/openapi.json` for production.
+- Tokens are strict: `decode_access_token` requires `exp`, `iss` and a positive integer `staff_id`, HS256 only.
+
+### Structural guards (these fail the build, keep them passing)
+- **Authorization matrix** — `tests/integration/test_authz_matrix.py` holds a literal `POLICY` for every route (`public|authenticated|staff|admin|perm:<key>`) and drives each route as each persona. **A new route needs a line there**, and a stale line fails too. Route discovery is `tests/unit/app_routes.py` (FastAPI's routers are lazy; it asserts a minimum route count so it cannot pass vacuously).
+- **Read-scoping guard** — `tests/unit/test_read_scoping_guard.py`: every read function that touches ticket/task/thread data takes a required keyword-only `access`, every service call passes it, routers never import `read_repository`. A read that is deliberately unscoped goes in `UNSCOPED_BY_DESIGN` with a reason.
+- **Oracle test** — `tests/e2e/test_oracle.py` builds a throwaway scenario in the live stack and compares the API's visibility answers with osTicket's own PHP (`tests/e2e/oracle/oracle.php`, read-only). Run it after touching `app/core/access.py`, `app/core/scope.py` or the visibility predicates; it needs `MYSQL_PASSWORD` too.
+- Threat model, trust boundaries and how to run every check: `notes/SECURITY.md`.
+
 ### Idempotency
 - Every write route accepts the `Idempotency-Key` header and passes it to `dispatch_command`.
 
@@ -196,7 +206,7 @@ make test              # all  (== .venv/bin/python -m pytest tests/ -v)
 make test-unit         # fast, no I/O
 make test-integration  # ASGITransport + SQLite
 make test-docker       # same suite on the image's pinned deps (uv.lock) — run it too
-make test-e2e          # live: every command + every read, ~4 min; needs `make start` and OSTICKET_ADMIN_USERNAME / OSTICKET_ADMIN_PASSWORD exported
+make test-e2e          # live: every command + every read, ~4 min; needs `make start` and OSTICKET_ADMIN_USERNAME / OSTICKET_ADMIN_PASSWORD / MYSQL_PASSWORD exported
 make test-cov
 ```
 

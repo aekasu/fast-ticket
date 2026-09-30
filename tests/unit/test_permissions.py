@@ -55,21 +55,3 @@ def test_every_key_a_router_guards_with_is_real():
         used |= set(re.findall(r'require_perm\("([^"]+)"', router.read_text()))
     assert used, "found no guards — did the pattern stop matching?"
     assert used <= ALL_PERMISSIONS, f"not osTicket permissions: {sorted(used - ALL_PERMISSIONS)}"
-
-
-def test_no_route_is_left_without_a_guard():
-    """Every route except the public ones must declare require_perm / require_admin / require_staff."""
-    from app.main import app
-
-    public = {"/health", "/api/v1/auth/login", "/openapi.json", "/docs", "/docs/oauth2-redirect", "/redoc", "/api/v1/ws"}
-    guards = ("_check",)   # the inner dependency function every require_* returns
-    unguarded = []
-    for route in app.routes:
-        path = getattr(route, "path", "")
-        if path in public or not hasattr(route, "dependant"):
-            continue
-        names = {d.call.__name__ for d in route.dependant.dependencies if getattr(d, "call", None)}
-        # /me and the like use get_current_user directly
-        if not names & set(guards) and "get_current_user" not in names:
-            unguarded.append(path)
-    assert not unguarded, f"routes with no authentication/permission dependency: {unguarded}"

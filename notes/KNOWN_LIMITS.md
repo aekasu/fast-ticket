@@ -4,7 +4,7 @@ Things fast-ticket does not do yet, or does only partly, that someone relying on
 This is a **live list, not a changelog**: when a limit is fixed its entry is *deleted* (git history keeps
 it) and the commit that fixes it says so. Rules for keeping it honest are in `AGENTS.md` → "Known limits".
 
-Last reviewed: 2026-09-30 (after S5: WebSocket audience, per-process event cursors).
+Last reviewed: 2026-09-30 (after S6: authorization matrix, hardening, oracle differential test). Every entry was checked against the code.
 
 Each entry: what is true today · what it means for you · what will resolve it (a phase from the plan, or
 "by design" if it is a deliberate trade-off).
@@ -54,4 +54,12 @@ Each entry: what is true today · what it means for you · what will resolve it 
 | **Only osTicket 1.18.1 and MariaDB 10.11 have been tested.** `schema.php` is written for MySQL 5.6+ and the queries for the 1.18 schema, but nothing else has run. | `make doctor` warns on other versions and names any read query that breaks; the bridge handlers may still differ. | Running the e2e suite on each target |
 | **Installing the plugin zip through osTicket's admin panel is untested.** Only the CLI installer (used by the Docker image) has been run. | Expect to check the plugin appears, enables and creates its tables. | Trying it on a real instance |
 | **The compose stack uses one all-privileges database user** for osTicket, the plugin and the API. | `make doctor` warns; production should give the API the least-privilege grants it prints. | Splitting users in `docker-compose.yml` |
-| **Parts of the access and visibility rules are proven by unit tests only, not against a real osTicket.** The API cannot set an agent's *global* permissions or `assigned_only`, cannot create referrals, and the seed data has no sub-departments or managed departments. Live tests cover roles, department and team membership, open/closed assignment, osTicket's automatic referral when a ticket closes, and the closed-task rule; the SQL-semantics tests (`tests/unit/test_visibility_sql.py`) cover the rest of the branches. | Sub-department inheritance, managed departments, extra-department access, a non-admin holding `user.dir`/`faq.manage`, limited-access agents, and direct referrals to an agent, department or team (merged-child threads included) rest on osTicket's source as read, not on a run against it. | A test instance with those features set up (by hand or through a fixture) |
+| **The oracle test compares list visibility, page visibility, department and topic names, and canned pickers with osTicket's own PHP, not every read.** `tests/e2e/test_oracle.py` builds a throwaway scenario (sub-departments, a managed department, extra-department access, `assigned_only`, a global-permission agent, referrals, team assignment, merged-child-style threads) and diffs the API against osTicket's own methods. Reads outside that list (user/org directories, KB, thread bodies, search over users) rest on the SQL-semantics tests and on osTicket's source as read. | A rule in an unlisted read could differ from osTicket without a test noticing. | Extending `oracle.php` read by read |
+
+## Hardening and deployment security (S6)
+
+| Limit | Impact | Resolved by |
+|---|---|---|
+| **The dev API container runs as root and the compose stack publishes on all interfaces without TLS.** | Fine on a laptop; on a server put a TLS-terminating proxy in front, bind ports to localhost, and run the container as a non-root user. | Production compose profile |
+| **Login timing may reveal whether a username exists** (osTicket's own backend decides; the API only throttles). | An attacker can guess usernames slowly; lockout limits password guessing. | By design (osTicket's behaviour) |
+| **Dependencies have not been audited against an advisory database** (no `pip-audit` run in CI). | A vulnerable pinned package would go unnoticed. | Add an audit step to CI |

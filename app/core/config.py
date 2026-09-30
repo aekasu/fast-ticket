@@ -95,6 +95,10 @@ class Settings(BaseSettings):
     )
 
     # ── Security ──────────────────────────────────────────────────────────────
+    API_DOCS_ENABLED: bool = Field(
+        default=True,
+        description="Serve /docs, /redoc and /openapi.json. Turn off in production if the API's shape is not for the public.",
+    )
     CORS_ORIGINS: str = Field(
         default="",
         description="Comma-separated allowed CORS origins. Empty = none allowed.",
