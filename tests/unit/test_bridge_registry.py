@@ -1,33 +1,30 @@
 """Static consistency checks between the Python API and the PHP bridge.
 
-There is no PHP test runner here, so these tests read ``bridge/plugin.php`` as text
+There is no PHP test runner here, so these tests read ``bridge/registry.php`` as text
 and enforce the rule from AGENTS.md: a command type exists only when
 
-  1. a Python service calls ``dispatch_command(command_type="<x>", ...)``,
-  2. ``dispatchCommand()`` has a ``case '<x>':``, and
-  3. ``commandToEventType()`` maps ``<x>`` to its past-tense event.
+  1. a Python service calls ``dispatch_command(command_type="<x>", ...)``, and
+  2. ``bridge/registry.php`` has one entry ``'<x>' => [file, class, method, event]``.
 
-A missing case leaves the command ``failed`` ("Unknown command type"); a missing map
-entry silently emits ``<x>.executed`` instead of the event consumers listen for.
+A missing entry leaves the command ``failed`` ("Unknown command type"); a wrong handler
+method is a PHP fatal at run time, so the class/method are checked against handlers/*.php.
 """
 
 import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-PLUGIN = (ROOT / "bridge" / "plugin.php").read_text()
+REGISTRY = (ROOT / "bridge" / "registry.php").read_text()
 
-
-def _between(text: str, start: str, end: str) -> str:
-    a = text.index(start)
-    return text[a : text.index(end, a)]
-
-
-DISPATCH_BODY = _between(PLUGIN, "function dispatchCommand", "function emitOutboxEvent")
-EVENT_MAP_BODY = _between(PLUGIN, "function commandToEventType", "];")
-
-BRIDGE_CASES = set(re.findall(r"case '([a-z_.]+)':", DISPATCH_BODY))
-EVENT_MAP = dict(re.findall(r"'([a-z_.]+)'\s*=>\s*'([a-z_.]+)'", EVENT_MAP_BODY))
+ENTRIES = {
+    command: (file, cls, method, event)
+    for command, file, cls, method, event in re.findall(
+        r"'([a-z_.]+)'\s*=>\s*\['(\w+)',\s*'(FastApi\w+Handler)',\s*'(\w+)',\s*'([a-z_.]+)'\]",
+        REGISTRY,
+    )
+}
+BRIDGE_CASES = set(ENTRIES)
+EVENT_MAP = {command: entry[3] for command, entry in ENTRIES.items()}
 
 
 def _python_command_types() -> set[str]:
@@ -46,34 +43,22 @@ def _python_command_types() -> set[str]:
 
 
 def test_registry_was_parsed():
-    """Guard against the regexes silently matching nothing after a refactor."""
-    assert len(BRIDGE_CASES) > 40
-    assert len(EVENT_MAP) > 40
+    """Guard against the regex silently matching nothing after a refactor."""
+    assert len(ENTRIES) > 40
     assert len(_python_command_types()) > 40
+    # every entry line was understood: one '=>' per entry
+    assert REGISTRY.count("=> ['") == len(ENTRIES)
 
 
-def test_every_python_command_has_a_bridge_case():
+def test_every_python_command_has_a_registry_entry():
     missing = _python_command_types() - BRIDGE_CASES
-    assert not missing, f"dispatched by Python but no case in dispatchCommand(): {sorted(missing)}"
+    assert not missing, f"dispatched by Python but not in bridge/registry.php: {sorted(missing)}"
 
 
-def test_no_bridge_command_is_unreachable_from_the_api():
-    """A bridge case nothing dispatches is dead code (user.set_org was one for a long time)."""
+def test_no_registry_entry_is_unreachable_from_the_api():
+    """An entry nothing dispatches is dead code (user.set_org was one for a long time)."""
     dead = BRIDGE_CASES - _python_command_types()
-    assert not dead, f"cases in dispatchCommand() that no Python service dispatches: {sorted(dead)}"
-
-
-def test_every_bridge_case_has_an_event_mapping():
-    missing = BRIDGE_CASES - EVENT_MAP.keys()
-    assert not missing, (
-        "no entry in commandToEventType() — events would be emitted as "
-        f"'<command>.executed': {sorted(missing)}"
-    )
-
-
-def test_event_map_has_no_orphans():
-    orphans = EVENT_MAP.keys() - BRIDGE_CASES
-    assert not orphans, f"mapped in commandToEventType() but not dispatched: {sorted(orphans)}"
+    assert not dead, f"in bridge/registry.php but no Python service dispatches them: {sorted(dead)}"
 
 
 def test_event_names_stay_in_their_commands_domain():
@@ -86,20 +71,19 @@ def test_event_names_stay_in_their_commands_domain():
         assert event.split(".")[0] == command.split(".")[0], (command, event)
 
 
-def test_every_dispatched_handler_method_exists():
-    """A misspelled ``FastApiXHandler::method`` is a PHP fatal at cron time, not at import."""
+def test_every_registered_handler_method_exists():
+    """A misspelled ``FastApiXHandler::method`` is a PHP fatal at run time, not at import."""
     defined: dict[str, set[str]] = {}
+    files: dict[str, str] = {}
     for path in (ROOT / "bridge" / "handlers").glob("*.php"):
         text = path.read_text()
         for cls in re.findall(r"class\s+(FastApi\w+Handler)\b", text):
             defined[cls] = set(re.findall(r"public\s+static\s+function\s+(\w+)\s*\(", text))
-
-    called = set(re.findall(r"(FastApi\w+Handler)::(\w+)\(", DISPATCH_BODY))
-    assert called, "no handler calls found in dispatchCommand()"
+            files[cls] = path.stem
 
     problems = sorted(
-        f"{cls}::{method}"
-        for cls, method in called
-        if cls not in defined or method not in defined[cls]
+        f"{command}: {cls}::{method} in handlers/{file}.php"
+        for command, (file, cls, method, _event) in ENTRIES.items()
+        if cls not in defined or method not in defined[cls] or files[cls] != file
     )
-    assert not problems, f"dispatchCommand() calls handler methods that do not exist: {problems}"
+    assert not problems, f"registry entries pointing at missing handlers: {problems}"

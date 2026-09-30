@@ -243,7 +243,15 @@ class FastApiTicketHandler {
         return ['ticket_id' => $ticket->getId(), 'collaborator_user_id' => $user->getId()];
     }
 
-    public static function setAnswered($payload, $answered, $staff_id) {
+    public static function answered($payload, $staff_id) {
+        return self::setAnswered($payload, true, $staff_id);
+    }
+
+    public static function unanswered($payload, $staff_id) {
+        return self::setAnswered($payload, false, $staff_id);
+    }
+
+    private static function setAnswered($payload, $answered, $staff_id) {
         $ticket = self::requireTicket($payload['ticket_id'] ?? 0);
         self::requirePerm($ticket, Ticket::PERM_MARKANSWERED, 'mark answered/unanswered');
         if ($answered) {

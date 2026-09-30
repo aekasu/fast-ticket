@@ -69,14 +69,37 @@ class FastApiIntegrationPlugin extends Plugin {
      * the appropriate handler, then writes a result event to the outbox.
      */
     function processInbox() {
-        // The plugin defines no PluginConfig class, so getConfig() is null. The key
-        // is provisioned by install.php (ost_config) and mirrored in the container env.
         if (!self::integrationKey()) {
             error_log('[FastAPI Integration] Plugin not configured — skipping inbox drain.');
             return;
         }
+        // One command per fresh PHP process. osTicket keeps process-wide static state (e.g.
+        // TaskForm::$instance holds the previous task's answers), so a second command run in
+        // this process could inherit the first one's data — it did: every task created after
+        // the first got the first task's title. worker.php --one runs a single command and
+        // exits 10 if it ran one, 0 if the inbox was empty.
+        $worker = escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg(dirname(__FILE__) . '/worker.php') . ' --one';
+        for ($i = 0; $i < 50; $i++) {
+            $code = 0;
+            passthru($worker, $code);
+            if ($code !== 10)
+                break;
+        }
+    }
 
-        $batch_size = 50;
+    /**
+     * Claim and run up to ``$limit`` pending commands; returns how many were run.
+     * Used by worker.php (limit 1: see processInbox() for why). The claim is atomic, so
+     * the worker and osTicket's cron can run at once without executing a command twice.
+     */
+    function drainInbox($limit = 1) {
+        // The key is provisioned by install.php (ost_config) and mirrored in the container env.
+        if (!self::integrationKey()) {
+            error_log('[FastAPI Integration] Plugin not configured — skipping inbox drain.');
+            return 0;
+        }
+
+        $batch_size = max(1, (int) $limit);
 
         // ── Stuck-row recovery ───────────────────────────────────────────────
         // A row is 'processing' only while a run holds it, and processed_at doubles as
@@ -107,9 +130,12 @@ class FastApiIntegrationPlugin extends Plugin {
                           WHERE status='processing' AND claimed_by={$run_id}
                           ORDER BY id ASC");
 
+        $ran = 0;
         while ($row = db_fetch_array($rows)) {
             $this->dispatchCommand($row);
+            $ran++;
         }
+        return $ran;
     }
 
     /**
@@ -143,273 +169,12 @@ class FastApiIntegrationPlugin extends Plugin {
                 }
             }
 
-            switch ($command_type) {
-                // ── Tickets ────────────────────────────────────────────────
-                case 'ticket.create':
-                    require_once dirname(__FILE__) . '/handlers/tickets.php';
-                    $result = FastApiTicketHandler::create($payload, $row['requested_by_staff_id']);
-                    break;
-                case 'ticket.reply':
-                    require_once dirname(__FILE__) . '/handlers/tickets.php';
-                    $result = FastApiTicketHandler::reply($payload, $row['requested_by_staff_id']);
-                    break;
-                case 'ticket.note':
-                    require_once dirname(__FILE__) . '/handlers/tickets.php';
-                    $result = FastApiTicketHandler::addNote($payload, $row['requested_by_staff_id']);
-                    break;
-                case 'ticket.close':
-                    require_once dirname(__FILE__) . '/handlers/tickets.php';
-                    $result = FastApiTicketHandler::close($payload, $row['requested_by_staff_id']);
-                    break;
-                case 'ticket.reopen':
-                    require_once dirname(__FILE__) . '/handlers/tickets.php';
-                    $result = FastApiTicketHandler::reopen($payload, $row['requested_by_staff_id']);
-                    break;
-                case 'ticket.assign':
-                    require_once dirname(__FILE__) . '/handlers/tickets.php';
-                    $result = FastApiTicketHandler::assign($payload, $row['requested_by_staff_id']);
-                    break;
-                case 'ticket.assign_team':
-                    require_once dirname(__FILE__) . '/handlers/tickets.php';
-                    $result = FastApiTicketHandler::assignTeam($payload, $row['requested_by_staff_id']);
-                    break;
-                case 'ticket.transfer':
-                    require_once dirname(__FILE__) . '/handlers/tickets.php';
-                    $result = FastApiTicketHandler::transfer($payload, $row['requested_by_staff_id']);
-                    break;
-                case 'ticket.change_owner':
-                    require_once dirname(__FILE__) . '/handlers/tickets.php';
-                    $result = FastApiTicketHandler::changeOwner($payload, $row['requested_by_staff_id']);
-                    break;
-                case 'ticket.delete':
-                    require_once dirname(__FILE__) . '/handlers/tickets.php';
-                    $result = FastApiTicketHandler::delete($payload, $row['requested_by_staff_id']);
-                    break;
-                case 'ticket.merge':
-                    require_once dirname(__FILE__) . '/handlers/tickets.php';
-                    $result = FastApiTicketHandler::merge($payload, $row['requested_by_staff_id']);
-                    break;
-                case 'ticket.answered':
-                case 'ticket.unanswered':
-                    require_once dirname(__FILE__) . '/handlers/tickets.php';
-                    $result = FastApiTicketHandler::setAnswered($payload, $command_type === 'ticket.answered', $row['requested_by_staff_id']);
-                    break;
-                case 'ticket.collaborator.add':
-                    require_once dirname(__FILE__) . '/handlers/tickets.php';
-                    $result = FastApiTicketHandler::addCollaborator($payload, $row['requested_by_staff_id']);
-                    break;
-
-                // ── Tasks ──────────────────────────────────────────────────
-                case 'task.create':
-                    require_once dirname(__FILE__) . '/handlers/tasks.php';
-                    $result = FastApiTaskHandler::create($payload, $row['requested_by_staff_id']);
-                    break;
-                case 'task.assign':
-                    require_once dirname(__FILE__) . '/handlers/tasks.php';
-                    $result = FastApiTaskHandler::assign($payload, $row['requested_by_staff_id']);
-                    break;
-                case 'task.close':
-                    require_once dirname(__FILE__) . '/handlers/tasks.php';
-                    $result = FastApiTaskHandler::close($payload, $row['requested_by_staff_id']);
-                    break;
-                case 'task.delete':
-                    require_once dirname(__FILE__) . '/handlers/tasks.php';
-                    $result = FastApiTaskHandler::delete($payload, $row['requested_by_staff_id']);
-                    break;
-                case 'task.reopen':
-                    require_once dirname(__FILE__) . '/handlers/tasks.php';
-                    $result = FastApiTaskHandler::reopen($payload, $row['requested_by_staff_id']);
-                    break;
-                case 'task.note':
-                    require_once dirname(__FILE__) . '/handlers/tasks.php';
-                    $result = FastApiTaskHandler::addNote($payload, $row['requested_by_staff_id']);
-                    break;
-                case 'task.edit':
-                    require_once dirname(__FILE__) . '/handlers/tasks.php';
-                    $result = FastApiTaskHandler::edit($payload, $row['requested_by_staff_id']);
-                    break;
-
-                // ── Users ──────────────────────────────────────────────────
-                case 'user.create':
-                    require_once dirname(__FILE__) . '/handlers/users.php';
-                    $result = FastApiUserHandler::create($payload, $row['requested_by_staff_id']);
-                    break;
-                case 'user.update':
-                    require_once dirname(__FILE__) . '/handlers/users.php';
-                    $result = FastApiUserHandler::update($payload, $row['requested_by_staff_id']);
-                    break;
-                case 'user.delete':
-                    require_once dirname(__FILE__) . '/handlers/users.php';
-                    $result = FastApiUserHandler::delete($payload, $row['requested_by_staff_id']);
-                    break;
-
-                // ── Organizations ──────────────────────────────────────────
-                case 'org.create':
-                    require_once dirname(__FILE__) . '/handlers/orgs.php';
-                    $result = FastApiOrgHandler::create($payload, $row['requested_by_staff_id']);
-                    break;
-                case 'org.update':
-                    require_once dirname(__FILE__) . '/handlers/orgs.php';
-                    $result = FastApiOrgHandler::update($payload, $row['requested_by_staff_id']);
-                    break;
-                case 'org.delete':
-                    require_once dirname(__FILE__) . '/handlers/orgs.php';
-                    $result = FastApiOrgHandler::delete($payload, $row['requested_by_staff_id']);
-                    break;
-
-                // ── Knowledgebase ──────────────────────────────────────────
-                case 'kb.category.create':
-                    require_once dirname(__FILE__) . '/handlers/kb.php';
-                    $result = FastApiKbHandler::createCategory($payload, $row['requested_by_staff_id']);
-                    break;
-                case 'kb.category.update':
-                    require_once dirname(__FILE__) . '/handlers/kb.php';
-                    $result = FastApiKbHandler::updateCategory($payload, $row['requested_by_staff_id']);
-                    break;
-                case 'kb.category.delete':
-                    require_once dirname(__FILE__) . '/handlers/kb.php';
-                    $result = FastApiKbHandler::deleteCategory($payload, $row['requested_by_staff_id']);
-                    break;
-                case 'kb.faq.create':
-                    require_once dirname(__FILE__) . '/handlers/kb.php';
-                    $result = FastApiKbHandler::createFaq($payload, $row['requested_by_staff_id']);
-                    break;
-                case 'kb.faq.update':
-                    require_once dirname(__FILE__) . '/handlers/kb.php';
-                    $result = FastApiKbHandler::updateFaq($payload, $row['requested_by_staff_id']);
-                    break;
-                case 'kb.faq.delete':
-                    require_once dirname(__FILE__) . '/handlers/kb.php';
-                    $result = FastApiKbHandler::deleteFaq($payload, $row['requested_by_staff_id']);
-                    break;
-                case 'kb.canned.create':
-                    require_once dirname(__FILE__) . '/handlers/kb.php';
-                    $result = FastApiKbHandler::createCanned($payload, $row['requested_by_staff_id']);
-                    break;
-                case 'kb.canned.update':
-                    require_once dirname(__FILE__) . '/handlers/kb.php';
-                    $result = FastApiKbHandler::updateCanned($payload, $row['requested_by_staff_id']);
-                    break;
-                case 'kb.canned.delete':
-                    require_once dirname(__FILE__) . '/handlers/kb.php';
-                    $result = FastApiKbHandler::deleteCanned($payload, $row['requested_by_staff_id']);
-                    break;
-
-                // ── Staff ──────────────────────────────────────────────────
-                case 'staff.create':
-                    require_once dirname(__FILE__) . '/handlers/staff.php';
-                    $result = FastApiStaffHandler::create($payload, $row['requested_by_staff_id']);
-                    break;
-                case 'staff.update':
-                    require_once dirname(__FILE__) . '/handlers/staff.php';
-                    $result = FastApiStaffHandler::update($payload, $row['requested_by_staff_id']);
-                    break;
-                case 'staff.delete':
-                    require_once dirname(__FILE__) . '/handlers/staff.php';
-                    $result = FastApiStaffHandler::delete($payload, $row['requested_by_staff_id']);
-                    break;
-
-                // ── Departments ────────────────────────────────────────────
-                case 'dept.create':
-                    require_once dirname(__FILE__) . '/handlers/departments.php';
-                    $result = FastApiDepartmentHandler::create($payload, $row['requested_by_staff_id']);
-                    break;
-                case 'dept.update':
-                    require_once dirname(__FILE__) . '/handlers/departments.php';
-                    $result = FastApiDepartmentHandler::update($payload, $row['requested_by_staff_id']);
-                    break;
-                case 'dept.delete':
-                    require_once dirname(__FILE__) . '/handlers/departments.php';
-                    $result = FastApiDepartmentHandler::delete($payload, $row['requested_by_staff_id']);
-                    break;
-
-                // ── Teams ──────────────────────────────────────────────────
-                case 'team.create':
-                    require_once dirname(__FILE__) . '/handlers/teams.php';
-                    $result = FastApiTeamHandler::create($payload, $row['requested_by_staff_id']);
-                    break;
-                case 'team.update':
-                    require_once dirname(__FILE__) . '/handlers/teams.php';
-                    $result = FastApiTeamHandler::update($payload, $row['requested_by_staff_id']);
-                    break;
-                case 'team.delete':
-                    require_once dirname(__FILE__) . '/handlers/teams.php';
-                    $result = FastApiTeamHandler::delete($payload, $row['requested_by_staff_id']);
-                    break;
-
-                // ── Help Topics ────────────────────────────────────────────
-                case 'topic.create':
-                    require_once dirname(__FILE__) . '/handlers/lookups.php';
-                    $result = FastApiTopicHandler::create($payload, $row['requested_by_staff_id']);
-                    break;
-                case 'topic.update':
-                    require_once dirname(__FILE__) . '/handlers/lookups.php';
-                    $result = FastApiTopicHandler::update($payload, $row['requested_by_staff_id']);
-                    break;
-                case 'topic.delete':
-                    require_once dirname(__FILE__) . '/handlers/lookups.php';
-                    $result = FastApiTopicHandler::delete($payload, $row['requested_by_staff_id']);
-                    break;
-
-                // ── SLAs ───────────────────────────────────────────────────
-                case 'sla.create':
-                    require_once dirname(__FILE__) . '/handlers/lookups.php';
-                    $result = FastApiSlaHandler::create($payload, $row['requested_by_staff_id']);
-                    break;
-                case 'sla.update':
-                    require_once dirname(__FILE__) . '/handlers/lookups.php';
-                    $result = FastApiSlaHandler::update($payload, $row['requested_by_staff_id']);
-                    break;
-                case 'sla.delete':
-                    require_once dirname(__FILE__) . '/handlers/lookups.php';
-                    $result = FastApiSlaHandler::delete($payload, $row['requested_by_staff_id']);
-                    break;
-
-                // ── Priorities ─────────────────────────────────────────────
-                case 'priority.create':
-                    require_once dirname(__FILE__) . '/handlers/lookups.php';
-                    $result = FastApiPriorityHandler::create($payload, $row['requested_by_staff_id']);
-                    break;
-                case 'priority.update':
-                    require_once dirname(__FILE__) . '/handlers/lookups.php';
-                    $result = FastApiPriorityHandler::update($payload, $row['requested_by_staff_id']);
-                    break;
-                case 'priority.delete':
-                    require_once dirname(__FILE__) . '/handlers/lookups.php';
-                    $result = FastApiPriorityHandler::delete($payload, $row['requested_by_staff_id']);
-                    break;
-
-                // ── Dynamic Forms ──────────────────────────────────────────
-                case 'form.create':
-                    require_once dirname(__FILE__) . '/handlers/forms.php';
-                    $result = FastApiFormHandler::create($payload, $row['requested_by_staff_id']);
-                    break;
-                case 'form.update':
-                    require_once dirname(__FILE__) . '/handlers/forms.php';
-                    $result = FastApiFormHandler::update($payload, $row['requested_by_staff_id']);
-                    break;
-                case 'form.delete':
-                    require_once dirname(__FILE__) . '/handlers/forms.php';
-                    $result = FastApiFormHandler::delete($payload, $row['requested_by_staff_id']);
-                    break;
-
-                // ── Banlist ────────────────────────────────────────────────
-                case 'banlist.create':
-                    require_once dirname(__FILE__) . '/handlers/banlist.php';
-                    $result = FastApiBanlistHandler::create($payload, $row['requested_by_staff_id']);
-                    break;
-                case 'banlist.update':
-                    require_once dirname(__FILE__) . '/handlers/banlist.php';
-                    $result = FastApiBanlistHandler::update($payload, $row['requested_by_staff_id']);
-                    break;
-                case 'banlist.delete':
-                    require_once dirname(__FILE__) . '/handlers/banlist.php';
-                    $result = FastApiBanlistHandler::delete($payload, $row['requested_by_staff_id']);
-                    break;
-
-                default:
-                    throw new Exception("Unknown command type: {$command_type}");
-            }
+            $entry = self::registry()[$command_type] ?? null;
+            if (!$entry)
+                throw new Exception("Unknown command type: {$command_type}");
+            list($file, $class, $method, $event_type) = $entry;
+            require_once dirname(__FILE__) . "/handlers/{$file}.php";
+            $result = $class::$method($payload, $row['requested_by_staff_id']);
 
             $this->assertCreateReturnedId($command_type, $result);
 
@@ -422,7 +187,7 @@ class FastApiIntegrationPlugin extends Plugin {
 
             // Emit outbox event for Python worker
             $this->emitOutboxEvent(
-                $this->commandToEventType($command_type),
+                $event_type,
                 $row['aggregate_type'],
                 $row['aggregate_id'],
                 $result
@@ -558,73 +323,10 @@ class FastApiIntegrationPlugin extends Plugin {
         return $safe;
     }
 
-    /**
-     * Map a command type to its corresponding outbox event type.
-     */
-    private function commandToEventType($command_type) {
-        $map = [
-            'ticket.create'           => 'ticket.created',
-            'ticket.reply'            => 'ticket.replied',
-            'ticket.note'             => 'ticket.note_added',
-            'ticket.close'            => 'ticket.closed',
-            'ticket.reopen'           => 'ticket.reopened',
-            'ticket.assign'           => 'ticket.assigned',
-            'ticket.assign_team'      => 'ticket.team_assigned',
-            'ticket.transfer'         => 'ticket.transferred',
-            'ticket.change_owner'     => 'ticket.owner_changed',
-            'ticket.delete'           => 'ticket.deleted',
-            'ticket.merge'            => 'ticket.merged',
-            'ticket.answered'         => 'ticket.answered',
-            'ticket.unanswered'       => 'ticket.unanswered',
-            'ticket.collaborator.add' => 'ticket.collaborator_added',
-            'task.create'             => 'task.created',
-            'task.assign'             => 'task.assigned',
-            'task.close'              => 'task.closed',
-            'task.delete'             => 'task.deleted',
-            'task.reopen'             => 'task.reopened',
-            'task.note'               => 'task.note_added',
-            'task.edit'               => 'task.edited',
-            'user.create'             => 'user.created',
-            'user.update'             => 'user.updated',
-            'user.delete'             => 'user.deleted',
-            'staff.create'            => 'staff.created',
-            'staff.update'            => 'staff.updated',
-            'staff.delete'            => 'staff.deleted',
-            'dept.create'             => 'dept.created',
-            'dept.update'             => 'dept.updated',
-            'dept.delete'             => 'dept.deleted',
-            'team.create'             => 'team.created',
-            'team.update'             => 'team.updated',
-            'team.delete'             => 'team.deleted',
-            'topic.create'            => 'topic.created',
-            'topic.update'            => 'topic.updated',
-            'topic.delete'            => 'topic.deleted',
-            'sla.create'              => 'sla.created',
-            'sla.update'              => 'sla.updated',
-            'sla.delete'              => 'sla.deleted',
-            'priority.create'         => 'priority.created',
-            'priority.update'         => 'priority.updated',
-            'priority.delete'         => 'priority.deleted',
-            'form.create'             => 'form.created',
-            'form.update'             => 'form.updated',
-            'form.delete'             => 'form.deleted',
-            'banlist.create'          => 'banlist.created',
-            'banlist.update'          => 'banlist.updated',
-            'banlist.delete'          => 'banlist.deleted',
-            'org.create'              => 'org.created',
-            'org.update'              => 'org.updated',
-            'org.delete'              => 'org.deleted',
-            'kb.category.create'      => 'kb.category.created',
-            'kb.category.update'      => 'kb.category.updated',
-            'kb.category.delete'      => 'kb.category.deleted',
-            'kb.faq.create'           => 'kb.faq.created',
-            'kb.faq.update'           => 'kb.faq.updated',
-            'kb.faq.delete'           => 'kb.faq.deleted',
-            'kb.canned.create'        => 'kb.canned.created',
-            'kb.canned.update'        => 'kb.canned.updated',
-            'kb.canned.delete'        => 'kb.canned.deleted',
-        ];
-        return $map[$command_type] ?? ($command_type . '.executed');
+    /** command type => [handler file, class, method, outbox event] — see registry.php. */
+    private static function registry() {
+        static $registry = null;
+        return $registry ?? ($registry = require dirname(__FILE__) . '/registry.php');
     }
 
     /**

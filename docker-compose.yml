@@ -79,6 +79,25 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # ── osTicket inbox worker (~1 s command latency; the cron service stays as fallback) ─
+  osticket-worker:
+    build:
+      context: .
+      dockerfile: docker/osticket/Dockerfile
+    volumes:
+      - osticket_config:/var/osticket-config
+    environment:
+      MYSQL_HOST: db
+      MYSQL_USER: osticket
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_DATABASE: osticket
+      FASTAPI_INTEGRATION_KEY: ${FASTAPI_INTEGRATION_KEY}
+      START_WORKER: "1"
+    depends_on:
+      osticket:
+        condition: service_healthy
+    restart: unless-stopped
+
   # ── FastAPI application ───────────────────────────────────────────────────────
   api:
     build:

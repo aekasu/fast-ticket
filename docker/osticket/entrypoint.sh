@@ -2,7 +2,8 @@
 # osTicket container entrypoint.
 #
 # Modes:
-#   START_CRON=1  — run the cron daemon (osticket-cron service)
+#   START_CRON=1  — run the cron daemon (osticket-cron service; the inbox fallback)
+#   START_WORKER=1 — run the inbox worker (osticket-worker service; ~1 s command latency)
 #   START_CRON=0  — run Apache; on first boot install osTicket headlessly
 #
 # Idempotency: install state is derived from the two things that actually
@@ -81,6 +82,15 @@ ln -sfn "$CONFIG_STORE" "$CONFIG_FILE"
 if [ "${START_CRON:-0}" = "1" ]; then
     echo "[entrypoint] Starting cron daemon..."
     exec cron -f
+fi
+
+# ── Worker mode ────────────────────────────────────────────────────────────────
+# Runs as www-data (like the web and cron paths, so files osTicket writes stay owned by it)
+# and is exec'd directly, so a container stop reaches PHP as SIGTERM.
+if [ "${START_WORKER:-0}" = "1" ]; then
+    echo "[entrypoint] Starting inbox worker..."
+    exec setpriv --reuid=www-data --regid=www-data --init-groups \
+        php "$WEBROOT/include/plugins/fastapi_integration/worker.php"
 fi
 
 # ── Manual-install mode ────────────────────────────────────────────────────────
