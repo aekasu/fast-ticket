@@ -902,7 +902,16 @@ async def get_form_fields(session: AsyncSession, form_id: int) -> list:
 
 # ── Commands ──────────────────────────────────────────────────────────────────
 
-async def list_commands(session: AsyncSession, limit: int = 50, offset: int = 0) -> list:
+def own_commands(access: "Scope") -> str:
+    """SQL condition over ``ost_integration_inbox``: the commands this agent queued (all of them for UNRESTRICTED)."""
+    if getattr(access, "unrestricted", False):
+        return "1 = 1"
+    return f"requested_by_staff_id = {int(access.staff_id)}"
+
+
+async def list_commands(
+    session: AsyncSession, *, access: "Scope", limit: int = 50, offset: int = 0
+) -> list:
     sql = """
         SELECT
             id,
@@ -914,12 +923,13 @@ async def list_commands(session: AsyncSession, limit: int = 50, offset: int = 0)
             created_at,
             processed_at
         FROM ost_integration_inbox
+        WHERE {own}
         ORDER BY created_at DESC LIMIT :limit OFFSET :offset
-    """
+    """.replace("{own}", own_commands(access))
     result = await session.execute(_sql(sql), {"limit": limit, "offset": offset})
     return list(result.mappings().all())
 
-async def get_command(session: AsyncSession, command_id: int) -> dict | None:
+async def get_command(session: AsyncSession, command_id: int, *, access: "Scope") -> dict | None:
     sql = """
         SELECT
             id,
@@ -935,8 +945,8 @@ async def get_command(session: AsyncSession, command_id: int) -> dict | None:
             created_at,
             processed_at
         FROM ost_integration_inbox
-        WHERE id = :command_id
-    """
+        WHERE id = :command_id AND {own}
+    """.replace("{own}", own_commands(access))
     result = await session.execute(_sql(sql), {"command_id": command_id})
     row = result.mappings().one_or_none()
     return dict(row) if row else None

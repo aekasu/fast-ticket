@@ -15,6 +15,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
@@ -24,6 +25,7 @@ from app.core.config import settings
 from app.core.db import AsyncSessionLocal, create_db_and_tables
 from app.core.rate_limit import limiter
 from app.core.request_limits import BodySizeLimitMiddleware
+from app.integration.osticket.commands_service import InvalidIdempotencyKey
 from app.workers.events import poll_and_process_events, purge_old_events
 
 logging.basicConfig(
@@ -121,6 +123,13 @@ app = FastAPI(
 # only routes carrying an explicit @limiter.limit decorator (login) would be limited.
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+
+@app.exception_handler(InvalidIdempotencyKey)
+async def _invalid_idempotency_key(request, exc):
+    return JSONResponse(status_code=422, content={"detail": str(exc)})
+
+
 app.add_middleware(SlowAPIMiddleware)
 app.add_middleware(BodySizeLimitMiddleware, max_bytes=settings.MAX_REQUEST_BYTES)
 

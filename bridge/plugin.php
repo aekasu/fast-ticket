@@ -257,7 +257,8 @@ class FastApiIntegrationPlugin extends Plugin {
             $entry = self::registry()[$command_type] ?? null;
             if (!$entry)
                 throw new Exception("Unknown command type: {$command_type}");
-            list($file, $class, $method, $event_type) = $entry;
+            list($file, $class, $method, $event_type, $permission) = $entry;
+            self::assertPermitted($command_type, $permission);
             require_once dirname(__FILE__) . "/handlers/{$file}.php";
             $result = $class::$method($payload, $row['requested_by_staff_id']);
 
@@ -291,6 +292,73 @@ class FastApiIntegrationPlugin extends Plugin {
             ));
         } finally {
             $this->runningCommand = false;
+            $this->scrubPayload($inbox_id, $payload);
+        }
+    }
+
+    /**
+     * The requesting staff member must hold what osTicket's own page for this job requires (the registry's
+     * permission column) — checked here, at the point that actually performs the write, so it holds even if
+     * the API's check were bypassed or wrong. Fails closed: an unknown kind is a refusal.
+     */
+    private static function assertPermitted($command_type, $permission) {
+        global $thisstaff;
+        if (!$thisstaff)
+            throw new Exception("Permission denied: {$command_type} needs a requesting staff member.");
+
+        if ($permission === 'admin') {
+            if ($thisstaff->isAdmin())
+                return;
+            $needs = 'administrator access';
+        } else {
+            $parts = explode(':', (string) $permission, 2);
+            $kind = $parts[0];
+            $key = $parts[1] ?? '';
+            // global: the staff member's own permissions; role: any of their roles (Staff::hasPerm($key, false))
+            if ($key !== '' && (($kind === 'global' && $thisstaff->hasPerm($key))
+                    || ($kind === 'role' && $thisstaff->hasPerm($key, false))))
+                return;
+            $needs = "the '{$key}' permission";
+        }
+        throw new Exception("Permission denied: the requesting staff member lacks {$needs}, which {$command_type} requires.");
+    }
+
+    /** Keys whose values are secrets (a staff member's password); matches the API's own masking. */
+    const SECRET_KEY = '/pass(word|wd)?|secret|token/i';
+
+    private static function redactSecrets($value, &$changed) {
+        if (!is_array($value))
+            return $value;
+        foreach ($value as $key => $item) {
+            if (is_string($key) && preg_match(self::SECRET_KEY, $key) && $item !== '[redacted]' && $item !== null && $item !== '') {
+                $value[$key] = '[redacted]';
+                $changed = true;
+            } elseif (is_array($item)) {
+                $value[$key] = self::redactSecrets($item, $changed);
+            }
+        }
+        return $value;
+    }
+
+    /**
+     * Once a command has finished (done or failed) its secrets have served their purpose: overwrite them in
+     * the stored payload so a staff member's password is not left in the inbox, where the commands API and
+     * anyone with database access could read it. (A row still pending or held by a killed run keeps its payload
+     * until it finishes.)
+     */
+    private function scrubPayload($inbox_id, $payload) {
+        try {
+            $changed = false;
+            $clean = self::redactSecrets(is_array($payload) ? $payload : [], $changed);
+            if ($changed) {
+                db_query(sprintf(
+                    "UPDATE " . FASTAPI_INBOX_TABLE . " SET payload=%s WHERE id=%d",
+                    db_input(json_encode($clean)),
+                    $inbox_id
+                ));
+            }
+        } catch (Throwable $e) {
+            error_log("[FastAPI Integration] could not scrub payload of command #{$inbox_id}: " . $e->getMessage());
         }
     }
 

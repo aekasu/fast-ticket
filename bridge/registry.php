@@ -2,86 +2,96 @@
 /**
  * Command registry — the single place a command type is defined on the PHP side.
  *
- *   command type => [handlers/<file>.php, handler class, static method, outbox event]
+ *   command type => [handlers/<file>.php, handler class, static method, outbox event, permission]
  *
- * The dispatcher (plugin.php) calls Class::method($payload, $requested_by_staff_id) and
- * emits the event on success. A command type exists only when a Python service also
+ * The dispatcher (plugin.php) first checks that the requesting staff member holds `permission`,
+ * then calls Class::method($payload, $requested_by_staff_id) and emits the event on success.
+ * `permission` is what osTicket's own page for the job requires, so the bridge enforces it even if
+ * the API's check were bypassed or wrong:
+ *
+ *   'admin'            $thisstaff->isAdmin()                     (Admin Panel pages)
+ *   'global:<key>'     $thisstaff->hasPerm('<key>')              (user.*, org.*, faq.manage, ...)
+ *   'role:<key>'       $thisstaff->hasPerm('<key>', false)       (any of the agent's roles: ticket.*, task.*, canned.manage)
+ *
+ * There is no admin bypass — osTicket's hasPerm() has none. Ticket and task handlers additionally apply
+ * osTicket's exact per-ticket / per-task check (checkStaffPerm). tests/unit/test_bridge_registry.py checks
+ * every entry against the guard the API's own route declares. A command type exists only when a Python service also
  * dispatches it (tests/unit/test_bridge_registry.py enforces both directions).
  * Keep one entry per line: that test parses this file as text.
  */
 
 return [
 
-    'ticket.create'           => ['tickets', 'FastApiTicketHandler', 'create', 'ticket.created'],
-    'ticket.reply'            => ['tickets', 'FastApiTicketHandler', 'reply', 'ticket.replied'],
-    'ticket.note'             => ['tickets', 'FastApiTicketHandler', 'addNote', 'ticket.note_added'],
-    'ticket.close'            => ['tickets', 'FastApiTicketHandler', 'close', 'ticket.closed'],
-    'ticket.reopen'           => ['tickets', 'FastApiTicketHandler', 'reopen', 'ticket.reopened'],
-    'ticket.assign'           => ['tickets', 'FastApiTicketHandler', 'assign', 'ticket.assigned'],
-    'ticket.assign_team'      => ['tickets', 'FastApiTicketHandler', 'assignTeam', 'ticket.team_assigned'],
-    'ticket.transfer'         => ['tickets', 'FastApiTicketHandler', 'transfer', 'ticket.transferred'],
-    'ticket.change_owner'     => ['tickets', 'FastApiTicketHandler', 'changeOwner', 'ticket.owner_changed'],
-    'ticket.delete'           => ['tickets', 'FastApiTicketHandler', 'delete', 'ticket.deleted'],
-    'ticket.merge'            => ['tickets', 'FastApiTicketHandler', 'merge', 'ticket.merged'],
-    'ticket.answered'         => ['tickets', 'FastApiTicketHandler', 'answered', 'ticket.answered'],
-    'ticket.unanswered'       => ['tickets', 'FastApiTicketHandler', 'unanswered', 'ticket.unanswered'],
-    'ticket.collaborator.add' => ['tickets', 'FastApiTicketHandler', 'addCollaborator', 'ticket.collaborator_added'],
+    'ticket.create'           => ['tickets', 'FastApiTicketHandler', 'create', 'ticket.created', 'role:ticket.create'],
+    'ticket.reply'            => ['tickets', 'FastApiTicketHandler', 'reply', 'ticket.replied', 'role:ticket.reply'],
+    'ticket.note'             => ['tickets', 'FastApiTicketHandler', 'addNote', 'ticket.note_added', 'role:ticket.reply'],
+    'ticket.close'            => ['tickets', 'FastApiTicketHandler', 'close', 'ticket.closed', 'role:ticket.close'],
+    'ticket.reopen'           => ['tickets', 'FastApiTicketHandler', 'reopen', 'ticket.reopened', 'role:ticket.close'],
+    'ticket.assign'           => ['tickets', 'FastApiTicketHandler', 'assign', 'ticket.assigned', 'role:ticket.assign'],
+    'ticket.assign_team'      => ['tickets', 'FastApiTicketHandler', 'assignTeam', 'ticket.team_assigned', 'role:ticket.assign'],
+    'ticket.transfer'         => ['tickets', 'FastApiTicketHandler', 'transfer', 'ticket.transferred', 'role:ticket.transfer'],
+    'ticket.change_owner'     => ['tickets', 'FastApiTicketHandler', 'changeOwner', 'ticket.owner_changed', 'role:ticket.edit'],
+    'ticket.delete'           => ['tickets', 'FastApiTicketHandler', 'delete', 'ticket.deleted', 'role:ticket.delete'],
+    'ticket.merge'            => ['tickets', 'FastApiTicketHandler', 'merge', 'ticket.merged', 'role:ticket.merge'],
+    'ticket.answered'         => ['tickets', 'FastApiTicketHandler', 'answered', 'ticket.answered', 'role:ticket.markanswered'],
+    'ticket.unanswered'       => ['tickets', 'FastApiTicketHandler', 'unanswered', 'ticket.unanswered', 'role:ticket.markanswered'],
+    'ticket.collaborator.add' => ['tickets', 'FastApiTicketHandler', 'addCollaborator', 'ticket.collaborator_added', 'role:ticket.reply'],
 
-    'task.create'             => ['tasks', 'FastApiTaskHandler', 'create', 'task.created'],
-    'task.assign'             => ['tasks', 'FastApiTaskHandler', 'assign', 'task.assigned'],
-    'task.close'              => ['tasks', 'FastApiTaskHandler', 'close', 'task.closed'],
-    'task.delete'             => ['tasks', 'FastApiTaskHandler', 'delete', 'task.deleted'],
-    'task.reopen'             => ['tasks', 'FastApiTaskHandler', 'reopen', 'task.reopened'],
-    'task.note'               => ['tasks', 'FastApiTaskHandler', 'addNote', 'task.note_added'],
-    'task.edit'               => ['tasks', 'FastApiTaskHandler', 'edit', 'task.edited'],
+    'task.create'             => ['tasks', 'FastApiTaskHandler', 'create', 'task.created', 'role:task.create'],
+    'task.assign'             => ['tasks', 'FastApiTaskHandler', 'assign', 'task.assigned', 'role:task.assign'],
+    'task.close'              => ['tasks', 'FastApiTaskHandler', 'close', 'task.closed', 'role:task.close'],
+    'task.delete'             => ['tasks', 'FastApiTaskHandler', 'delete', 'task.deleted', 'role:task.delete'],
+    'task.reopen'             => ['tasks', 'FastApiTaskHandler', 'reopen', 'task.reopened', 'role:task.close'],
+    'task.note'               => ['tasks', 'FastApiTaskHandler', 'addNote', 'task.note_added', 'role:task.reply'],
+    'task.edit'               => ['tasks', 'FastApiTaskHandler', 'edit', 'task.edited', 'role:task.edit'],
 
-    'user.create'             => ['users', 'FastApiUserHandler', 'create', 'user.created'],
-    'user.update'             => ['users', 'FastApiUserHandler', 'update', 'user.updated'],
-    'user.delete'             => ['users', 'FastApiUserHandler', 'delete', 'user.deleted'],
+    'user.create'             => ['users', 'FastApiUserHandler', 'create', 'user.created', 'global:user.create'],
+    'user.update'             => ['users', 'FastApiUserHandler', 'update', 'user.updated', 'global:user.edit'],
+    'user.delete'             => ['users', 'FastApiUserHandler', 'delete', 'user.deleted', 'global:user.delete'],
 
-    'org.create'              => ['orgs', 'FastApiOrgHandler', 'create', 'org.created'],
-    'org.update'              => ['orgs', 'FastApiOrgHandler', 'update', 'org.updated'],
-    'org.delete'              => ['orgs', 'FastApiOrgHandler', 'delete', 'org.deleted'],
+    'org.create'              => ['orgs', 'FastApiOrgHandler', 'create', 'org.created', 'global:org.create'],
+    'org.update'              => ['orgs', 'FastApiOrgHandler', 'update', 'org.updated', 'global:org.edit'],
+    'org.delete'              => ['orgs', 'FastApiOrgHandler', 'delete', 'org.deleted', 'global:org.delete'],
 
-    'kb.category.create'      => ['kb', 'FastApiKbHandler', 'createCategory', 'kb.category.created'],
-    'kb.category.update'      => ['kb', 'FastApiKbHandler', 'updateCategory', 'kb.category.updated'],
-    'kb.category.delete'      => ['kb', 'FastApiKbHandler', 'deleteCategory', 'kb.category.deleted'],
-    'kb.faq.create'           => ['kb', 'FastApiKbHandler', 'createFaq', 'kb.faq.created'],
-    'kb.faq.update'           => ['kb', 'FastApiKbHandler', 'updateFaq', 'kb.faq.updated'],
-    'kb.faq.delete'           => ['kb', 'FastApiKbHandler', 'deleteFaq', 'kb.faq.deleted'],
-    'kb.canned.create'        => ['kb', 'FastApiKbHandler', 'createCanned', 'kb.canned.created'],
-    'kb.canned.update'        => ['kb', 'FastApiKbHandler', 'updateCanned', 'kb.canned.updated'],
-    'kb.canned.delete'        => ['kb', 'FastApiKbHandler', 'deleteCanned', 'kb.canned.deleted'],
+    'kb.category.create'      => ['kb', 'FastApiKbHandler', 'createCategory', 'kb.category.created', 'global:faq.manage'],
+    'kb.category.update'      => ['kb', 'FastApiKbHandler', 'updateCategory', 'kb.category.updated', 'global:faq.manage'],
+    'kb.category.delete'      => ['kb', 'FastApiKbHandler', 'deleteCategory', 'kb.category.deleted', 'global:faq.manage'],
+    'kb.faq.create'           => ['kb', 'FastApiKbHandler', 'createFaq', 'kb.faq.created', 'global:faq.manage'],
+    'kb.faq.update'           => ['kb', 'FastApiKbHandler', 'updateFaq', 'kb.faq.updated', 'global:faq.manage'],
+    'kb.faq.delete'           => ['kb', 'FastApiKbHandler', 'deleteFaq', 'kb.faq.deleted', 'global:faq.manage'],
+    'kb.canned.create'        => ['kb', 'FastApiKbHandler', 'createCanned', 'kb.canned.created', 'role:canned.manage'],
+    'kb.canned.update'        => ['kb', 'FastApiKbHandler', 'updateCanned', 'kb.canned.updated', 'role:canned.manage'],
+    'kb.canned.delete'        => ['kb', 'FastApiKbHandler', 'deleteCanned', 'kb.canned.deleted', 'role:canned.manage'],
 
-    'staff.create'            => ['staff', 'FastApiStaffHandler', 'create', 'staff.created'],
-    'staff.update'            => ['staff', 'FastApiStaffHandler', 'update', 'staff.updated'],
-    'staff.delete'            => ['staff', 'FastApiStaffHandler', 'delete', 'staff.deleted'],
+    'staff.create'            => ['staff', 'FastApiStaffHandler', 'create', 'staff.created', 'admin'],
+    'staff.update'            => ['staff', 'FastApiStaffHandler', 'update', 'staff.updated', 'admin'],
+    'staff.delete'            => ['staff', 'FastApiStaffHandler', 'delete', 'staff.deleted', 'admin'],
 
-    'dept.create'             => ['departments', 'FastApiDepartmentHandler', 'create', 'dept.created'],
-    'dept.update'             => ['departments', 'FastApiDepartmentHandler', 'update', 'dept.updated'],
-    'dept.delete'             => ['departments', 'FastApiDepartmentHandler', 'delete', 'dept.deleted'],
+    'dept.create'             => ['departments', 'FastApiDepartmentHandler', 'create', 'dept.created', 'admin'],
+    'dept.update'             => ['departments', 'FastApiDepartmentHandler', 'update', 'dept.updated', 'admin'],
+    'dept.delete'             => ['departments', 'FastApiDepartmentHandler', 'delete', 'dept.deleted', 'admin'],
 
-    'team.create'             => ['teams', 'FastApiTeamHandler', 'create', 'team.created'],
-    'team.update'             => ['teams', 'FastApiTeamHandler', 'update', 'team.updated'],
-    'team.delete'             => ['teams', 'FastApiTeamHandler', 'delete', 'team.deleted'],
+    'team.create'             => ['teams', 'FastApiTeamHandler', 'create', 'team.created', 'admin'],
+    'team.update'             => ['teams', 'FastApiTeamHandler', 'update', 'team.updated', 'admin'],
+    'team.delete'             => ['teams', 'FastApiTeamHandler', 'delete', 'team.deleted', 'admin'],
 
-    'topic.create'            => ['lookups', 'FastApiTopicHandler', 'create', 'topic.created'],
-    'topic.update'            => ['lookups', 'FastApiTopicHandler', 'update', 'topic.updated'],
-    'topic.delete'            => ['lookups', 'FastApiTopicHandler', 'delete', 'topic.deleted'],
+    'topic.create'            => ['lookups', 'FastApiTopicHandler', 'create', 'topic.created', 'admin'],
+    'topic.update'            => ['lookups', 'FastApiTopicHandler', 'update', 'topic.updated', 'admin'],
+    'topic.delete'            => ['lookups', 'FastApiTopicHandler', 'delete', 'topic.deleted', 'admin'],
 
-    'sla.create'              => ['lookups', 'FastApiSlaHandler', 'create', 'sla.created'],
-    'sla.update'              => ['lookups', 'FastApiSlaHandler', 'update', 'sla.updated'],
-    'sla.delete'              => ['lookups', 'FastApiSlaHandler', 'delete', 'sla.deleted'],
+    'sla.create'              => ['lookups', 'FastApiSlaHandler', 'create', 'sla.created', 'admin'],
+    'sla.update'              => ['lookups', 'FastApiSlaHandler', 'update', 'sla.updated', 'admin'],
+    'sla.delete'              => ['lookups', 'FastApiSlaHandler', 'delete', 'sla.deleted', 'admin'],
 
-    'priority.create'         => ['lookups', 'FastApiPriorityHandler', 'create', 'priority.created'],
-    'priority.update'         => ['lookups', 'FastApiPriorityHandler', 'update', 'priority.updated'],
-    'priority.delete'         => ['lookups', 'FastApiPriorityHandler', 'delete', 'priority.deleted'],
+    'priority.create'         => ['lookups', 'FastApiPriorityHandler', 'create', 'priority.created', 'admin'],
+    'priority.update'         => ['lookups', 'FastApiPriorityHandler', 'update', 'priority.updated', 'admin'],
+    'priority.delete'         => ['lookups', 'FastApiPriorityHandler', 'delete', 'priority.deleted', 'admin'],
 
-    'form.create'             => ['forms', 'FastApiFormHandler', 'create', 'form.created'],
-    'form.update'             => ['forms', 'FastApiFormHandler', 'update', 'form.updated'],
-    'form.delete'             => ['forms', 'FastApiFormHandler', 'delete', 'form.deleted'],
+    'form.create'             => ['forms', 'FastApiFormHandler', 'create', 'form.created', 'admin'],
+    'form.update'             => ['forms', 'FastApiFormHandler', 'update', 'form.updated', 'admin'],
+    'form.delete'             => ['forms', 'FastApiFormHandler', 'delete', 'form.deleted', 'admin'],
 
-    'banlist.create'          => ['banlist', 'FastApiBanlistHandler', 'create', 'banlist.created'],
-    'banlist.update'          => ['banlist', 'FastApiBanlistHandler', 'update', 'banlist.updated'],
-    'banlist.delete'          => ['banlist', 'FastApiBanlistHandler', 'delete', 'banlist.deleted'],
+    'banlist.create'          => ['banlist', 'FastApiBanlistHandler', 'create', 'banlist.created', 'admin'],
+    'banlist.update'          => ['banlist', 'FastApiBanlistHandler', 'update', 'banlist.updated', 'admin'],
+    'banlist.delete'          => ['banlist', 'FastApiBanlistHandler', 'delete', 'banlist.deleted', 'admin'],
 ];

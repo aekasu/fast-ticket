@@ -14,9 +14,9 @@ A command type is only real when both exist, spelled identically:
 1. **Python** — `dispatch_command(command_type="x.verb", ...)` in `app/modules/<domain>/service.py`
 2. **`bridge/registry.php`** — one line under the matching domain group:
    ```php
-   'team.update' => ['teams', 'FastApiTeamHandler', 'update', 'team.updated'],
+   'team.update' => ['teams', 'FastApiTeamHandler', 'update', 'team.updated', 'admin'],
    ```
-   `[handlers/<file>, class, public static method, event]`. The event is past tense; compound verbs use `_` (`ticket.note` → `ticket.note_added`). The dispatcher calls `Class::method($payload, $requested_by_staff_id)`; a command missing here fails with "Unknown command type".
+   `[handlers/<file>, class, public static method, event, permission]`. The permission — `admin`, `global:<osTicket key>` or `role:<osTicket key>` (`app/core/permissions.py` says which kind a key is) — must be exactly what the API route that queues the command declares (`require_admin()` / `require_perm(key)`); the dispatcher refuses a staff member who lacks it before the handler runs, and `tests/unit/test_bridge_registry.py` fails on any mismatch. The event is past tense; compound verbs use `_` (`ticket.note` → `ticket.note_added`). The dispatcher calls `Class::method($payload, $requested_by_staff_id)`; a command missing here fails with "Unknown command type".
 
 `make test-unit` runs `tests/unit/test_bridge_registry.py`, which checks both directions and that every registered class/method exists.
 

@@ -23,6 +23,27 @@ from app.integration.osticket.commands import IntegrationInbox
 
 logger = logging.getLogger(__name__)
 
+MAX_IDEMPOTENCY_KEY_LENGTH = 200   # the column holds 255; the staff prefix takes the rest
+
+
+class InvalidIdempotencyKey(ValueError):
+    """The Idempotency-Key header is unusable (too long); the API answers 422."""
+
+
+def scoped_idempotency_key(staff_id: int | None, key: str) -> str:
+    """The key as stored: ``<staff id>:<key>``.
+
+    Keys are unique per staff member, not globally. Otherwise one agent reusing another's key would be
+    handed that agent's command back (its id, its status, its result); now the same key from two agents
+    is two different commands.
+    """
+    return f"{staff_id or 0}:{key}"
+
+
+def client_idempotency_key(stored: str | None) -> str | None:
+    """Undo ``scoped_idempotency_key`` for display."""
+    return stored.partition(":")[2] if stored and ":" in stored else stored
+
 
 def _json_default(value: Any) -> str:
     """Encode the non-JSON types a Pydantic ``model_dump()`` can contain (dates as ISO 8601).
@@ -61,17 +82,22 @@ async def dispatch_command(
     Returns:
         The newly created (or pre-existing) :class:`IntegrationInbox` row.
     """
-    # ── Idempotency check ─────────────────────────────────────────────────────
+    # ── Idempotency check (per staff member) ──────────────────────────────────
     if idempotency_key:
+        if len(idempotency_key) > MAX_IDEMPOTENCY_KEY_LENGTH:
+            raise InvalidIdempotencyKey(
+                f"Idempotency-Key must be at most {MAX_IDEMPOTENCY_KEY_LENGTH} characters."
+            )
+        stored_key = scoped_idempotency_key(requested_by_staff_id, idempotency_key)
         result = await session.execute(
             select(IntegrationInbox).where(
-                IntegrationInbox.idempotency_key == idempotency_key
+                IntegrationInbox.idempotency_key == stored_key
             )
         )
         existing = result.scalar_one_or_none()
         if existing is not None:
             logger.info(
-                "Idempotency hit for key=%s command_id=%s", idempotency_key, existing.id
+                "Idempotency hit for key=%s command_id=%s", stored_key, existing.id
             )
             return existing
 
@@ -81,7 +107,7 @@ async def dispatch_command(
         aggregate_type=aggregate_type,
         aggregate_id=aggregate_id,
         payload=json.dumps(payload, default=_json_default),
-        idempotency_key=idempotency_key,
+        idempotency_key=stored_key if idempotency_key else None,
         requested_by_staff_id=requested_by_staff_id,
     )
     session.add(command)

@@ -42,7 +42,7 @@ ADMIN_PANEL_READS = [
     "/api/v1/staff", "/api/v1/staff/1", "/api/v1/departments/1",
     "/api/v1/teams", "/api/v1/teams/1", "/api/v1/topics/1", "/api/v1/slas",
     "/api/v1/slas/1", "/api/v1/priorities/1", "/api/v1/forms", "/api/v1/forms/1",
-    "/api/v1/banlist", "/api/v1/banlist/1", "/api/v1/commands", "/api/v1/commands/1",
+    "/api/v1/banlist", "/api/v1/banlist/1",
 ]
 
 

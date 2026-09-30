@@ -286,3 +286,20 @@ def test_in_helper_is_never_invalid_sql_for_an_empty_list():
 
     assert _in("d.id", []) == "1 = 0"
     assert _in("d.id", [3, 1]) == "d.id IN (1,3)"
+
+
+# ── the command inbox ─────────────────────────────────────────────────────────
+
+
+def test_own_commands_predicate():
+    from app.integration.osticket.read_repository import own_commands
+
+    conn = sqlite3.connect(":memory:")
+    conn.execute("CREATE TABLE ost_integration_inbox (id INTEGER PRIMARY KEY, requested_by_staff_id INT)")
+    conn.executemany("INSERT INTO ost_integration_inbox VALUES (?,?)", [(1, ME), (2, OTHER), (3, ME), (4, None)])
+
+    def ids(access):
+        return [r[0] for r in conn.execute(f"SELECT id FROM ost_integration_inbox WHERE {own_commands(access)} ORDER BY 1")]
+
+    assert ids(_agent()) == [1, 3]           # mine only; a row with no requester is nobody's
+    assert ids(UNRESTRICTED) == [1, 2, 3, 4]

@@ -121,7 +121,10 @@ def test_a_real_agents_access_follows_their_osticket_role_and_changes_at_once(br
     departments = httpx.get(f"{BASE_URL}/api/v1/departments", headers=headers, timeout=30)
     assert departments.status_code == 200
     assert [d["id"] for d in departments.json()["items"]] == [1]
-    for path in ("/api/v1/staff", "/api/v1/departments/1", "/api/v1/banlist", "/api/v1/slas", "/api/v1/commands", "/api/v1/users"):
+    # (the command list is open to every agent but shows only the commands they queued: none yet)
+    own_commands = httpx.get(f"{BASE_URL}/api/v1/commands", headers=headers, timeout=30)
+    assert own_commands.status_code == 200 and own_commands.json()["items"] == []
+    for path in ("/api/v1/staff", "/api/v1/departments/1", "/api/v1/banlist", "/api/v1/slas", "/api/v1/users"):
         assert status("GET", path) == 403, path
     # search is open to any agent but scoped: no user.dir, so it can never return people
     searched = httpx.get(f"{BASE_URL}/api/v1/search?q=test", headers=headers, timeout=30)

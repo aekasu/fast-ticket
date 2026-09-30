@@ -5,6 +5,8 @@ checked as each agent and as the admin. What cannot be set up through the API (l
 is covered by the SQL-semantics tests in tests/unit/test_visibility_sql.py.
 """
 
+import json
+
 import httpx
 import pytest
 
@@ -192,3 +194,48 @@ def test_reference_lists_follow_what_osticket_offers_an_agent(bridge, uniq):
     assert managed == {canned["glob"], canned["globoff"], canned["sup"]}            # disabled ones too; not Sales'
     everything = _titles(admin, "/api/v1/canned") & set(canned.values())
     assert everything == set(canned.values())                                       # the admin holds canned.manage in all three
+
+
+def test_a_command_and_its_idempotency_key_belong_to_the_agent_who_queued_it(bridge, uniq):
+    a_id, a_user = _agent(bridge, uniq, "ca", SUPPORT)
+    b_id, b_user = _agent(bridge, uniq, "cb", SUPPORT)
+    admin, agent_a, agent_b = bridge.client.headers, login_as(a_user, PASSWORD), login_as(b_user, PASSWORD)
+    shared_key = f"e2e-shared-key-{uniq}"
+    # osTicket lets an agent open a ticket only for an existing customer unless they hold user.create,
+    # so the administrator creates the two customers first (registered first, so removed last)
+    for who in ("a", "b"):
+        bridge.create("/api/v1/users", {"email": f"cmd.{who}.{uniq}@{DELIVERABLE_DOMAIN}", "name": f"E2E Customer {who}"},
+                      cleanup="/api/v1/users/{id}")
+
+    def queue(headers, who):
+        resp = httpx.post(
+            f"{BASE_URL}/api/v1/tickets/", headers={**headers, "Idempotency-Key": shared_key}, timeout=30,
+            json={"subject": f"e2e cmd {uniq} {who}", "message": "hello", "email": f"cmd.{who}.{uniq}@{DELIVERABLE_DOMAIN}",
+                  "name": "E2E Customer", "dept_id": SUPPORT, "topic_id": 1},
+        )
+        assert resp.status_code == 202, resp.text
+        return resp.json()["command_id"]
+
+    def finish(headers, command_id):
+        resp = httpx.get(f"{BASE_URL}/api/v1/commands/{command_id}", headers=headers, params={"wait": 25}, timeout=40)
+        assert resp.status_code == 200, resp.text
+        return resp.json()
+
+    cmd_a, cmd_b = queue(agent_a, "a"), queue(agent_b, "b")
+    assert cmd_a != cmd_b                                              # the same key from two agents: two commands
+    assert queue(agent_a, "a") == cmd_a                                # ...and from one agent, the same command
+
+    done_a, done_b = finish(agent_a, cmd_a), finish(agent_b, cmd_b)
+    assert done_a["status"] == done_b["status"] == "done"
+    assert done_a["idempotency_key"] == shared_key                     # the client's own key, not the internal prefix
+    for done in (done_a, done_b):                                      # tidy up what the agents created
+        ticket_id = json.loads(done["result_payload"])["ticket_id"]
+        bridge._cleanups.append(("DELETE", f"/api/v1/tickets/{ticket_id}"))
+
+    # a command is its owner's: another agent gets a 404, an administrator sees it
+    assert httpx.get(f"{BASE_URL}/api/v1/commands/{cmd_a}", headers=agent_b, timeout=30).status_code == 404
+    assert httpx.get(f"{BASE_URL}/api/v1/commands/{cmd_a}", headers=admin, timeout=30).status_code == 200
+    listed_a = {row["id"] for row in _get(agent_a, "/api/v1/commands", page_size=200).json()["items"]}
+    assert cmd_a in listed_a and cmd_b not in listed_a
+    listed_admin = {row["id"] for row in _get(admin, "/api/v1/commands", page_size=200).json()["items"]}
+    assert {cmd_a, cmd_b} <= listed_admin

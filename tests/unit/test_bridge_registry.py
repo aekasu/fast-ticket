@@ -4,7 +4,8 @@ There is no PHP test runner here, so these tests read ``bridge/registry.php`` as
 and enforce the rule from AGENTS.md: a command type exists only when
 
   1. a Python service calls ``dispatch_command(command_type="<x>", ...)``, and
-  2. ``bridge/registry.php`` has one entry ``'<x>' => [file, class, method, event]``.
+  2. ``bridge/registry.php`` has one entry ``'<x>' => [file, class, method, event, permission]``, where
+     ``permission`` is exactly what the API's own route demands before queueing it.
 
 A missing entry leaves the command ``failed`` ("Unknown command type"); a wrong handler
 method is a PHP fatal at run time, so the class/method are checked against handlers/*.php.
@@ -17,9 +18,9 @@ ROOT = Path(__file__).resolve().parents[2]
 REGISTRY = (ROOT / "bridge" / "registry.php").read_text()
 
 ENTRIES = {
-    command: (file, cls, method, event)
-    for command, file, cls, method, event in re.findall(
-        r"'([a-z_.]+)'\s*=>\s*\['(\w+)',\s*'(FastApi\w+Handler)',\s*'(\w+)',\s*'([a-z_.]+)'\]",
+    command: (file, cls, method, event, permission)
+    for command, file, cls, method, event, permission in re.findall(
+        r"'([a-z_.]+)'\s*=>\s*\['(\w+)',\s*'(FastApi\w+Handler)',\s*'(\w+)',\s*'([a-z_.]+)',\s*'([a-z_.:]+)'\]",
         REGISTRY,
     )
 }
@@ -83,7 +84,59 @@ def test_every_registered_handler_method_exists():
 
     problems = sorted(
         f"{command}: {cls}::{method} in handlers/{file}.php"
-        for command, (file, cls, method, _event) in ENTRIES.items()
+        for command, (file, cls, method, _event, _permission) in ENTRIES.items()
         if cls not in defined or method not in defined[cls] or files[cls] != file
     )
     assert not problems, f"registry entries pointing at missing handlers: {problems}"
+
+
+# ── the permission column ─────────────────────────────────────────────────────
+
+
+def _spec_for(guard: str) -> str:
+    from app.core.permissions import permission_kind
+
+    return "admin" if guard == "admin" else f"{permission_kind(guard)}:{guard}"
+
+
+def test_every_command_has_exactly_one_api_guard_and_it_is_never_merely_staff():
+    """A command reachable through routes with different guards would make the registry ambiguous; and a write
+    that any agent may queue would need no permission at all."""
+    from tests.unit.route_guards import command_guards
+
+    guards = command_guards()
+    assert set(guards) == set(ENTRIES), "route analysis and registry disagree on the command set"
+    assert not {c: g for c, g in guards.items() if len(g) != 1}
+    assert not [c for c, g in guards.items() if g == {"staff"}], "a write route guarded only by require_staff"
+
+
+def test_the_bridge_demands_exactly_what_the_api_route_demands():
+    """The PHP dispatcher refuses a staff member who lacks the registry's permission; it must be the same
+    permission the API checked, or the two layers disagree about who may do what."""
+    from tests.unit.route_guards import command_guards
+
+    mismatches = {
+        command: (entry[4], _spec_for(next(iter(command_guards()[command]))))
+        for command, entry in ENTRIES.items()
+        if entry[4] != _spec_for(next(iter(command_guards()[command])))
+    }
+    assert not mismatches, f"registry permission != API guard (registry, API): {mismatches}"
+
+
+def test_permission_specs_are_well_formed_and_their_kind_is_right():
+    from app.core.permissions import ALL_PERMISSIONS, permission_kind
+
+    for command, entry in ENTRIES.items():
+        spec = entry[4]
+        if spec == "admin":
+            continue
+        kind, _, key = spec.partition(":")
+        assert kind in ("global", "role") and key in ALL_PERMISSIONS, (command, spec)
+        assert permission_kind(key) == kind, (command, spec)
+
+
+def test_admin_panel_commands_are_exactly_the_admin_only_domains():
+    admin = {c for c, e in ENTRIES.items() if e[4] == "admin"}
+    domains = {c.split(".")[0] for c in admin}
+    assert domains == {"staff", "dept", "team", "topic", "sla", "priority", "form", "banlist"}
+    assert not [c for c in ENTRIES if c.split(".")[0] in domains and ENTRIES[c][4] != "admin"]
