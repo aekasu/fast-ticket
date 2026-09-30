@@ -323,6 +323,110 @@ class FastApiTicketHandler {
         return ['ticket_id' => $ticket->getId()];
     }
 
+    /**
+     * Claim: ajax.tickets.php claim() — needs ticket.assign, an open ticket nobody holds; the
+     * ClaimForm is the one osTicket builds for the acting staff member.
+     */
+    public static function claim($payload, $staff_id) {
+        global $thisstaff;
+        $ticket = self::requireTicket($payload['ticket_id'] ?? 0);
+        self::requirePerm($ticket, Ticket::PERM_ASSIGN, 'claim');
+        if (!$ticket->isOpen()) {
+            throw new Exception('Only open tickets can be claimed.');
+        }
+        if ($ticket->getStaff()) {
+            throw new Exception('Ticket is already assigned to ' . $ticket->getAssigned() . '.');
+        }
+        $form = $ticket->getClaimForm(['assignee' => ['s' . $thisstaff->getId()], 'comments' => (string) ($payload['note'] ?? '')]);
+        if (!$form->isValid()) {
+            throw new Exception('Claim refused: ' . json_encode($form->errors()));
+        }
+        $errors = [];
+        if (!$ticket->claim($form, $errors) || $errors) {
+            throw new Exception('Ticket was not claimed: ' . self::errorText($errors));
+        }
+        return ['ticket_id' => $ticket->getId(), 'assignee_staff_id' => (int) $thisstaff->getId()];
+    }
+
+    /**
+     * Release (unassign): ajax.tickets.php release(). "staff" and/or "team" say which assignment
+     * to drop; both is osTicket's Ticket::unassign(). Needs ticket.release (or being a manager).
+     */
+    public static function release($payload, $staff_id) {
+        global $thisstaff;
+        $ticket = self::requireTicket($payload['ticket_id'] ?? 0);
+        if (!$thisstaff || (!$ticket->checkStaffPerm($thisstaff, Ticket::PERM_RELEASE) && !$thisstaff->isManager())) {
+            throw new Exception('Permission denied: the requesting staff member may not release this ticket.');
+        }
+        if (!$ticket->isAssigned()) {
+            throw new Exception('Ticket is not assigned!');
+        }
+        $info = [];
+        $staff = $ticket->getStaff();
+        $team = $ticket->getTeam();
+        if (!empty($payload['staff'])) {
+            if (!$staff) {
+                throw new Exception('Ticket is not assigned to an agent.');
+            }
+            $info['sid'] = $staff->getId();
+        }
+        if (!empty($payload['team'])) {
+            if (!$team) {
+                throw new Exception('Ticket is not assigned to a team.');
+            }
+            $info['tid'] = $team->getId();
+        }
+        if (!$info) {
+            throw new Exception("Say which assignment to release: 'staff' and/or 'team'.");
+        }
+        $errors = [];
+        if (!$ticket->release($info, $errors)) {
+            throw new Exception('Assignment was not released: ' . self::errorText($errors));
+        }
+        $data = [];
+        if ($staff && !$ticket->getStaff())
+            $data['staff'] = [$staff->getId(), (string) $staff->getName()->getOriginal()];
+        if ($team && !$ticket->getTeam())
+            $data['team'] = $team->getId();
+        $ticket->logEvent('released', $data);
+        $note = trim((string) ($payload['note'] ?? ''));
+        if ($note !== '') {
+            $_errors = [];
+            $ticket->postNote(['note' => $note, 'title' => 'Assignment Released'], $_errors, $thisstaff, false);
+        }
+        return ['ticket_id' => $ticket->getId(), 'released_staff' => isset($info['sid']), 'released_team' => isset($info['tid'])];
+    }
+
+    /**
+     * Refer: ajax.tickets.php refer() — needs ticket.assign; the ReferralForm validates the
+     * referee (agent / team / department) and Ticket::refer() records it.
+     */
+    public static function refer($payload, $staff_id) {
+        global $thisstaff;
+        $ticket = self::requireTicket($payload['ticket_id'] ?? 0);
+        self::requirePerm($ticket, Ticket::PERM_ASSIGN, 'refer');
+        $source = ['comments' => (string) ($payload['note'] ?? '')];
+        foreach (['agent' => 'agent_id', 'team' => 'team_id', 'dept' => 'dept_id'] as $target => $key) {
+            if (!empty($payload[$key])) {
+                $source['target'] = $target;
+                $source[$target] = (int) $payload[$key];
+            }
+        }
+        if (empty($source['target'])) {
+            throw new Exception("A referee is required ('agent_id', 'team_id' or 'dept_id').");
+        }
+        $form = $ticket->getReferralForm($source, ['target' => $source['target']]);
+        $errors = [];
+        if (!$form->isValid() || !$ticket->refer($form, $errors) || $errors) {
+            throw new Exception('Ticket was not referred: ' . self::errorText($errors + $form->errors()));
+        }
+        $clean = $form->getClean();
+        if (!empty($clean['comments'])) {
+            $ticket->logNote('Referral', $clean['comments'], $thisstaff);
+        }
+        return ['ticket_id' => $ticket->getId(), 'referee' => $source['target'], 'referee_id' => $source[$source['target']]];
+    }
+
     public static function addCollaborator($payload, $staff_id) {
         $ticket = self::requireTicket($payload['ticket_id'] ?? 0);
         self::requirePerm($ticket, Ticket::PERM_EDIT, 'edit');
