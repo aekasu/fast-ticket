@@ -27,7 +27,7 @@ Each entry: what is true today · what it means for you · what will resolve it 
 
 | Limit | Impact | Resolved by |
 |---|---|---|
-| **`PATCH /tickets/{id}` edits subject, priority, help topic, SLA, source, due date and adds a note; it does not edit other custom ticket-form fields**, and the due date is taken as UTC. `tests/e2e` for it (`test_ticket_patch_edits_fields_and_keeps_the_rest`) was written and the handler was run against the live stack by hand, but the e2e suite has not been run since. | Custom fields on a ticket form cannot be changed through the API yet. | Dynamic-form answers as a sub-resource (NEXT 0.B) |
+| **`PATCH /tickets/{id}` edits subject, priority, help topic, SLA, source, due date and adds a note; it does not edit other custom ticket-form fields**, and the due date is taken as UTC.  | Custom fields on a ticket form cannot be changed through the API yet. | Dynamic-form answers as a sub-resource (NEXT 0.B) |
 
 ## Login and abuse protection
 
