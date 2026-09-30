@@ -261,3 +261,24 @@ async def test_a_creates_message_carries_the_id_from_its_result():
     await _insert("ticket.created", "ticket", "", json.dumps({"ticket_id": 31}))
     await _poll(position, recorder)
     assert recorder.messages[0]["aggregate_id"] == "31"
+
+
+# ── the access cache follows events ──────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_events_clear_the_access_cache_in_every_process():
+    from app.core.access_cache import access_cache
+
+    access_cache.invalidate()
+    position, recorder = EventCursor(), Recorder()
+    await _poll(position, recorder)                      # start at the end of the log
+
+    for aggregate_type, aggregate_id, touched in [("staff", "6", 6), ("dept", "2", 5), ("ticket", "9", None)]:
+        access_cache.put(5, (1, 3), {"a": 1})
+        access_cache.put(6, (1, 3), {"b": 1})
+        await _insert(f"{aggregate_type}.updated", aggregate_type, aggregate_id)
+        await _poll(position, recorder)
+        gone = {i for i in (5, 6) if access_cache.get(i, (1, 3)) is None}
+        assert gone == {"staff": {6}, "dept": {5, 6}, "ticket": set()}[aggregate_type]
+    access_cache.invalidate()

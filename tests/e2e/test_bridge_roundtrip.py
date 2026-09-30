@@ -149,3 +149,30 @@ def test_a_real_agents_access_follows_their_osticket_role_and_changes_at_once(br
     bridge.command("PATCH", f"/api/v1/staff/{sid}", {"role_id": 4})
     assert status("POST", "/api/v1/tickets/", json={}) == 403
     assert status("POST", "/api/v1/canned", json={}) == 403
+
+
+def test_a_warm_access_cache_does_not_hide_a_department_move_or_a_disable(bridge, uniq):
+    """The access cache is warm (several requests on one token), then the bridge moves the agent to another
+    department and later disables them: each applies on the very next request, the way it did before the cache."""
+    username, password = f"e2ecache{uniq}", "E2e-Pass-9x!Qz"
+    sid = bridge.create(
+        "/api/v1/staff",
+        {"username": username, "firstname": "E2E", "lastname": "Cache", "email": f"e2ecache{uniq}@{DELIVERABLE_DOMAIN}",
+         "dept_id": 1, "role_id": 3, "password": password, "is_active": True, "is_admin": False},
+        cleanup="/api/v1/staff/{id}",
+    )
+    login = login_raw(username, password)
+    assert login.status_code == 200
+    headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+    def me():
+        return httpx.get(f"{BASE_URL}/api/v1/auth/me", headers=headers, timeout=30)
+
+    for _ in range(3):                                   # warm: the second and third reuse the cached grants
+        assert me().json()["department_ids"] == [1]
+
+    bridge.command("PATCH", f"/api/v1/staff/{sid}", {"dept_id": 2})
+    assert me().json()["department_ids"] == [2]
+
+    bridge.command("PATCH", f"/api/v1/staff/{sid}", {"is_active": False})
+    assert me().status_code == 401

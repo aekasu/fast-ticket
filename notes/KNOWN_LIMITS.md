@@ -4,7 +4,7 @@ Things fast-ticket does not do yet, or does only partly, that someone relying on
 This is a **live list, not a changelog**: when a limit is fixed its entry is *deleted* (git history keeps
 it) and the commit that fixes it says so. Rules for keeping it honest are in `AGENTS.md` → "Known limits".
 
-Last reviewed: 2026-09-30 (after S6: authorization matrix, hardening, oracle differential test). Every entry was checked against the code.
+Last reviewed: 2026-09-30 (after Phase 4: access cache; `make test-e2e` and the security review passed). Every entry was checked against the code. Phase 4 replaced the "five queries per request" entry with the cache entry below; nothing else was solved by it.
 
 Each entry: what is true today · what it means for you · what will resolve it (a phase from the plan, or
 "by design" if it is a deliberate trade-off).
@@ -38,12 +38,12 @@ Each entry: what is true today · what it means for you · what will resolve it 
 |---|---|---|
 | **WebSocket delivery is best-effort and not replayed.** Each API process starts at the end of the outbox and pushes what arrives after; an event written while a process was down, or before a client connected, is not delivered, and there are no event ids to resume from. | A client that reconnects must refetch what it cares about. | By design (the REST reads are the source of truth) |
 | **Ticket and task events follow the agent's *list* visibility**, and deletions go to administrators only (the row is gone, so no one "can see" it). | An agent who can open a closed ticket only through a referral (page yes, list no) is not told about its changes; an agent is not told when a ticket they could see is deleted. | By design (narrower is safer) |
-| **Each ticket or task event costs one query per connected agent** (`ticket_is_visible`). | Many connected agents and a busy helpdesk mean many small queries per event. | Phase 4 (cache) or a set-based check |
 | **Open connections notice a disabled account or an expired token within `WS_RECHECK_SECONDS` (15 s)**, not instantly. | A disabled agent can keep receiving for up to that long. | Tunable; an event-driven close on `staff.*` events would make it immediate |
 | **WebSocket connection attempts are not rate limited** (the HTTP middleware does not cover them); an agent is capped at `WS_MAX_CONNECTIONS_PER_STAFF`. | An unauthenticated client can open connections at will, each costing a token check. | Later (a connection-rate limit or a proxy rule) |
 | **Every agent login sends administrators a `staff.updated` event** (osTicket's last-login update fires the model signal). | Noise on the admin stream. | Later (drop signal events that change only `lastlogin`) |
 | **The outbox's `status`, `retry_count` and `locked_at` columns are unused.** The API reads the outbox by cursor and never claims or retries a row. | Dead schema in `bridge/schema.php`. | Later (drop them in a schema upgrade) |
-| **No Python event handlers are registered and nothing is cached.** | Every authenticated request runs five small queries to load the agent's `AccessContext` (staff row, extra-department roles, role permissions, teams, visible departments), on top of the request's own. | Phase 4 |
+| **Part of an agent's access is cached for up to `ACCESS_CACHE_TTL_SECONDS` (5 s) per process.** The staff row (enabled, admin, global permissions, primary role) is read on every request; extra-department roles, role permission maps, teams and visible departments are reused. Bridge changes to staff, departments and teams clear it (on the outbox event in every process, and at once in the process that serves the finished command). | A role's permission map, a team membership or a department tree changed directly in osTicket's UI, or a bridge change served by another process before its event arrives, can take up to the TTL to apply. Set the TTL to 0 for none. The cache is per process and is not shared (no Redis). The WebSocket re-check reads it too. | By design (short TTL); a shared store only if measured to pay off |
+| **Each ticket or task event still costs one visibility query per connected agent** (`ticket_is_visible`); the access cache does not help it. | Many connected agents and a busy helpdesk mean many small queries per event. | Later (a set-based check or a visibility cache) |
 | **Without PHP's `pcntl` extension the worker exits after each command** and the supervisor restarts it. | Commands still run, but slower and subject to restart backoff; `make doctor` warns. | Install `pcntl` |
 | **osTicket's cron fallback runs about once a minute.** | If no worker runs, a command can wait up to ~60 s. | Run the worker |
 

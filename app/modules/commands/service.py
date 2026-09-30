@@ -4,6 +4,7 @@ import asyncio
 import logging
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.access_cache import access_cache
 from app.core.redaction import redact_json
 from app.core.scope import UNRESTRICTED
 from app.integration.osticket import read_repository as repo
@@ -67,6 +68,9 @@ async def get_command(session: AsyncSession, command_id: int, *, access) -> Comm
     row["payload"] = redact_json(row["payload"]) or "{}"
     row["result_payload"] = redact_json(row.get("result_payload"))
     row["idempotency_key"] = client_idempotency_key(row.get("idempotency_key"))
+    if row.get("status") in ("done", "failed"):
+        # the client is about to act on this change: make sure this process sees it (others follow the event)
+        access_cache.on_command_finished(row.get("command_type", ""))
     return CommandDetail(**row)
 
 

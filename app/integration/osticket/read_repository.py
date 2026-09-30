@@ -325,35 +325,37 @@ async def get_ticket_collaborators(session: AsyncSession, ticket_id: int, *, acc
 # ── Staff ─────────────────────────────────────────────────────────────────────
 
 
-async def get_staff_access_rows(session: AsyncSession, staff_id: int) -> dict | None:
-    """Everything that decides what one staff member may do, or None if there is no such staff member.
-
-    Mirrors the queries behind osTicket's Staff::getRoles(), getDepartments() and getTeams()
-    (include/class.staff.php): the staff row (flags and global permissions), the extra-department
-    access rows, the permissions of every role involved, team membership, and the departments the
-    agent can see — primary, extra and managed departments plus their sub-departments (a department's
-    ``path`` is ``/<ancestor ids>/<own id>/``).
-    """
-    params = {"sid": staff_id}
+async def get_staff_row(session: AsyncSession, staff_id: int) -> dict | None:
+    """The staff row that decides who an agent is (flags, primary department and role, global permissions),
+    or None if there is no such staff member. Read on every request: it carries the enabled/admin flags."""
     staff = (
         await session.execute(
             _sql(
                 "SELECT staff_id, username, firstname, lastname, email, isactive, isadmin, dept_id, "
                 "role_id, assigned_only, permissions FROM ost_staff WHERE staff_id = :sid"
             ),
-            params,
+            {"sid": staff_id},
         )
     ).mappings().first()
-    if staff is None:
-        return None
+    return dict(staff) if staff is not None else None
 
+
+async def get_staff_grants(session: AsyncSession, staff_id: int, role_id: int = 0) -> dict:
+    """What else decides an agent's access, given their staff row's primary ``role_id``.
+
+    Mirrors the queries behind osTicket's Staff::getRoles(), getDepartments() and getTeams()
+    (include/class.staff.php): the extra-department access rows, the permissions of every role involved,
+    team membership, and the departments the agent can see — primary, extra and managed departments plus
+    their sub-departments (a department's ``path`` is ``/<ancestor ids>/<own id>/``).
+    """
+    params = {"sid": staff_id}
     dept_access = (
         await session.execute(
             _sql("SELECT dept_id, role_id FROM ost_staff_dept_access WHERE staff_id = :sid"), params
         )
     ).mappings().all()
 
-    role_ids = {int(staff["role_id"] or 0)} | {int(r["role_id"] or 0) for r in dept_access}
+    role_ids = {int(role_id or 0)} | {int(r["role_id"] or 0) for r in dept_access}
     roles: dict[int, str | None] = {}
     if role_ids - {0}:
         role_rows = (
@@ -386,7 +388,6 @@ async def get_staff_access_rows(session: AsyncSession, staff_id: int) -> dict | 
         ).all()
     ]
     return {
-        "staff": dict(staff),
         "dept_access": [dict(r) for r in dept_access],
         "roles": roles,
         "team_ids": team_ids,

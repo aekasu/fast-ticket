@@ -4,7 +4,8 @@
 (``include/class.staff.php``): ``isAdmin()``, ``hasPerm()``, ``getRoles()``/``getRole()``,
 ``getDepartments()``, ``getTeams()`` and ``isAccessLimited()``. It is loaded fresh per request rather
 than trusted from the login token, so a role change, a demotion or a disabled account takes effect on
-the next request. (Phase 4 puts a short cache in front of the loader.)
+the next request. Only the slow-moving part (departments, roles, teams) is cached, briefly — see
+``app.core.access_cache`` for what is reused and what invalidates it.
 
 Nothing here decides what a *resource* looks like to the agent — that is read scoping (S3), which
 uses ``dept_ids``, ``team_ids`` and ``assigned_only`` from this context.
@@ -16,6 +17,7 @@ from typing import Any, ClassVar
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.access_cache import access_cache
 from app.integration.osticket import read_repository as repo
 
 # The role osTicket gives an agent for a department they have no role in: create-and-view only.
@@ -140,6 +142,16 @@ def build_access_context(rows: dict) -> AccessContext:
 
 
 async def load_access_context(session: AsyncSession, staff_id: int) -> AccessContext | None:
-    """The agent's current access, or None if there is no such staff member."""
-    rows = await repo.get_staff_access_rows(session, staff_id)
-    return build_access_context(rows) if rows else None
+    """The agent's current access, or None if there is no such staff member.
+
+    The staff row is always read fresh; departments, roles and teams come from the short cache when valid.
+    """
+    staff = await repo.get_staff_row(session, staff_id)
+    if staff is None:
+        return None
+    fingerprint = (int(staff["dept_id"] or 0), int(staff["role_id"] or 0))
+    grants = access_cache.get(staff_id, fingerprint)
+    if grants is None:
+        grants = await repo.get_staff_grants(session, staff_id, fingerprint[1])
+        access_cache.put(staff_id, fingerprint, grants)
+    return build_access_context({"staff": staff, **grants})

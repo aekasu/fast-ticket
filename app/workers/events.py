@@ -23,6 +23,7 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import delete, func, select
 
+from app.core.access_cache import access_cache
 from app.core.config import settings
 from app.core.events import registry
 from app.core.ws_manager import manager as ws_manager
@@ -60,7 +61,7 @@ cursor = EventCursor()
 
 
 def _ensure_handlers_registered() -> None:
-    """Lazily register all domain event handlers (none yet; Phase 4's cache invalidation registers here)."""
+    """Lazily register all domain event handlers (none yet; the access cache is cleared directly in the poll)."""
     global _handlers_registered
     if _handlers_registered:
         return
@@ -149,6 +150,10 @@ async def poll_and_process_events(
                 summary["failed"] += 1
                 continue
 
+            access_cache.on_event(
+                event.aggregate_type,
+                visibility.resolve_aggregate_id(event.aggregate_type, event.aggregate_id, payload),
+            )
             try:
                 await registry.dispatch(event.event_type, payload, session)
             except Exception:

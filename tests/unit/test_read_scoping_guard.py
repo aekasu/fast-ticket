@@ -37,7 +37,8 @@ UNSCOPED_BY_DESIGN = {
     "get_user": "directory (route needs user.dir)", "list_users": "directory (route needs user.dir)",
     "get_organization": "directory (route needs user.dir)", "list_organizations": "directory (route needs user.dir)",
     # It is what builds the AccessContext everything else is scoped by.
-    "get_staff_access_rows": "loads the caller's own access",
+    "get_staff_row": "loads the caller's own access",
+    "get_staff_grants": "loads the caller's own access",
 }
 
 

@@ -109,6 +109,13 @@ class Settings(BaseSettings):
     EVENT_BATCH_SIZE: Annotated[int, Field(default=100, gt=0, le=1000)]
     EVENT_RETENTION_DAYS: Annotated[int, Field(default=30, gt=0)]
 
+    # ── Access cache ──────────────────────────────────────────────────────────
+    ACCESS_CACHE_TTL_SECONDS: float = Field(
+        default=5.0, ge=0,
+        description="How long an agent's departments, roles and teams are reused between requests (0 = off). "
+        "The staff row (enabled, admin, global permissions, primary role) is read on every request regardless.",
+    )
+
     # ── WebSocket ─────────────────────────────────────────────────────────────
     WS_RECHECK_SECONDS: float = Field(
         default=15.0, gt=0,
