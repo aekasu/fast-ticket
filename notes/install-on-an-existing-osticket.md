@@ -57,8 +57,12 @@ DATABASE_URL=mysql+aiomysql://fast_ticket:<pw>@<db-host>:3306/<osticket-db>
 OSTICKET_TABLE_PREFIX=ost_                 # the prefix osTicket was installed with
 FASTAPI_INTEGRATION_KEY=<the key from step 1>
 OSTICKET_AUTH_URL=https://<osticket-host>/api/auth/integration    # use HTTPS off localhost
-JWT_SECRET_KEY=<openssl rand -hex 48>
+JWT_SECRET_KEY=<openssl rand -hex 48>       # 32+ characters; set REQUIRE_JWT_SECRET=true to refuse to boot without it
+TRUSTED_PROXY_COUNT=0                       # set to N only if N reverse proxies append to X-Forwarded-For
 ```
+
+Agents whose accounts use two-factor authentication (or whom osTicket requires to enrol) are refused at login with a
+clear message — the API cannot complete a second factor yet. Use a non-2FA agent account for API access.
 
 Give the API a **least-privilege database user** — it reads osTicket's tables and only writes its own queue:
 

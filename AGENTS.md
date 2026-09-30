@@ -105,10 +105,12 @@ grep -oP "^\s*'\K[a-z_.]+(?=' +=>)" bridge/registry.php
 Security is implemented **in tandem** with each domain, not as a later layer.
 
 ### Authentication
-- Staff authenticate via the osTicket bridge auth endpoint (`OSTICKET_AUTH_URL`, `bridge/auth.php`).
-- On success, FastAPI mints a short-lived JWT (HS256, configurable expiry).
+- Staff authenticate via the osTicket bridge auth endpoint (`OSTICKET_AUTH_URL`, `bridge/auth.php`), which asks osTicket's own registered staff backends to verify the password (so LDAP/SSO backends and the password policy apply) — never `StaffAuthenticationBackend::process()`, which writes a PHP session and emails 2FA codes.
+- Refusals carry a code (`X-Login-Error` header): `invalid_credentials`, `account_disabled`, `two_factor_required`, `password_change_required`. **Accounts with 2FA — or that osTicket requires to enrol in 2FA — are refused loudly**, not let through: the API cannot complete a second factor yet.
+- Failed logins are locked out by the API (`LOGIN_MAX_ATTEMPTS` per username + client address, `app/core/login_throttle.py`): osTicket's own strike counter is stored in the PHP session, which an API client can drop.
+- On success, FastAPI mints a short-lived JWT (HS256, `ACCESS_TOKEN_EXPIRE_MINUTES`, default 30) with `iss`, `iat` and a unique `jti`. `get_current_user` also checks on **every request** that the staff member still exists and is enabled, so disabling an agent in osTicket ends their API access immediately, not at token expiry.
 - All routes require `Bearer` except `GET /health` and `POST /api/v1/auth/login`.
-- `JWT_SECRET_KEY` must be set in production (startup fails if missing and `REQUIRE_JWT_SECRET=true`).
+- `JWT_SECRET_KEY` must be set in production, at least 32 characters (startup fails if missing and `REQUIRE_JWT_SECRET=true` — the compose api sets it).
 
 ### Authorization
 - JWT claims carry `staff_id`, `username`, `is_admin`, `permissions` (osTicket `PERM_*`-derived keys).
@@ -122,7 +124,8 @@ Security is implemented **in tandem** with each domain, not as a later layer.
 - The coarse "any authenticated staff can do anything" model from the predecessor is **not acceptable**.
 
 ### Rate limiting
-- Global token-bucket limit at middleware level (`slowapi`, `app/core/rate_limit.py`); tighter limit on auth.
+- Global limit per client IP through `SlowAPIMiddleware` (`RATE_LIMIT_DEFAULT`, `app/core/rate_limit.py` — slowapi enforces default limits only when the middleware is installed); tighter limit on login. The client address is `client_ip()`: `X-Forwarded-For` is ignored unless `TRUSTED_PROXY_COUNT` says how many proxies append to it. `RATE_LIMIT_STORAGE_URI` can point at Redis to share counters between workers.
+- Request bodies over `MAX_REQUEST_BYTES` get 413 (`app/core/request_limits.py`); every list endpoint caps its page size.
 
 ### Input validation
 - All request bodies are Pydantic models with explicit field constraints. No `Any`, no raw `dict` bodies.

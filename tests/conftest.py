@@ -57,6 +57,26 @@ async def setup_db():
 # ── Auth override ──────────────────────────────────────────────────────────────
 
 
+@pytest.fixture(autouse=True)
+def _staff_is_active_by_default():
+    """``get_current_user`` confirms the staff member is still enabled in osTicket; there is no
+    osTicket database here, so every staff id is active unless a test says otherwise."""
+    from unittest.mock import AsyncMock, patch
+
+    with patch("app.core.auth.repo.get_staff_active", new=AsyncMock(return_value=True)):
+        yield
+
+
+@pytest.fixture(autouse=True)
+def _fresh_login_throttle():
+    from app.modules.auth.router import login_throttle
+
+    login_throttle.reset()
+    yield
+    login_throttle.reset()
+
+
+
 @pytest.fixture
 def auth_user():
     """Return a factory that installs a fake current_user with given permissions.

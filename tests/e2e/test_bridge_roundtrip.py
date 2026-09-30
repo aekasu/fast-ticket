@@ -11,7 +11,7 @@ import uuid
 import httpx
 import pytest
 
-from tests.e2e.conftest import BASE_URL, PASSWORD, USERNAME
+from tests.e2e.conftest import BASE_URL, DELIVERABLE_DOMAIN, PASSWORD, USERNAME
 
 pytestmark = pytest.mark.e2e
 
@@ -19,6 +19,7 @@ pytestmark = pytest.mark.e2e
 def test_bad_credentials_are_rejected(bridge):
     resp = httpx.post(f"{BASE_URL}/api/v1/auth/login", data={"username": USERNAME, "password": "definitely-wrong"})
     assert resp.status_code == 401
+    assert resp.headers["x-login-error"] == "invalid_credentials"
 
 
 def test_good_credentials_are_accepted(bridge):
@@ -63,3 +64,27 @@ def test_commands_run_within_seconds_without_cron(bridge, uniq):
     assert elapsed < 10, f"took {elapsed:.1f}s — is the osticket-worker container running?"
     canned_id = next(v for v in json.loads(detail["result_payload"]).values() if isinstance(v, int))
     bridge.command("DELETE", f"/api/v1/canned/{canned_id}")
+
+
+def test_a_disabled_agents_token_stops_working_at_once(bridge, uniq):
+    """Deactivating an agent in osTicket cuts off a token that is still validly signed and unexpired."""
+    username, password = f"e2erev{uniq}", "E2e-Pass-9x!Qz"
+    sid = bridge.create(
+        "/api/v1/staff",
+        {"username": username, "firstname": "E2E", "lastname": "Revoke", "email": f"e2erev{uniq}@{DELIVERABLE_DOMAIN}",
+         "dept_id": 1, "role_id": 3, "password": password, "is_active": True, "is_admin": False},
+        cleanup="/api/v1/staff/{id}",
+    )
+    login = httpx.post(f"{BASE_URL}/api/v1/auth/login", data={"username": username, "password": password}, timeout=30)
+    assert login.status_code == 200
+    headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+    assert httpx.get(f"{BASE_URL}/api/v1/auth/me", headers=headers, timeout=30).status_code == 200
+
+    bridge.command("PATCH", f"/api/v1/staff/{sid}", {"is_active": False})
+
+    revoked = httpx.get(f"{BASE_URL}/api/v1/auth/me", headers=headers, timeout=30)
+    assert revoked.status_code == 401 and "no longer active" in revoked.json()["detail"]
+
+    # and the disabled account cannot obtain a new one — with the reason spelled out
+    again = httpx.post(f"{BASE_URL}/api/v1/auth/login", data={"username": username, "password": password}, timeout=30)
+    assert again.status_code == 401 and again.headers["x-login-error"] == "account_disabled"

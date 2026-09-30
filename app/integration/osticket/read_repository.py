@@ -193,6 +193,16 @@ async def get_ticket_collaborators(session: AsyncSession, ticket_id: int) -> lis
 # ── Staff ─────────────────────────────────────────────────────────────────────
 
 
+async def get_staff_active(session: AsyncSession, staff_id: int) -> bool | None:
+    """Whether the staff member exists and is enabled (None: no such staff member)."""
+    row = (
+        await session.execute(
+            _sql("SELECT isactive FROM ost_staff WHERE staff_id = :sid"), {"sid": staff_id}
+        )
+    ).first()
+    return None if row is None else bool(row[0])
+
+
 async def get_staff_permissions(
     session: AsyncSession, staff_id: int
 ) -> tuple[list[str], bool]:

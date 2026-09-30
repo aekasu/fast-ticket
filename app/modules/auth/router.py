@@ -1,20 +1,29 @@
 """Auth router — login + /me.
 
 Rate limits:
-  POST /login — 10 requests/minute per IP (brute-force protection).
+  POST /login — 10 requests/minute per IP, plus a lockout after LOGIN_MAX_ATTEMPTS failed
+                credentials for the same (username, address) — see app.core.login_throttle.
   GET  /me    — covered by the global 200/minute default.
 """
 
 from datetime import timedelta
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.security import OAuth2PasswordRequestForm
 
-from app.core.auth import authenticate_with_osticket, create_access_token, get_current_user
+from app.core.auth import (
+    LoginRefused,
+    authenticate_with_osticket,
+    create_access_token,
+    get_current_user,
+)
 from app.core.config import settings
-from app.core.rate_limit import limiter
+from app.core.login_throttle import LoginThrottle
+from app.core.rate_limit import client_ip, limiter
 
 router = APIRouter(tags=["auth"])
+
+login_throttle = LoginThrottle(settings.LOGIN_MAX_ATTEMPTS, settings.LOGIN_LOCKOUT_SECONDS)
 
 
 @router.post("/login", summary="Authenticate with osTicket credentials")
@@ -30,12 +39,31 @@ async def login(
       osTicket's native ``Staff`` model.
     - Permissions are embedded in the JWT claims so no DB round-trip is
       needed on subsequent requests.
-    - **Rate-limited to 10 requests/minute per IP** — returns ``429`` when exceeded.
+    - **Rate-limited to 10 requests/minute per IP**, and an account/address pair that fails
+      ``LOGIN_MAX_ATTEMPTS`` times is locked out for ``LOGIN_LOCKOUT_SECONDS`` — ``429`` with
+      ``Retry-After``.
+    - Refusals carry the reason in an ``X-Login-Error`` header: ``invalid_credentials`` (401),
+      ``account_disabled`` (401), ``two_factor_required`` (403 — accounts with 2FA cannot use the
+      API yet), ``password_change_required`` (403).
 
     Returns:
         ``access_token``, ``token_type: "bearer"``, ``expires_in`` (seconds).
     """
-    identity = await authenticate_with_osticket(form_data.username, form_data.password)
+    address = client_ip(request)
+    wait = login_throttle.retry_after(form_data.username, address)
+    if wait:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Too many failed logins for this account from your address. Try again in {wait} seconds.",
+            headers={"Retry-After": str(wait)},
+        )
+    try:
+        identity = await authenticate_with_osticket(form_data.username, form_data.password)
+    except LoginRefused as refused:
+        if refused.code == "invalid_credentials":   # only a wrong password is a strike
+            login_throttle.record_failure(form_data.username, address)
+        raise
+    login_throttle.record_success(form_data.username, address)
     token = create_access_token(identity, timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES))
     return {
         "access_token": token,
