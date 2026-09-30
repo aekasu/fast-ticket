@@ -1,6 +1,9 @@
 """Task endpoints.
 
-Permission map (role permissions; reads use ``task.create`` as a stand-in until read scoping, S3):
+Reads need no permission: which tasks an agent sees is osTicket's own visibility rule, applied in the
+query (``read_repository.task_visibility``); a task they may not open is a 404.
+
+Writes — permission map (role permissions):
   task.create  — create tasks
   task.close   — close / reopen tasks
   task.assign  — assign tasks to staff
@@ -13,7 +16,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_session
-from app.core.security import require_perm
+from app.core.security import require_perm, require_staff
 from app.modules.tasks import service
 from app.modules.tasks.models import (
     TaskAssign,
@@ -41,11 +44,14 @@ async def list_tasks(
     ticket_id: int | None = Query(default=None, description="Filter to tasks linked to a ticket"),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200),
-    current_user: dict = require_perm("task.create"),
+    current_user: dict = require_staff(),
     session: AsyncSession = Depends(get_session),
 ):
+    """The tasks the agent may see: open and assigned to them or their team, tasks of their tickets,
+    and their departments' (unless limited to assigned-only) — as osTicket's task list."""
     return await service.list_tasks(
         session,
+        access=current_user["access"],
         status_id=status_id,
         dept_id=dept_id,
         assignee_staff_id=assignee_staff_id,
@@ -58,10 +64,10 @@ async def list_tasks(
 @router.get("/{task_id}", response_model=TaskDetail, summary="Get a task with its thread")
 async def get_task(
     task_id: int,
-    current_user: dict = require_perm("task.create"),
+    current_user: dict = require_staff(),
     session: AsyncSession = Depends(get_session),
 ):
-    task = await service.get_task(session, task_id)
+    task = await service.get_task(session, task_id, access=current_user["access"])
     if task is None:
         raise HTTPException(status_code=404, detail=f"Task {task_id} not found.")
     return task

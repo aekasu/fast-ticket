@@ -78,6 +78,7 @@ def _cmd_resp(cmd, idempotency_key: str | None) -> CommandResponse:
 async def list_tasks(
     session: AsyncSession,
     *,
+    access,
     status_id: int | None = None,
     dept_id: int | None = None,
     assignee_staff_id: int | None = None,
@@ -89,6 +90,7 @@ async def list_tasks(
     offset = (page - 1) * page_size
     rows = await repo.list_tasks(
         session,
+        access=access,
         status_id=status_id,
         dept_id=dept_id,
         assignee_staff_id=assignee_staff_id,
@@ -103,11 +105,12 @@ async def list_tasks(
     )
 
 
-async def get_task(session: AsyncSession, task_id: int) -> TaskDetail | None:
-    row = await repo.get_task(session, task_id)
+async def get_task(session: AsyncSession, task_id: int, *, access) -> TaskDetail | None:
+    """The task with its thread, or None if it does not exist or ``access`` may not open it."""
+    row = await repo.get_task(session, task_id, access=access)
     if row is None:
         return None
-    thread_rows = await repo.get_task_thread(session, task_id)
+    thread_rows = await repo.get_task_thread(session, task_id, access=access)
     item = _row_to_list_item(row)
     return TaskDetail(
         **item.model_dump(),

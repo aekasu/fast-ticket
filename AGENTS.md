@@ -74,6 +74,8 @@ Dispatcher guarantees (`bridge/plugin.php`, keep them): each command runs **as t
 
 `app/integration/osticket/read_repository.py` — raw `SELECT`-only SQL against osTicket tables. This is the only file that may contain osTicket-schema SQL. Services map rows → Pydantic models.
 
+**Scoped reads.** What an agent may see is decided in the query, mirroring osTicket's own rules (`ticket_visibility`, `task_visibility` in `read_repository.py`: `Staff::getTicketsVisibility` / `Ticket::checkStaffPerm`, and the task list block / `Task::checkStaffPerm` — the list and the detail rules genuinely differ and are reproduced as they are). Every scoped read takes a **required keyword `access=`** — the caller's `AccessContext`, or `scope.UNRESTRICTED` (only `search.all` uses it) — with no default, so a new read cannot forget. Thread and collaborator queries carry their own visibility check. A resource the agent may not open is a **404, never a 403**. Reads need no permission where osTicket needs none (`require_staff()`); do not invent one. The predicates are tested as real SQL over every state in `tests/unit/test_visibility_sql.py`.
+
 Queries are written against osTicket's default `ost_` prefix and run through `_sql()`, which rewrites the prefix to `OSTICKET_TABLE_PREFIX` — **never call `text()` directly there**, or that instance's table names break. `make doctor` runs every function in this file against the live schema, so a new read function must be callable with `limit`/`offset`/`*_id` arguments only (a test enforces it).
 
 Queries must match the **real osTicket 1.18 schema** (`DESCRIBE` it; don't assume): booleans such as active/enabled/deletable are usually bits in `flags`; dynamic-form values (ticket subject, task title, organization/user phone & notes) are in `ost_*__cdata`; threads are `ost_thread` by `object_type` + `object_id`. And they must be **NULL-safe** (`COALESCE`, `> 0` for "featured" 2) — osTicket stores NULL text and zero dates, and the mocked unit tests cannot see a row that breaks response validation.
@@ -121,6 +123,7 @@ Security is implemented **in tandem** with each domain, not as a later layer.
   current_user: dict = require_admin(),               # Admin Panel pages (admin.inc.php -> isAdmin()): staff, departments, teams, topics, SLAs, priorities, forms, banlist
   current_user: dict = require_staff(),               # any enabled agent (KB reads; reads scoped in the query by S3)
   ```
+- **Reads are scoped to what osTicket shows the agent** (see Read path): `require_staff()` says who may ask, `access=` says what comes back.
 - `app/core/security.py` houses the dependencies. **There is no admin bypass in `require_perm`** — osTicket's `hasPerm()` has none; an admin's power is the Admin Panel (`require_admin`), and an admin holds the other permissions they were given.
 - Document the module's permission map in the router's module docstring.
 - The coarse "any authenticated staff can do anything" model from the predecessor is **not acceptable**.

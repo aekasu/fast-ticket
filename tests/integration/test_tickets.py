@@ -137,22 +137,42 @@ async def test_list_tickets_requires_auth():
 
 
 @pytest.mark.asyncio
-async def test_list_tickets_requires_permission():
-    """GET /tickets/ returns 403 without ticket.create permission."""
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-        resp = await ac.get(TICKETS_URL + "/", headers=_auth([]))
-    assert resp.status_code == 403
+async def test_listing_tickets_needs_no_permission_only_an_agent():
+    """osTicket gates the ticket list on visibility, not on a permission: any enabled agent may ask."""
+    with patch("app.modules.tickets.service.repo.list_tickets", new=AsyncMock(return_value=[])):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            resp = await ac.get(TICKETS_URL + "/", headers=_auth([]))
+    assert resp.status_code == 200
 
 
 @pytest.mark.asyncio
-async def test_list_tickets_admin_without_the_permission_is_refused():
-    """No admin bypass: osTicket's hasPerm() has none (read scoping, S3, replaces this stand-in gate)."""
-    with (
-        patch("app.modules.tickets.service.repo.list_tickets", new=AsyncMock(return_value=[])),
-    ):
+async def test_the_callers_access_is_what_scopes_the_ticket_reads():
+    """The repository receives the caller's AccessContext — that is what narrows every query,
+    the thread and the collaborators included."""
+    lst, one = AsyncMock(return_value=[]), AsyncMock(return_value=None)
+    with patch("app.modules.tickets.service.repo.list_tickets", new=lst), \
+         patch("app.modules.tickets.service.repo.get_ticket", new=one):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-            resp = await ac.get(TICKETS_URL + "/", headers=_admin_auth())
-    assert resp.status_code == 403
+            await ac.get(TICKETS_URL + "/", headers=_auth([]))
+            resp = await ac.get(TICKETS_URL + "/9", headers=_auth([]))
+    assert lst.await_args.kwargs["access"].staff_id == 5
+    assert one.await_args.kwargs["access"].staff_id == 5
+    assert resp.status_code == 404          # a ticket the agent may not open looks like one that is not there
+
+
+@pytest.mark.asyncio
+async def test_thread_and_collaborators_are_read_with_the_same_access():
+    row = {"ticket_id": 9, "number": "1", "subject": "s", "status_id": 1, "status_name": "Open",
+           "status_state": "open", "dept_id": 1, "dept_name": "Support", "created": "2024-01-01T00:00:00",
+           "updated": "2024-01-01T00:00:00"}
+    thread, collab = AsyncMock(return_value=[]), AsyncMock(return_value=[])
+    with patch("app.modules.tickets.service.repo.get_ticket", new=AsyncMock(return_value=row)), \
+         patch("app.modules.tickets.service.repo.get_ticket_thread", new=thread), \
+         patch("app.modules.tickets.service.repo.get_ticket_collaborators", new=collab):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            await ac.get(TICKETS_URL + "/9", headers=_auth([]))
+    assert thread.await_args.kwargs["access"].staff_id == 5
+    assert collab.await_args.kwargs["access"].staff_id == 5
 
 
 @pytest.mark.asyncio

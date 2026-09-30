@@ -3,9 +3,11 @@
 All writes return CommandResponse — the command is queued for async PHP execution.
 All reads query osTicket's tables directly via read_repository.
 
-Permission map (role permissions — any of the agent's roles; the bridge applies osTicket's exact
-per-department check when it runs the command). Reads still use ``ticket.create`` as a stand-in until
-read scoping (S3) replaces it with osTicket's department/assignment visibility:
+Reads need no permission: what an agent sees is decided by osTicket's visibility rules, applied in the
+query (``read_repository.ticket_visibility``); a ticket they may not open is a 404.
+
+Writes — permission map (role permissions — any of the agent's roles; the bridge applies osTicket's exact
+per-department check when it runs the command):
   ticket.create     ticket.reply      ticket.note (→ ticket.reply used for notes)
   ticket.close      ticket.assign     ticket.transfer
   ticket.delete     ticket.merge      ticket.markanswered
@@ -16,7 +18,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_session
-from app.core.security import require_perm
+from app.core.security import require_perm, require_staff
 from app.modules.tickets import service
 from app.modules.tickets.models import (
     CommandResponse,
@@ -55,16 +57,18 @@ async def list_tickets(
     is_answered: bool | None = Query(default=None, description="Filter by answered flag"),
     page: int = Query(default=1, ge=1, description="Page number (1-indexed)"),
     page_size: int = Query(default=50, ge=1, le=200, description="Rows per page"),
-    current_user: dict = require_perm("ticket.create"),
+    current_user: dict = require_staff(),
     session: AsyncSession = Depends(get_session),
 ):
-    """Return a paginated, filtered list of tickets.
+    """Return a paginated, filtered list of the tickets the agent may see.
 
-    Requires any of the ticket permissions (we gate on ``ticket.create`` as the
-    baseline — any staff member who can work on tickets has this).
+    Visibility is osTicket's own (``Staff::getTicketsVisibility``): tickets that are open and assigned to
+    the agent or their team (or referred to either), and tickets of their departments — unless the agent
+    is limited to assigned-only. No permission is needed to view, as in osTicket.
     """
     return await service.list_tickets(
         session,
+        access=current_user["access"],
         status_id=status_id,
         dept_id=dept_id,
         assignee_staff_id=assignee_staff_id,
@@ -84,10 +88,11 @@ async def list_tickets(
 )
 async def get_ticket(
     ticket_id: int,
-    current_user: dict = require_perm("ticket.create"),
+    current_user: dict = require_staff(),
     session: AsyncSession = Depends(get_session),
 ):
-    ticket = await service.get_ticket(session, ticket_id)
+    # 404, not 403, for a ticket the agent may not open: its existence is not disclosed.
+    ticket = await service.get_ticket(session, ticket_id, access=current_user["access"])
     if ticket is None:
         raise HTTPException(status_code=404, detail=f"Ticket {ticket_id} not found.")
     return ticket

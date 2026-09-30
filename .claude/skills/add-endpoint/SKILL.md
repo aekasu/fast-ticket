@@ -61,6 +61,7 @@ async def assign_task(
     return await service.assign_task(session, task_id, body, current_user["staff_id"], idempotency_key)
 ```
 
+- Reads of tickets, tasks and anything else an agent sees only in part: take `access=current_user["access"]` through the service to the repository (a required keyword — there is no unscoped default), and let the query decide; add a predicate mirroring the osTicket page's own rule if the resource has none yet, with a case per state in `tests/unit/test_visibility_sql.py`. An invisible resource is a 404.
 - Permission: find the osTicket page that does the same job (`/var/www/html/scp/*.php`, and its `include/staff/*.inc.php`) and use *its* gate — `require_perm("<osTicket key>")` (keys and whether each is global or role: `app/core/permissions.py`; an unknown key fails at import), `require_admin()` for Admin Panel pages (`admin.inc.php`), `require_staff()` for reads osTicket does not gate. There is no admin bypass. Update the permission map in the router's module docstring.
 - Path param is the internal int PK, never the display `number`.
 - Router stays thin. No imports from other routers.

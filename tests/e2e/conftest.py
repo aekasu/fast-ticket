@@ -126,6 +126,24 @@ class Bridge:
         self._cleanups.clear()
 
 
+def login_raw(username: str, password: str) -> httpx.Response:
+    """POST the login and return the response, waiting out a 429 first. The login route allows 10 a minute
+    per address, and a suite that logs in as many agents can brush against it."""
+    for _ in range(4):
+        resp = httpx.post(f"{BASE_URL}/api/v1/auth/login", data={"username": username, "password": password}, timeout=30)
+        if resp.status_code != 429:
+            return resp
+        time.sleep(min(int(resp.headers.get("retry-after", 30)), 65))
+    pytest.fail(f"login as {username} was still rate-limited after waiting")
+
+
+def login_as(username: str, password: str) -> dict:
+    """Log in (expecting success) and return the Authorization header."""
+    resp = login_raw(username, password)
+    assert resp.status_code == 200, f"login as {username}: {resp.status_code} {resp.text[:200]}"
+    return {"Authorization": f"Bearer {resp.json()['access_token']}"}
+
+
 @pytest.fixture(scope="session")
 def _client():
     if not (USERNAME and PASSWORD):

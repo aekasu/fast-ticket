@@ -22,6 +22,7 @@ import httpx
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.access import AccessContext
 from app.core.config import settings
 from app.integration.osticket import read_repository as repo
 from app.integration.osticket.commands import IntegrationInbox
@@ -31,6 +32,10 @@ from app.integration.osticket.models import IntegrationOutbox
 TESTED_OSTICKET_VERSIONS = ("v1.18",)
 
 OK, WARN, FAIL = "ok", "warn", "fail"
+
+# The caller the doctor pretends to be for scoped reads: nobody, in a department that does not exist.
+# The query still runs in full (so a wrong column is found), and matches no rows.
+DOCTOR_ACCESS = AccessContext(staff_id=0, dept_ids=frozenset({0}), team_ids=frozenset({0}))
 
 
 @dataclass
@@ -60,7 +65,11 @@ def read_call_kwargs(func: Callable) -> dict | None:
     """
     kwargs: dict = {}
     for name, param in list(inspect.signature(func).parameters.items())[1:]:  # skip session
-        if name == "limit":
+        if name == "access":
+            kwargs[name] = DOCTOR_ACCESS   # a scoped read runs, and matches nothing
+        elif name == "include_directory":
+            kwargs[name] = True
+        elif name == "limit":
             kwargs[name] = 1
         elif name == "offset":
             kwargs[name] = 0

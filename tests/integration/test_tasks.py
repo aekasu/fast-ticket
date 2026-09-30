@@ -102,19 +102,26 @@ async def test_list_tasks_requires_auth():
 
 
 @pytest.mark.asyncio
-async def test_list_tasks_requires_permission():
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-        resp = await ac.get(TASKS_URL + "/", headers=_auth([]))
-    assert resp.status_code == 403
+async def test_listing_tasks_needs_no_permission_only_an_agent():
+    """osTicket gates the task list on visibility, not on a permission: any enabled agent may ask."""
+    with patch("app.modules.tasks.service.repo.list_tasks", new=AsyncMock(return_value=[])):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            resp = await ac.get(TASKS_URL + "/", headers=_auth([]))
+    assert resp.status_code == 200
 
 
 @pytest.mark.asyncio
-async def test_list_tasks_admin_without_the_permission_is_refused():
-    """No admin bypass: osTicket's hasPerm() has none."""
-    with patch("app.modules.tasks.service.repo.list_tasks", new=AsyncMock(return_value=[])):
+async def test_the_callers_access_is_what_scopes_the_task_reads():
+    """The repository receives the caller's AccessContext — that is what narrows the query."""
+    lst, one = AsyncMock(return_value=[]), AsyncMock(return_value=None)
+    with patch("app.modules.tasks.service.repo.list_tasks", new=lst), \
+         patch("app.modules.tasks.service.repo.get_task", new=one):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-            resp = await ac.get(TASKS_URL + "/", headers=_admin())
-    assert resp.status_code == 403
+            await ac.get(TASKS_URL + "/", headers=_auth([]))
+            resp = await ac.get(TASKS_URL + "/9", headers=_auth([]))
+    assert lst.await_args.kwargs["access"].staff_id == 5
+    assert one.await_args.kwargs["access"].staff_id == 5
+    assert resp.status_code == 404          # a task the agent may not open looks like a task that is not there
 
 
 @pytest.mark.asyncio

@@ -154,12 +154,31 @@ async def test_canned_responses_need_canned_manage_in_any_of_the_agents_roles():
 
 
 @pytest.mark.asyncio
-async def test_search_needs_search_all_or_an_administrator():
-    with patch("app.modules.search.service.repo.search_all", new=AsyncMock(return_value=[])):
-        assert (await _call("GET", "/api/v1/search?q=test", make_access(5, []))).status_code == 403
-        assert (await _call("GET", "/api/v1/search?q=test", make_access(5, ["user.dir", "ticket.create"]))).status_code == 403
-        assert (await _call("GET", "/api/v1/search?q=test", make_access(5, ["search.all"]))).status_code == 200
-        assert (await _call("GET", "/api/v1/search?q=test", ADMIN_WITH_NOTHING)).status_code == 200
+async def test_any_agent_may_search_but_only_within_what_they_may_see():
+    from app.core.scope import UNRESTRICTED
+
+    search = AsyncMock(return_value=[])
+    with patch("app.modules.search.service.repo.search_all", new=search):
+        plain = make_access(5, [])
+        assert (await _call("GET", "/api/v1/search?q=test", plain)).status_code == 200
+        kwargs = search.await_args.kwargs
+        assert kwargs["access"] is plain          # scoped to this agent
+        assert kwargs["include_directory"] is False
+
+        await _call("GET", "/api/v1/search?q=test", make_access(5, ["user.dir"]))
+        assert search.await_args.kwargs["include_directory"] is True     # the directory needs user.dir
+
+        await _call("GET", "/api/v1/search?q=test", make_access(5, ["search.all"]))
+        assert search.await_args.kwargs["access"] is UNRESTRICTED        # search.all lifts ticket scoping
+
+
+@pytest.mark.asyncio
+async def test_being_an_admin_does_not_widen_search():
+    """osTicket has no admin exemption for search: an admin without search.all is scoped like anyone."""
+    search = AsyncMock(return_value=[])
+    with patch("app.modules.search.service.repo.search_all", new=search):
+        await _call("GET", "/api/v1/search?q=test", ADMIN_WITH_NOTHING)
+    assert search.await_args.kwargs["access"] is not __import__("app.core.scope", fromlist=["x"]).UNRESTRICTED
 
 
 # ── permissions are read on every request ─────────────────────────────────────────────────────────

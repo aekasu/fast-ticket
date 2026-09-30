@@ -18,7 +18,7 @@ import uuid
 import httpx
 import pytest
 
-from tests.e2e.conftest import BASE_URL, DELIVERABLE_DOMAIN
+from tests.e2e.conftest import BASE_URL, DELIVERABLE_DOMAIN, login_raw
 
 pytestmark = pytest.mark.e2e
 
@@ -261,7 +261,7 @@ def test_staff_lifecycle_and_the_password_actually_works(bridge, uniq):
     assert (got["username"], got["role_id"], got["dept_id"], got["is_admin"], got["is_active"]) == (username, 3, 1, False, True)
 
     def login(pw):
-        return httpx.post(f"{BASE_URL}/api/v1/auth/login", data={"username": username, "password": pw}, timeout=30)
+        return login_raw(username, pw)
 
     assert login(password).status_code == 200      # the password set through the bridge works
     assert login("wrong-password").status_code == 401

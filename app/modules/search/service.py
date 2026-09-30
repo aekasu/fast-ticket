@@ -2,6 +2,7 @@
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.scope import UNRESTRICTED
 from app.integration.osticket import read_repository as repo
 from app.modules.search.models import SearchResponse, SearchResultItem
 
@@ -10,12 +11,25 @@ async def global_search(
     session: AsyncSession,
     query: str,
     limit: int = 20,
+    *,
+    access,
 ) -> SearchResponse:
+    """Search tickets the agent may see, plus users and organizations if they may use the directory.
+
+    ``search.all`` ("search everything", osTicket's ``SearchBackend::PERM_EVERYTHING``) lifts the ticket
+    scoping; ``user.dir`` opens the user/organization directory. There is no admin exemption: osTicket has none.
+    """
     if not query or len(query) < 2:
         return SearchResponse(query=query, results=[], total=0)
         
     limit = min(limit, 50)
-    rows = await repo.search_all(session, query=query, limit=limit)
+    rows = await repo.search_all(
+        session,
+        query=query,
+        limit=limit,
+        access=UNRESTRICTED if access.has_global("search.all") else access,
+        include_directory=access.has_global("user.dir"),
+    )
     
     results = []
     for row in rows:

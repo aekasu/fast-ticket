@@ -12,7 +12,7 @@ uses ``dept_ids``, ``team_ids`` and ``assigned_only`` from this context.
 
 import json
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, ClassVar
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -38,6 +38,9 @@ def _perm_set(raw: Any) -> frozenset[str]:
 
 @dataclass(frozen=True)
 class AccessContext:
+    #: read_repository narrows queries for an AccessContext and leaves scope.UNRESTRICTED alone
+    unrestricted: ClassVar[bool] = False
+
     staff_id: int
     username: str = ""
     name: str = ""

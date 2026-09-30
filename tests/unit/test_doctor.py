@@ -34,8 +34,10 @@ def test_every_read_function_can_be_exercised():
 
 def test_read_call_kwargs_uses_harmless_values():
     assert doctor.read_call_kwargs(repo.list_departments) == {"limit": 1, "offset": 0}
-    assert doctor.read_call_kwargs(repo.get_ticket) == {"ticket_id": 0}
-    assert doctor.read_call_kwargs(repo.search_all) == {"query": "doctor", "limit": 1}
+    assert doctor.read_call_kwargs(repo.get_ticket) == {"ticket_id": 0, "access": doctor.DOCTOR_ACCESS}
+    assert doctor.read_call_kwargs(repo.search_all) == {
+        "query": "doctor", "limit": 1, "access": doctor.DOCTOR_ACCESS, "include_directory": True,
+    }
 
 
 @pytest.mark.parametrize(

@@ -108,6 +108,7 @@ def _make_cmd_response(cmd, idempotency_key: str | None) -> CommandResponse:
 async def list_tickets(
     session: AsyncSession,
     *,
+    access,
     status_id: int | None = None,
     dept_id: int | None = None,
     assignee_staff_id: int | None = None,
@@ -122,6 +123,7 @@ async def list_tickets(
     offset = (page - 1) * page_size
     rows = await repo.list_tickets(
         session,
+        access=access,
         status_id=status_id,
         dept_id=dept_id,
         assignee_staff_id=assignee_staff_id,
@@ -139,12 +141,13 @@ async def list_tickets(
     )
 
 
-async def get_ticket(session: AsyncSession, ticket_id: int) -> TicketDetail | None:
-    row = await repo.get_ticket(session, ticket_id)
+async def get_ticket(session: AsyncSession, ticket_id: int, *, access) -> TicketDetail | None:
+    """The ticket with its thread, or None if it does not exist or ``access`` may not open it."""
+    row = await repo.get_ticket(session, ticket_id, access=access)
     if row is None:
         return None
-    thread_rows = await repo.get_ticket_thread(session, ticket_id)
-    collab_rows = await repo.get_ticket_collaborators(session, ticket_id)
+    thread_rows = await repo.get_ticket_thread(session, ticket_id, access=access)
+    collab_rows = await repo.get_ticket_collaborators(session, ticket_id, access=access)
     item = _row_to_list_item(row)
     return TicketDetail(
         **item.model_dump(),

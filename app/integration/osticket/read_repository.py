@@ -10,11 +10,18 @@ Rules:
 import json
 import logging
 import re
+from typing import TYPE_CHECKING
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+
+if TYPE_CHECKING:   # the type only; importing it at runtime would be circular
+    from app.core.access import AccessContext
+    from app.core.scope import _Unrestricted
+
+    Scope = AccessContext | _Unrestricted
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +49,92 @@ def _sql(sql: str):
 def _nullable_int(value) -> int | None:
     """Return None for falsy DB ints (osTicket uses 0 as 'not set')."""
     return int(value) if value else None
+
+
+# ── Visibility: what an agent may see ─────────────────────────────────────────
+#
+# These reproduce osTicket's own rules, from its source, not from a description of them:
+#
+#   ticket lists   Staff::getTicketsVisibility()  (include/class.staff.php)
+#   ticket detail  Ticket::checkStaffPerm()       (include/class.ticket.php) — scp/tickets.php gates the page on it
+#   task lists     the "Impose visibility constraints" block of include/staff/tasks.inc.php
+#   task detail    Task::checkStaffPerm()         (include/class.task.php)   — scp/tasks.php gates the page on it
+#
+# The list and detail rules genuinely differ in osTicket (a referral counts on the detail page in any
+# state but in a list only while the ticket is open; a closed task can be opened by any agent but is not
+# listed unless it is in their department), and both are reproduced as they are.
+#
+# ``access`` is required everywhere and has no default: pass the caller's AccessContext, or
+# ``scope.UNRESTRICTED`` for the rare deliberate exception. Ids are inlined because they are integers read
+# from osTicket into the AccessContext, never anything a request supplied.
+
+
+def _ids(values) -> str:
+    return ",".join(str(int(v)) for v in sorted(values))
+
+
+def _referral(kind: str, ids) -> str:
+    """The ticket's thread (a merged child's thread has type 'C') is referred to agent 'S', team 'E' or dept 'D' in ``ids``."""
+    return (
+        "EXISTS (SELECT 1 FROM ost_thread rth JOIN ost_thread_referral rr ON rr.thread_id = rth.id "
+        "WHERE rth.object_id = t.ticket_id AND rth.object_type IN ('T', 'C') "
+        f"AND rr.object_type = '{kind}' AND rr.object_id IN ({_ids(ids)}))"
+    )
+
+
+def ticket_visibility(access: "Scope", *, detail: bool) -> str:
+    """SQL condition over ``ost_ticket t`` joined to ``ost_ticket_status ts``."""
+    if getattr(access, "unrestricted", False):
+        return "1 = 1"
+    me, teams, depts = int(access.staff_id), access.team_ids, access.dept_ids
+    in_dept = (not access.assigned_only) and bool(depts)
+
+    if detail:   # Ticket::checkStaffPerm(): department access, or open and assigned to me/my team, or referred (any state)
+        assigned = [f"t.staff_id = {me}"] + ([f"t.team_id IN ({_ids(teams)})"] if teams else [])
+        parts = [f"t.dept_id IN ({_ids(depts)})"] if in_dept else []
+        parts.append(f"(ts.state = 'open' AND ({' OR '.join(assigned)}))")
+        parts.append(_referral("S", [me]))
+        if depts:
+            parts.append(_referral("D", depts))
+        if teams:
+            parts.append(_referral("E", teams))
+        return "(" + " OR ".join(parts) + ")"
+
+    # Staff::getTicketsVisibility(): open and mine (or my team's, or referred to either); else my departments
+    assigned = [f"t.staff_id = {me}", _referral("S", [me])]
+    if teams:
+        assigned += [f"t.team_id IN ({_ids(teams)})", _referral("E", teams)]
+    parts = [f"(ts.state = 'open' AND ({' OR '.join(assigned)}))"]
+    if in_dept:
+        parts += [f"t.dept_id IN ({_ids(depts)})", _referral("D", depts)]
+    return "(" + " OR ".join(parts) + ")"
+
+
+def task_visibility(access: "Scope", *, detail: bool) -> str:
+    """SQL condition over ``ost_task t`` (open = flags bit 0x1)."""
+    if getattr(access, "unrestricted", False):
+        return "1 = 1"
+    me, teams, depts = int(access.staff_id), access.team_ids, access.dept_ids
+    in_dept = (not access.assigned_only) and bool(depts)
+
+    if detail:   # Task::checkStaffPerm(): denied only if outside my departments AND open AND not mine AND not my team's
+        parts = [f"t.dept_id IN ({_ids(depts)})"] if in_dept else []
+        parts += ["(t.flags & 1) = 0", f"t.staff_id = {me}"]
+        if teams:
+            parts.append(f"t.team_id IN ({_ids(teams)})")
+        return "(" + " OR ".join(parts) + ")"
+
+    parts = [
+        f"((t.flags & 1) = 1 AND t.staff_id = {me})",
+        # a task of a ticket that is assigned to me and open
+        "(t.object_type = 'T' AND EXISTS (SELECT 1 FROM ost_ticket pt JOIN ost_ticket_status pts ON pts.id = pt.status_id "
+        f"WHERE pt.ticket_id = t.object_id AND pt.staff_id = {me} AND pts.state = 'open'))",
+    ]
+    if in_dept:
+        parts.append(f"t.dept_id IN ({_ids(depts)})")
+    if teams:
+        parts.append(f"((t.flags & 1) = 1 AND t.team_id IN ({_ids(teams)}))")
+    return "(" + " OR ".join(parts) + ")"
 
 
 # ── Tickets ───────────────────────────────────────────────────────────────────
@@ -89,6 +182,7 @@ _TICKET_SELECT = """
 async def list_tickets(
     session: AsyncSession,
     *,
+    access: "Scope",
     status_id: int | None = None,
     dept_id: int | None = None,
     assignee_staff_id: int | None = None,
@@ -100,7 +194,7 @@ async def list_tickets(
     offset: int = 0,
 ) -> list:
     """Return a filtered, paginated list of ticket rows."""
-    where_clauses = ["1=1"]
+    where_clauses = [ticket_visibility(access, detail=False)]
     params: dict = {"limit": limit, "offset": offset}
 
     if status_id is not None:
@@ -135,16 +229,32 @@ async def list_tickets(
     return list(result.mappings().all())
 
 
-async def get_ticket(session: AsyncSession, ticket_id: int) -> dict | None:
-    """Return a single ticket row dict, or None if not found."""
-    sql = _TICKET_SELECT + " WHERE t.ticket_id = :ticket_id"
+async def get_ticket(session: AsyncSession, ticket_id: int, *, access: "Scope") -> dict | None:
+    """Return a single ticket row dict, or None if it does not exist *or the agent may not see it*."""
+    sql = _TICKET_SELECT + " WHERE t.ticket_id = :ticket_id AND " + ticket_visibility(access, detail=True)
     result = await session.execute(_sql(sql), {"ticket_id": ticket_id})
     row = result.mappings().one_or_none()
     return dict(row) if row else None
 
 
-async def get_ticket_thread(session: AsyncSession, ticket_id: int) -> list:
-    """Return thread entries for a ticket ordered by creation time."""
+def _visible_ticket(access: "Scope") -> str:
+    """``AND EXISTS`` clause: the ticket bound as :ticket_id is one the agent may open."""
+    return (
+        " AND EXISTS (SELECT 1 FROM ost_ticket t JOIN ost_ticket_status ts ON ts.id = t.status_id "
+        "WHERE t.ticket_id = :ticket_id AND " + ticket_visibility(access, detail=True) + ")"
+    )
+
+
+def _visible_task(access: "Scope") -> str:
+    """``AND EXISTS`` clause: the task bound as :task_id is one the agent may open."""
+    return (
+        " AND EXISTS (SELECT 1 FROM ost_task t WHERE t.id = :task_id AND "
+        + task_visibility(access, detail=True) + ")"
+    )
+
+
+async def get_ticket_thread(session: AsyncSession, ticket_id: int, *, access: "Scope") -> list:
+    """Return thread entries for a ticket ordered by creation time (nothing if the agent may not open it)."""
     sql = """
         SELECT
             te.id,
@@ -165,14 +275,15 @@ async def get_ticket_thread(session: AsyncSession, ticket_id: int) -> list:
         LEFT JOIN ost_staff s ON te.staff_id = s.staff_id AND te.staff_id > 0
         LEFT JOIN ost_user  u ON te.user_id  = u.id       AND te.user_id  > 0
         WHERE th.object_type = 'T' AND th.object_id = :ticket_id
+        {visible}
         ORDER BY te.created ASC, te.id ASC
-    """
+    """.replace("{visible}", _visible_ticket(access))
     result = await session.execute(_sql(sql), {"ticket_id": ticket_id})
     return list(result.mappings().all())
 
 
-async def get_ticket_collaborators(session: AsyncSession, ticket_id: int) -> list:
-    """Return collaborators for a ticket."""
+async def get_ticket_collaborators(session: AsyncSession, ticket_id: int, *, access: "Scope") -> list:
+    """Return collaborators for a ticket (nothing if the agent may not open it)."""
     sql = """
         SELECT
             c.id,
@@ -184,8 +295,9 @@ async def get_ticket_collaborators(session: AsyncSession, ticket_id: int) -> lis
         JOIN ost_user u ON c.user_id = u.id
         LEFT JOIN ost_user_email ue ON ue.id = u.default_email_id
         WHERE th.object_id = :ticket_id
+        {visible}
         ORDER BY c.id ASC
-    """
+    """.replace("{visible}", _visible_ticket(access))
     result = await session.execute(_sql(sql), {"ticket_id": ticket_id})
     return list(result.mappings().all())
 
@@ -787,8 +899,19 @@ async def get_command(session: AsyncSession, command_id: int) -> dict | None:
 
 # ── Search ────────────────────────────────────────────────────────────────────
 
-async def search_all(session: AsyncSession, query: str, limit: int = 10) -> list:
-    """Basic multi-table search using UNION ALL."""
+async def search_all(
+    session: AsyncSession,
+    query: str,
+    limit: int = 10,
+    *,
+    access: "Scope",
+    include_directory: bool,
+) -> list:
+    """Multi-table search using UNION ALL.
+
+    Tickets are narrowed to what ``access`` may see (``UNRESTRICTED`` = osTicket's ``search.all``).
+    Users and organizations are the directory and appear only when ``include_directory`` (``user.dir``).
+    """
     sql = """
         SELECT
             t.ticket_id AS id,
@@ -796,10 +919,13 @@ async def search_all(session: AsyncSession, query: str, limit: int = 10) -> list
             t.number AS title,
             COALESCE(c.subject, '') AS subtitle
         FROM ost_ticket t
+        JOIN ost_ticket_status ts ON ts.id = t.status_id
         -- the subject is an answer of the ticket form, mirrored in ost_ticket__cdata
         LEFT JOIN ost_ticket__cdata c ON c.ticket_id = t.ticket_id
-        WHERE t.number LIKE :q OR c.subject LIKE :q
-
+        WHERE (t.number LIKE :q OR c.subject LIKE :q) AND {ticket_visibility}
+    """.replace("{ticket_visibility}", ticket_visibility(access, detail=False))
+    if include_directory:
+        sql += """
         UNION ALL
 
         SELECT
@@ -820,9 +946,8 @@ async def search_all(session: AsyncSession, query: str, limit: int = 10) -> list
             name AS subtitle
         FROM ost_organization
         WHERE name LIKE :q
-
-        LIMIT :limit
-    """
+        """
+    sql += "\n        LIMIT :limit\n"
     result = await session.execute(_sql(sql), {"q": f"%{query}%", "limit": limit})
     return list(result.mappings().all())
 
@@ -968,6 +1093,7 @@ _TASK_SELECT = """
 async def list_tasks(
     session: AsyncSession,
     *,
+    access: "Scope",
     status_id: int | None = None,
     dept_id: int | None = None,
     assignee_staff_id: int | None = None,
@@ -975,7 +1101,7 @@ async def list_tasks(
     limit: int = 50,
     offset: int = 0,
 ) -> list:
-    where_clauses = ["1=1"]
+    where_clauses = [task_visibility(access, detail=False)]
     params: dict = {"limit": limit, "offset": offset}
 
     if status_id is not None:  # synthetic: 1 = open, anything else = closed
@@ -1001,15 +1127,16 @@ async def list_tasks(
     return list(result.mappings().all())
 
 
-async def get_task(session: AsyncSession, task_id: int) -> dict | None:
-    sql = _TASK_SELECT + " WHERE t.id = :task_id"
+async def get_task(session: AsyncSession, task_id: int, *, access: "Scope") -> dict | None:
+    """The task row, or None if it does not exist *or the agent may not open it*."""
+    sql = _TASK_SELECT + " WHERE t.id = :task_id AND " + task_visibility(access, detail=True)
     result = await session.execute(_sql(sql), {"task_id": task_id})
     row = result.mappings().one_or_none()
     return dict(row) if row else None
 
 
-async def get_task_thread(session: AsyncSession, task_id: int) -> list:
-    """Return thread entries for a task ordered by creation time."""
+async def get_task_thread(session: AsyncSession, task_id: int, *, access: "Scope") -> list:
+    """Return thread entries for a task ordered by creation time (nothing if the agent may not open it)."""
     sql = """
         SELECT
             te.id,
@@ -1030,15 +1157,8 @@ async def get_task_thread(session: AsyncSession, task_id: int) -> list:
         LEFT JOIN ost_staff s ON te.staff_id = s.staff_id AND te.staff_id > 0
         LEFT JOIN ost_user  u ON te.user_id  = u.id       AND te.user_id  > 0
         WHERE th.object_type = 'A' AND th.object_id = :task_id
+        {visible}
         ORDER BY te.created ASC, te.id ASC
-    """
+    """.replace("{visible}", _visible_task(access))
     result = await session.execute(_sql(sql), {"task_id": task_id})
     return list(result.mappings().all())
-
-
-async def list_tasks_from_osticket(
-    session: AsyncSession, limit: int = 50, offset: int = 0
-) -> list:
-    """Backward-compat alias; prefer list_tasks() directly."""
-    return await list_tasks(session, limit=limit, offset=offset)
-
