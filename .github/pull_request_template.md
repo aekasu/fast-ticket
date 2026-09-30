@@ -8,7 +8,7 @@
 - [ ] Every new route has `require_perm(...)` / `require_admin()` (or a justified `# no permission required` comment)
 - [ ] Request schemas fully typed and constrained (no `Any` / raw `dict`)
 - [ ] Writes return 202 `CommandResponse` and honour `Idempotency-Key`
-- [ ] New command types have a bridge `case`, handler method, and `commandToEventType` entry
+- [ ] New command types have a handler method and a `bridge/registry.php` entry
 - [ ] No writes to `ost_*` tables outside the integration inbox/outbox
 - [ ] Tests: happy path, 401, 403, 422, idempotency — `make test` passes
 - [ ] New env vars documented in `.env.example`

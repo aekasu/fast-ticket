@@ -26,7 +26,9 @@ fast-ticket/
 │   ├── modules/<domain>/             # One sub-package per API domain (router / models / service)
 │   └── workers/events.py             # Outbox poller → event handlers → WebSocket
 ├── bridge/                           # PHP integration bridge plugin (installed into osTicket)
-│   ├── plugin.php                    # Signal hooks, inbox cron, dispatchCommand switch, outbox emit
+│   ├── plugin.php                    # Signal hooks, inbox claim + dispatch, outbox emit
+│   ├── registry.php                  # command type → [handler file, class, method, outbox event] (one line each)
+│   ├── worker.php                    # optional long-running inbox worker (~1 s latency); cron is the fallback
 │   └── handlers/<domain>.php         # FastApi<Domain>Handler classes — one static method per command (+ common.php helpers)
 ├── tests/
 │   ├── conftest.py                   # In-memory SQLite, auth_user/admin_user/client fixtures
@@ -34,7 +36,7 @@ fast-ticket/
 │   ├── integration/                  # ASGITransport tests against the full app
 │   └── e2e/                          # live tests of every command + read against the running stack (opt-in)
 ├── docker/                           # osticket / fastapi / mysql images + init SQL
-├── docker-compose.yml                # Local stack: osTicket + MySQL + FastAPI (+ cron)
+├── docker-compose.yml                # Local stack: osTicket + MySQL + FastAPI (+ inbox worker + cron fallback)
 ├── docker-compose.test.yml           # Isolated test env on the image's pinned deps (no real osTicket)
 ├── uv.lock                           # committed: the image, the venv and CI must run the same versions
 ├── notes/                            # Research + runbooks (tracked)
@@ -52,13 +54,15 @@ fast-ticket/
 All mutation operations use a **command inbox** pattern:
 
 1. FastAPI validates + authorizes the request and writes a row to `ost_integration_inbox` via `dispatch_command(...)`.
-2. The PHP plugin (`bridge/plugin.php`, `cron` signal) polls `pending` rows and calls the matching `bridge/handlers/*.php` method, which uses osTicket's PHP models.
-3. On success/failure the plugin writes a result event to `ost_integration_outbox` (event name from `commandToEventType()`).
+2. The PHP plugin claims `pending` rows and calls the handler `bridge/registry.php` names, which uses osTicket's PHP models. Two drivers share one atomic claim: `bridge/worker.php` (a CLI loop, the `osticket-worker` service, ~1 s latency) and osTicket's own `cron` signal (once a minute — the fallback if no worker runs).
+3. On success/failure the plugin writes a result event to `ost_integration_outbox` (event name from the registry entry).
 4. The asyncio worker (`app/workers/events.py`) polls the outbox, dispatches to registered Python handlers, and broadcasts over WebSocket.
+
+Clients needn't poll: `GET /api/v1/commands/{id}?wait=<seconds ≤ 30>` holds the request until the command is `done`/`failed`.
 
 The plugin also hooks osTicket's `model.*` / `object.*` signals so changes made in the osTicket UI emit outbox events too.
 
-Dispatcher guarantees (`bridge/plugin.php`, keep them): each command runs **as the requesting staff member** (global `$thisstaff` — osTicket's permission checks and authorship read it), against a **fresh ORM cache**; any `Throwable` fails the row with osTicket's reason (never leaves it `processing`); a row held > 5 min is **failed, not retried**; a `*.create` handler that returns no id is **failed** (osTicket's `Model::create()` only instantiates, so "success" without an id means nothing was stored).
+Dispatcher guarantees (`bridge/plugin.php`, keep them): each command runs **as the requesting staff member** (global `$thisstaff` — osTicket's permission checks and authorship read it), in a **fresh PHP process per command** (osTicket keeps process-wide static state — `TaskForm::$instance` holds the previous task's answers — so the worker re-execs itself after each command and cron runs `worker.php --one` per command; the ORM cache is flushed too); any `Throwable` fails the row with osTicket's reason (never leaves it `processing`); a row held > 5 min is **failed, not retried**; a `*.create` handler that returns no id is **failed** (osTicket's `Model::create()` only instantiates, so "success" without an id means nothing was stored).
 
 **Writing a handler is not guessing osTicket's API.** It is written for osTicket's web UI, and every handler here was once broken by assumption. Read the class *and* the admin page that does the same job (`/var/www/html/scp/*.php`) before writing one, build updates from the stored state overlaid with the payload (osTicket's `update()` overwrites every field and deletes members/permissions/links when keys are absent), and verify against the live stack. Details and the list of traps: `.claude/skills/add-bridge-command`.
 
@@ -81,14 +85,13 @@ Queries must match the **real osTicket 1.18 schema** (`DESCRIBE` it; don't assum
 
 ### Command type registry — source of truth
 
-There is no hand-maintained table. A command type exists when **all three** agree:
+A command type exists when **both** agree:
 1. A Python service calls `dispatch_command(command_type="<x>", ...)`
-2. `bridge/plugin.php::dispatchCommand()` has a `case '<x>':` routing to a handler
-3. `bridge/plugin.php::commandToEventType()` maps `<x>` → its past-tense event (`ticket.close` → `ticket.closed`)
+2. `bridge/registry.php` has one line `'<x>' => ['<handlers file>', 'FastApi…Handler', '<method>', '<past-tense event>']` (`ticket.close` → `ticket.closed`)
 
 Domain prefixes in use: `ticket.*`, `task.*`, `user.*`, `org.*`, `staff.*`, `dept.*`, `team.*`, `topic.*`, `sla.*`, `priority.*`, `kb.category.*`, `kb.faq.*`, `kb.canned.*`, plus banlist/forms. List them with:
 ```bash
-grep -oP "case '\K[a-z_.]+" bridge/plugin.php
+grep -oP "^\s*'\K[a-z_.]+(?=' +=>)" bridge/registry.php
 ```
 
 ---
@@ -224,7 +227,7 @@ FastAPI: http://localhost:8000 (`/docs`) · osTicket: http://localhost:8080 (`/s
 - Don't skip the idempotency check in `dispatch_command`.
 - Don't merge a route without `require_perm(...)` / `require_admin()` (or an explicit `# no permission required: <why>` comment).
 - No `Any` in request schemas — every field explicitly typed and constrained.
-- Don't add a command type in Python without the matching bridge `case` + `commandToEventType` entry (and vice versa) — `tests/unit/test_bridge_registry.py` enforces it.
+- Don't add a command type in Python without the matching `bridge/registry.php` entry (and vice versa) — `tests/unit/test_bridge_registry.py` enforces it.
 - Don't report a bridge handler as working because it returned without error; prove it stored the right thing (read it back) and that a partial update preserved the other fields.
 - Don't write osTicket SQL from memory or from `notes/OSTICKET_CAPABILITIES.md`; check the schema and the class source.
 - Don't put throwaway scripts anywhere but `notes/.scratch/` (gitignored).

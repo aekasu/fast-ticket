@@ -44,7 +44,7 @@ Decide: **read** (SQL in `read_repository.py`) or **write** (command through the
    )
    return _cmd_resp(cmd, idempotency_key)
    ```
-2. Implement the PHP side with the **`add-bridge-command`** skill (handler method, `dispatchCommand` case, `commandToEventType` entry). Payload keys must match exactly what the handler reads.
+2. Implement the PHP side with the **`add-bridge-command`** skill (handler method + one `bridge/registry.php` entry). Payload keys must match exactly what the handler reads.
 3. If Python should react to the resulting event, add a handler in `register_event_handlers(registry)` and make sure `_ensure_handlers_registered()` in `app/workers/events.py` imports it.
 
 ## 4. Router — `app/modules/<domain>/router.py`
@@ -86,7 +86,7 @@ Commit atomically: `feat(<domain>): <what>` (bridge changes can be a separate `f
 - [ ] Typed, constrained request model; no `Any`
 - [ ] `require_perm` / `require_admin` on every route; docstring permission map updated
 - [ ] Writes: 202 + `CommandResponse`, `Idempotency-Key` passed through
-- [ ] Bridge case + handler + `commandToEventType` entry exist for every new command type
+- [ ] Handler + `bridge/registry.php` entry exist for every new command type
 - [ ] osTicket SQL only in `read_repository.py`, SELECT-only
 - [ ] Tests for 200/202, 401, 403, 422, idempotency; `make test` and `make test-docker` green
 - [ ] Read query verified against the real schema and NULL-safe; write verified by an e2e test against the live bridge

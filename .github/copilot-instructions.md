@@ -4,7 +4,7 @@ The full, canonical agent guide is [`AGENTS.md`](../AGENTS.md) at the repo root.
 
 ## Architecture in one paragraph
 
-FastAPI (Python 3.12, uv) in front of osTicket. **Reads** are `SELECT`-only SQL in `app/integration/osticket/read_repository.py`. **Writes** never touch osTicket tables: routes call `dispatch_command(...)`, which queues a row in `ost_integration_inbox`; the PHP bridge plugin (`bridge/plugin.php` + `bridge/handlers/*.php`) executes it via osTicket's own models on cron and writes an event to `ost_integration_outbox`; `app/workers/events.py` relays events over WebSocket.
+FastAPI (Python 3.12, uv) in front of osTicket. **Reads** are `SELECT`-only SQL in `app/integration/osticket/read_repository.py`. **Writes** never touch osTicket tables: routes call `dispatch_command(...)`, which queues a row in `ost_integration_inbox`; the PHP bridge plugin (`bridge/plugin.php` + `bridge/handlers/*.php`) executes it via osTicket's own models (from `bridge/worker.php`, or osTicket's cron as fallback) and writes an event to `ost_integration_outbox`; `app/workers/events.py` relays events over WebSocket.
 
 ## Review / generation rules
 
@@ -13,7 +13,7 @@ FastAPI (Python 3.12, uv) in front of osTicket. **Reads** are `SELECT`-only SQL 
 - Write routes: `status_code=202`, `response_model=CommandResponse`, accept `Idempotency-Key` header and pass it to `dispatch_command`.
 - No `INSERT`/`UPDATE`/`DELETE` against `ost_*` tables other than `ost_integration_inbox` / `ost_integration_outbox`.
 - osTicket-schema SQL only in `read_repository.py`; no business logic there.
-- A new `command_type` needs: Python `dispatch_command` call, a `case` in `bridge/plugin.php::dispatchCommand()`, and a `commandToEventType()` mapping.
+- A new `command_type` needs: Python `dispatch_command` call, and one entry in `bridge/registry.php` (handler + event).
 - PHP handlers throw on any failure; they never write raw SQL to osTicket tables.
 - Routers don't import other routers. Path params are internal int PKs (`ticket_id`), not display numbers.
 - Every endpoint ships with tests: happy path, 401, 403, 422, and idempotency for writes (`tests/integration/test_<domain>.py`).
