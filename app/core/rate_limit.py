@@ -13,16 +13,36 @@ Usage in a router:
     async def login(request: Request, ...):
         ...
 
-The limiter is also registered on ``app.state`` in ``app.main`` so that
-slowapi's middleware can find it for the global default limit.
+The default limit (``RATE_LIMIT_DEFAULT``) applies to every HTTP route through
+``SlowAPIMiddleware`` (added in ``app.main``); slowapi only enforces default limits when that
+middleware is installed.
 """
 
 from slowapi import Limiter
-from slowapi.util import get_remote_address
+from starlette.requests import Request
 
-# Global default: 200 requests/minute per IP.
-# Individual endpoints can override with a tighter limit via @limiter.limit.
+from app.core.config import settings
+
+
+def client_ip(request: Request) -> str:
+    """The address rate limits and login lockouts are keyed on.
+
+    Behind ``TRUSTED_PROXY_COUNT`` proxies the client is the Nth entry from the right of
+    X-Forwarded-For (each proxy appends the address it saw; anything to the left is client-supplied
+    and spoofable). With no trusted proxy the header is ignored entirely.
+    """
+    peer = request.client.host if request.client else "unknown"
+    trusted = settings.TRUSTED_PROXY_COUNT
+    if trusted <= 0:
+        return peer
+    hops = [h.strip() for h in request.headers.get("x-forwarded-for", "").split(",") if h.strip()]
+    if len(hops) < trusted:
+        return peer   # fewer hops than proxies configured: the header can't be trusted
+    return hops[-trusted]
+
+
 limiter = Limiter(
-    key_func=get_remote_address,
-    default_limits=["200/minute"],
+    key_func=client_ip,
+    default_limits=[settings.RATE_LIMIT_DEFAULT],
+    storage_uri=settings.RATE_LIMIT_STORAGE_URI,
 )

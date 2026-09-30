@@ -53,17 +53,45 @@ class Settings(BaseSettings):
     # ── JWT ───────────────────────────────────────────────────────────────────
     JWT_SECRET_KEY: str = Field(
         default_factory=lambda: secrets.token_hex(48),
+        min_length=32,
         description=(
-            "HS256 signing key. If unset a random key is generated per-process "
-            "(dev-only; set explicitly in production)."
+            "HS256 signing key, at least 32 characters. If unset a random key is generated per "
+            "process (dev-only: tokens die on restart and differ between workers)."
         ),
     )
     JWT_ALGORITHM: str = Field(default="HS256")
-    ACCESS_TOKEN_EXPIRE_MINUTES: Annotated[int, Field(default=60, gt=0, le=1440)]
+    ACCESS_TOKEN_EXPIRE_MINUTES: Annotated[int, Field(default=30, gt=0, le=1440)]
 
     REQUIRE_JWT_SECRET: bool = Field(
         default=False,
         description="Set true to abort startup if JWT_SECRET_KEY is not explicitly configured.",
+    )
+
+    # ── Login protection ──────────────────────────────────────────────────────
+    LOGIN_MAX_ATTEMPTS: int = Field(
+        default=5, ge=1,
+        description="Failed logins per (username, client IP) before that pair is locked out.",
+    )
+    LOGIN_LOCKOUT_SECONDS: int = Field(default=300, ge=1, description="How long a lockout lasts.")
+
+    # ── Rate limiting & request limits ────────────────────────────────────────
+    RATE_LIMIT_DEFAULT: str = Field(
+        default="300/minute",
+        description="Default limit per client IP for every HTTP route (slowapi syntax).",
+    )
+    RATE_LIMIT_STORAGE_URI: str = Field(
+        default="memory://",
+        description="Where limit counters live. memory:// is per process; use redis://… to share.",
+    )
+    TRUSTED_PROXY_COUNT: int = Field(
+        default=0, ge=0,
+        description=(
+            "Reverse proxies in front of the API that append to X-Forwarded-For. 0 = the header is "
+            "ignored (clients can spoof it); N = the client is the Nth address from the right."
+        ),
+    )
+    MAX_REQUEST_BYTES: int = Field(
+        default=1_000_000, ge=1_000, description="Largest accepted request body; bigger gets 413."
     )
 
     # ── Security ──────────────────────────────────────────────────────────────
@@ -77,6 +105,13 @@ class Settings(BaseSettings):
     EVENT_BATCH_SIZE: Annotated[int, Field(default=100, gt=0, le=1000)]
     EVENT_MAX_RETRIES: Annotated[int, Field(default=3, ge=0)]
     EVENT_RETENTION_DAYS: Annotated[int, Field(default=30, gt=0)]
+
+    @field_validator("JWT_SECRET_KEY")
+    @classmethod
+    def _jwt_secret_not_placeholder(cls, v: str) -> str:
+        if v.startswith("replace-with"):
+            raise ValueError("JWT_SECRET_KEY looks like a placeholder — set a real secret.")
+        return v
 
     @field_validator("FASTAPI_INTEGRATION_KEY")
     @classmethod
@@ -95,12 +130,19 @@ class Settings(BaseSettings):
 
 def _load_settings() -> Settings:
     s = Settings()  # type: ignore[call-arg]
-    if s.REQUIRE_JWT_SECRET and s.JWT_SECRET_KEY == "replace-with-48-byte-hex-secret":
+    if "JWT_SECRET_KEY" not in s.model_fields_set:
+        # The field has a random default, so "unset" is only visible in model_fields_set.
+        if s.REQUIRE_JWT_SECRET:
+            print(
+                "FATAL: REQUIRE_JWT_SECRET is true but JWT_SECRET_KEY is not set.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
         print(
-            "FATAL: REQUIRE_JWT_SECRET is true but JWT_SECRET_KEY is not explicitly set.",
+            "WARNING: JWT_SECRET_KEY is not set — using a random key for this process. Tokens "
+            "will not survive a restart and differ between workers. Set it in production.",
             file=sys.stderr,
         )
-        sys.exit(1)
     return s
 
 

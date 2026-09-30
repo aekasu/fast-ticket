@@ -28,3 +28,5 @@ os.environ.setdefault("CORS_ORIGINS", "")
 
 # AUTO_CREATE_SCHEMA: disabled — each test fixture creates tables directly.
 os.environ.setdefault("AUTO_CREATE_SCHEMA", "false")
+# The suite fires far more than the production default limit from one address.
+os.environ.setdefault("RATE_LIMIT_DEFAULT", "100000/minute")

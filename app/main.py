@@ -17,11 +17,13 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 
 from app.api.router import api_router
 from app.core.config import settings
 from app.core.db import AsyncSessionLocal, create_db_and_tables
 from app.core.rate_limit import limiter
+from app.core.request_limits import BodySizeLimitMiddleware
 from app.workers.events import poll_and_process_events, purge_old_events
 
 logging.basicConfig(
@@ -115,11 +117,14 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Rate limiter
+# Rate limiter — SlowAPIMiddleware is what enforces the default limit on every route; without it
+# only routes carrying an explicit @limiter.limit decorator (login) would be limited.
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_middleware(SlowAPIMiddleware)
+app.add_middleware(BodySizeLimitMiddleware, max_bytes=settings.MAX_REQUEST_BYTES)
 
-# CORS
+# CORS (added last so it is outermost: 413/429 responses still carry the CORS headers)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins_list,

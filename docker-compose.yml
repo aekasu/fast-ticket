@@ -10,7 +10,8 @@ services:
     volumes:
       - mysql_data:/var/lib/mysql
     ports:
-      - "${MYSQL_PORT:-13306}:3306"
+      # Loopback only: the database is not for the network. Remove "127.0.0.1:" to expose it.
+      - "127.0.0.1:${MYSQL_PORT:-13306}:3306"
     healthcheck:
       test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
       interval: 5s
@@ -111,6 +112,8 @@ services:
       DATABASE_URL: mysql+aiomysql://osticket:${MYSQL_PASSWORD}@db:3306/osticket
       FASTAPI_INTEGRATION_KEY: ${FASTAPI_INTEGRATION_KEY}
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:?Set JWT_SECRET_KEY in .env}
+      REQUIRE_JWT_SECRET: "true"
+      TRUSTED_PROXY_COUNT: ${TRUSTED_PROXY_COUNT:-0}
       OSTICKET_AUTH_URL: http://osticket/api/auth/integration
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
       # The bridge plugin owns the integration tables (bridge/schema.php); the API only uses them.
