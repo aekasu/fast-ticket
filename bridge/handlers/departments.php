@@ -13,12 +13,15 @@
  * dropping all extended staff access when `members` is absent. So updates start
  * from the stored state (storedVars) and overlay only what the payload provides.
  *
- * `flags` accepts the option bits Dept::FLAG_ASSIGN_MEMBERS_ONLY, _DISABLE_AUTO_CLAIM,
- * _ASSIGN_PRIMARY_ONLY and _DISABLE_REOPEN_AUTO_ASSIGN, plus FLAG_ARCHIVED. There is
- * no is_active field in the API, so a department is active unless ARCHIVED is set.
- */
+ * Fields mirror osTicket's department page: parent_id, sla_id, schedule_id, template_id,
+ * autoresponse_email_id, signature, status (active|disabled|archived), assignment
+ * (all|members|primary), disable_auto_claim, disable_reopen_auto_assign, alerts_to
+ * (dept_only|dept_and_extended|no_one|admin_only), ticket_auto_response, message_auto_response
+ * and members (extended access: staff_id, role_id, alerts; replaces the set). */
 
 require_once INCLUDE_DIR . 'class.dept.php';
+require_once INCLUDE_DIR . 'class.staff.php';
+require_once INCLUDE_DIR . 'class.role.php';
 require_once dirname(__FILE__) . '/common.php';
 
 class FastApiDepartmentHandler {
@@ -80,33 +83,87 @@ class FastApiDepartmentHandler {
         ];
     }
 
+    /** API field => Dept::update() key, for the plain scalars. */
+    private static $scalars = [
+        'name' => 'name', 'signature' => 'signature', 'manager_id' => 'manager_id', 'email_id' => 'email_id',
+        'sla_id' => 'sla_id', 'schedule_id' => 'schedule_id', 'template_id' => 'tpl_id',
+        'autoresponse_email_id' => 'autoresp_email_id',
+    ];
+    private static $alerts = ['dept_only' => Dept::ALERTS_DEPT_ONLY, 'dept_and_extended' => Dept::ALERTS_DEPT_AND_EXTENDED,
+                              'no_one' => Dept::ALERTS_DISABLED, 'admin_only' => Dept::ALERTS_ADMIN_ONLY];
+
     private static function overlay(array $vars, array $payload) {
-        foreach (['name', 'manager_id', 'email_id', 'sla_id', 'signature'] as $field) {
+        foreach (self::$scalars as $field => $key) {
             if (isset($payload[$field])) {
-                $vars[$field] = $payload[$field];
+                $vars[$key] = $payload[$field];
             }
+        }
+        if (isset($payload['parent_id'])) {
+            $vars['pid'] = $payload['parent_id'] ?: null;
         }
         if (isset($payload['is_public'])) {
             $vars['ispublic'] = (int) $payload['is_public'];
         }
-        if (isset($payload['flags'])) {
-            $bits = (int) $payload['flags'];
-            foreach ([
-                Dept::FLAG_ASSIGN_MEMBERS_ONLY        => 'assign_members_only',
-                Dept::FLAG_DISABLE_AUTO_CLAIM         => 'disable_auto_claim',
-                Dept::FLAG_DISABLE_REOPEN_AUTO_ASSIGN => 'disable_reopen_auto_assign',
-            ] as $bit => $key) {
-                if ($bits & $bit) $vars[$key] = 1; else unset($vars[$key]);
+        if (isset($payload['status'])) {
+            $vars['status'] = $payload['status'];
+        }
+        if (isset($payload['assignment'])) {
+            $vars['assignment_flag'] = $payload['assignment'];
+        }
+        // checkboxes: present = on
+        foreach (['disable_auto_claim', 'disable_reopen_auto_assign'] as $key) {
+            if (isset($payload[$key])) {
+                if ($payload[$key]) $vars[$key] = 1; else unset($vars[$key]);
             }
-            $vars['assignment_flag'] = ($bits & Dept::FLAG_ASSIGN_PRIMARY_ONLY) ? 'primary'
-                : (($bits & Dept::FLAG_ASSIGN_MEMBERS_ONLY) ? 'members' : 'all');
-            $vars['status'] = ($bits & Dept::FLAG_ARCHIVED) ? 'archived' : 'active';
+        }
+        if (isset($payload['alerts_to'])) {
+            $vars['group_membership'] = self::$alerts[$payload['alerts_to']];
+        }
+        foreach (['ticket_auto_response', 'message_auto_response'] as $key) {
+            if (isset($payload[$key])) {
+                $vars[$key] = (int) $payload[$key];
+            }
+        }
+        // Extended access replaces the whole set; update() drops whoever is not listed.
+        if (isset($payload['members'])) {
+            $vars['members'] = $vars['member_role'] = $vars['member_alerts'] = [];
+            foreach ((array) $payload['members'] as $row) {
+                $staff_id = (int) ($row['staff_id'] ?? 0);
+                $role_id = (int) ($row['role_id'] ?? 0);
+                if (!Staff::lookup($staff_id)) {
+                    throw new Exception("Staff not found: {$staff_id}");
+                }
+                if (!Role::lookup($role_id)) {
+                    throw new Exception("Role not found: {$role_id}");
+                }
+                $vars['members'][] = $staff_id;
+                $vars['member_role'][$staff_id] = $role_id;
+                $vars['member_alerts'][$staff_id] = !empty($row['alerts']) ? 1 : 0;
+            }
         }
         return $vars;
     }
 
+    /**
+     * A new extended-access row keeps the column default (alerts on): the ORM never writes a false
+     * to a field it saw as unset. Re-read the rows and switch alerts off where asked.
+     */
+    private static function applyAlertFlags(Dept $dept, array $vars) {
+        foreach ((array) ($vars['members'] ?? []) as $staff_id) {
+            if (!empty($vars['member_alerts'][$staff_id])) {
+                continue;
+            }
+            $row = StaffDeptAccess::objects()->filter(['dept_id' => $dept->getId(), 'staff_id' => $staff_id])->first();
+            if ($row && $row->isAlertsEnabled()) {
+                $row->setAlerts(false);
+                $row->save();
+            }
+        }
+    }
+
     private static function save(Dept $dept, array $vars) {
         FastApiModel::saveViaUpdate($dept, $vars, 'Department');
+        self::applyAlertFlags($dept, $vars);
     }
 
     public static function create($payload, $requester_staff_id) {
