@@ -12,6 +12,8 @@ from app.modules.forms import service
 from app.modules.forms.models import (
     CommandResponse,
     FormCreate,
+    FormFieldCreate,
+    FormFieldUpdate,
     FormUpdate,
     FormDetail,
     FormListResponse,
@@ -66,3 +68,40 @@ async def delete_form(
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
     return await service.delete_form(session, form_id, current_user["staff_id"], idempotency_key)
+
+
+@router.post("/forms/{form_id}/fields", response_model=CommandResponse, status_code=202, summary="Add a field to a form")
+async def add_field(
+    form_id: int,
+    body: FormFieldCreate,
+    current_user: dict = require_admin(),
+    session: AsyncSession = Depends(get_session),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    return await service.add_field(session, form_id, body, current_user["staff_id"], idempotency_key)
+
+
+@router.patch("/forms/{form_id}/fields/{field_id}", response_model=CommandResponse, status_code=202,
+              summary="Change a form field: label, name, type, mode, order, hint, enabled, configuration")
+async def update_field(
+    form_id: int,
+    field_id: int,
+    body: FormFieldUpdate,
+    current_user: dict = require_admin(),
+    session: AsyncSession = Depends(get_session),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    return await service.update_field(session, form_id, field_id, body, current_user["staff_id"], idempotency_key)
+
+
+@router.delete("/forms/{form_id}/fields/{field_id}", response_model=CommandResponse, status_code=202,
+               summary="Remove a field from a form (its answers are kept unless delete_data)")
+async def delete_field(
+    form_id: int,
+    field_id: int,
+    delete_data: bool = Query(default=False, description="Also delete every answer already given to this field."),
+    current_user: dict = require_admin(),
+    session: AsyncSession = Depends(get_session),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    return await service.delete_field(session, form_id, field_id, delete_data, current_user["staff_id"], idempotency_key)

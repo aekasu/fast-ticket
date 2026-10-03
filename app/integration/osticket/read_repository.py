@@ -937,10 +937,14 @@ async def get_form_fields(session: AsyncSession, form_id: int) -> list:
             ff.name,
             ff.label,
             ff.type,
-            (COALESCE(ff.flags, 0) & (0x4000 | 0x400)) > 0 AS is_required   -- agent or client required
+            (COALESCE(ff.flags, 0) & (0x4000 | 0x400)) > 0 AS is_required,   -- agent or client required
+            ff.sort,
+            COALESCE(ff.hint, '') AS hint,
+            COALESCE(ff.flags, 0) AS flags,
+            ff.configuration
         FROM ost_form_field ff
         WHERE ff.form_id = :form_id
-        ORDER BY ff.sort ASC
+        ORDER BY ff.sort ASC, ff.id ASC
     """
     result = await session.execute(_sql(sql), {"form_id": form_id})
     return list(result.mappings().all())

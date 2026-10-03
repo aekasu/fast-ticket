@@ -206,6 +206,76 @@ def test_form_lifecycle(bridge, uniq):
     assert bridge.get(f"/api/v1/forms/{fid}").status_code == 404   # soft-deleted rows are hidden
 
 
+def test_form_fields_are_added_changed_and_removed(bridge, uniq):
+    fid = bridge.create("/api/v1/forms", {"title": f"e2e-fields-{uniq}", "type": "G"}, cleanup="/api/v1/forms/{id}")
+    url = f"/api/v1/forms/{fid}"
+
+    def fields():
+        return {f["name"]: f for f in bridge.read(url)["fields"]}
+
+    asset = bridge.command("POST", f"{url}/fields", {
+        "label": "Asset tag", "type": "text", "name": "asset", "mode": "required_for_agents", "hint": "scan it",
+        "configuration": {"size": 20, "length": 40, "validator": "regex", "regex": "^A-", "validator_error": "bad tag"},
+    })["result"]["field_id"]
+    bridge.command("POST", f"{url}/fields", {"label": "Kind", "type": "choices", "name": "kind",
+                                              "configuration": {"choices": "a:Alpha\nb:Beta", "default": "a"}})
+    bridge.command("POST", f"{url}/fields", {"label": "Urgent", "type": "bool", "name": "urgent",
+                                              "configuration": {"desc": "Needs attention"}})
+    bridge.command("POST", f"{url}/fields", {"label": "Notes", "type": "memo", "name": "details", "mode": "internal_optional"})
+    got = fields()
+    assert list(got) == ["asset", "kind", "urgent", "details"]                     # added in order
+    a = got["asset"]
+    assert (a["mode"], a["hint"], a["is_required"], a["is_enabled"], a["is_deletable"]) == (
+        "required_for_agents", "scan it", True, True, True)
+    assert (a["configuration"]["size"], a["configuration"]["validator"], a["configuration"]["regex"],
+            a["configuration"]["validator_error"]) == (20, "regex", "^A-", "bad tag")
+    assert got["kind"]["configuration"]["choices"] == "a:Alpha\nb:Beta" and got["kind"]["mode"] == "optional"
+    assert got["urgent"]["configuration"]["desc"] == "Needs attention"
+    assert got["details"]["mode"] == "internal_optional"
+
+    # partial updates: the configuration is merged, everything else stays
+    bridge.command("PATCH", f"{url}/fields/{asset}", {"label": "Asset tag (new)", "configuration": {"size": 30}})
+    a = fields()["asset"]
+    assert (a["label"], a["mode"], a["hint"]) == ("Asset tag (new)", "required_for_agents", "scan it")
+    assert (a["configuration"]["size"], a["configuration"]["length"], a["configuration"]["regex"]) == (30, 40, "^A-")
+    bridge.command("PATCH", f"{url}/fields/{asset}", {"mode": "optional", "is_enabled": False, "sort": 99, "hint": ""})
+    a = fields()["asset"]
+    assert (a["mode"], a["is_enabled"], a["sort"], a["hint"]) == ("optional", False, 99, "")
+    assert list(fields())[-1] == "asset"                                           # sort order applies
+    bridge.command("PATCH", f"{url}/fields/{asset}", {"type": "memo", "is_enabled": True})
+    a = fields()["asset"]
+    assert a["type"] == "memo" and a["configuration"]["regex"] is None             # the old type's options are dropped
+
+    # refusals, none of which may change anything
+    bridge.refuses("POST", f"{url}/fields", {"label": "Dup", "type": "text", "name": "KIND"}, because="not unique")
+    bridge.refuses("POST", f"{url}/fields", {"label": "Req", "type": "text", "mode": "required"}, because="Variable name is required")
+    bridge.refuses("POST", f"{url}/fields", {"label": "Opt", "type": "bool", "name": "o", "configuration": {"size": 5}},
+                   because="does not apply")
+    bridge.refuses("POST", f"{url}/fields", {"label": "Rx", "type": "text", "name": "rx", "configuration": {"validator": "regex"}},
+                   because="needs a regex")
+    bridge.refuses("POST", f"{url}/fields", {"label": "Lst", "type": "list-99999", "name": "lst"}, because="Unknown field type")
+    bridge.refuses("PATCH", f"{url}/fields/999999", {"label": "x"}, because="not a field of this form")
+    assert list(fields()) == ["kind", "urgent", "details", "asset"]
+
+    bridge.command("DELETE", f"{url}/fields/{asset}")
+    assert "asset" not in fields()
+    bridge.command("DELETE", f"{url}/fields/{fields()['kind']['id']}?delete_data=true")
+    assert list(fields()) == ["urgent", "details"]
+
+
+def test_core_form_fields_keep_their_locks(bridge):
+    # form 2 is "Ticket Details": subject / message / priority are osTicket's own
+    form = bridge.read("/api/v1/forms/2")
+    subject = next(f for f in form["fields"] if f["name"] == "subject")
+    assert subject["is_deletable"] is False and subject["is_name_locked"] is True
+    url = f"/api/v1/forms/2/fields/{subject['id']}"
+    bridge.refuses("DELETE", url, None, because="core form")
+    bridge.refuses("PATCH", url, {"name": "headline"}, because="variable name")
+    bridge.refuses("PATCH", url, {"type": "bool"}, because="cannot be changed")
+    again = next(f for f in bridge.read("/api/v1/forms/2")["fields"] if f["name"] == "subject")
+    assert (again["label"], again["type"], again["mode"]) == (subject["label"], subject["type"], subject["mode"])
+
+
 def test_a_core_osticket_form_cannot_be_deleted(bridge):
     # osTicket flags its own forms deletable; deleting "Contact Information" (type U) would break
     # user handling, so only custom (type G) forms may be removed through the API.

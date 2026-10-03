@@ -34,6 +34,8 @@ POLICY = {
         ("PATCH", "/api/v1/departments/{dept_id}"), ("DELETE", "/api/v1/departments/{dept_id}"),
         ("GET", "/api/v1/forms"), ("POST", "/api/v1/forms"), ("GET", "/api/v1/forms/{form_id}"),
         ("PATCH", "/api/v1/forms/{form_id}"), ("DELETE", "/api/v1/forms/{form_id}"),
+        ("POST", "/api/v1/forms/{form_id}/fields"), ("PATCH", "/api/v1/forms/{form_id}/fields/{field_id}"),
+        ("DELETE", "/api/v1/forms/{form_id}/fields/{field_id}"),
         ("POST", "/api/v1/priorities"), ("GET", "/api/v1/priorities/{priority_id}"),
         ("PATCH", "/api/v1/priorities/{priority_id}"), ("DELETE", "/api/v1/priorities/{priority_id}"),
         ("GET", "/api/v1/slas"), ("POST", "/api/v1/slas"), ("GET", "/api/v1/slas/{sla_id}"),
