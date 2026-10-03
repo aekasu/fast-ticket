@@ -14,9 +14,15 @@
  * start from the stored state (storedVars) and overlay only what the payload provides.
  *
  * `isadmin` must be the string '1': update() compares it with !==.
+ *
+ * Also editable: phone_ext, notes, is_visible, on_vacation, assigned_only, assign_use_primary_role,
+ * permissions (global permission keys; replaces the list) and department_access (extra departments
+ * with a role each and alerts; replaces the set).
  */
 
 require_once INCLUDE_DIR . 'class.staff.php';
+require_once INCLUDE_DIR . 'class.dept.php';
+require_once INCLUDE_DIR . 'class.role.php';
 require_once dirname(__FILE__) . '/common.php';
 
 class FastApiStaffHandler {
@@ -84,6 +90,48 @@ class FastApiStaffHandler {
                 $vars[$field] = $payload[$field];
             }
         }
+        foreach (['phone_ext', 'notes'] as $field) {
+            if (isset($payload[$field])) {
+                $vars[$field] = $payload[$field];
+            }
+        }
+        // checkboxes: present = on, absent = off
+        foreach (['is_visible' => 'isvisible', 'on_vacation' => 'onvacation', 'assigned_only' => 'assigned_only',
+                  'assign_use_primary_role' => 'assign_use_pri_role'] as $key => $form_key) {
+            if (isset($payload[$key])) {
+                if ($payload[$key]) $vars[$form_key] = 1; else unset($vars[$form_key]);
+            }
+        }
+        // Global permissions: update() rewrites the whole list ([] = none). Unknown keys would be
+        // silently ignored by osTicket, so refuse them here.
+        if (isset($payload['permissions'])) {
+            $known = [];
+            foreach (RolePermission::allPermissions() as $group => $perms) {
+                $known = array_merge($known, array_keys($perms));
+            }
+            $unknown = array_diff((array) $payload['permissions'], $known);
+            if ($unknown) {
+                throw new Exception('Unknown permission(s): ' . implode(', ', $unknown));
+            }
+            $vars['perms'] = array_values((array) $payload['permissions']);
+        }
+        // Extra departments: [{dept_id, role_id, alerts}] replaces the whole set.
+        if (isset($payload['department_access'])) {
+            $vars['dept_access'] = $vars['dept_access_role'] = $vars['dept_access_alerts'] = [];
+            foreach ((array) $payload['department_access'] as $row) {
+                $dept_id = (int) ($row['dept_id'] ?? 0);
+                $role_id = (int) ($row['role_id'] ?? 0);
+                if (!Dept::lookup($dept_id)) {
+                    throw new Exception("Department not found: {$dept_id}");
+                }
+                if (!Role::lookup($role_id)) {
+                    throw new Exception("Role not found: {$role_id}");
+                }
+                $vars['dept_access'][] = $dept_id;
+                $vars['dept_access_role'][$dept_id] = $role_id;
+                $vars['dept_access_alerts'][$dept_id] = !empty($row['alerts']) ? 1 : 0;
+            }
+        }
         if (isset($payload['is_admin'])) {
             if ($payload['is_admin']) $vars['isadmin'] = '1'; else unset($vars['isadmin']);
         }
@@ -104,8 +152,27 @@ class FastApiStaffHandler {
         return $vars;
     }
 
+    /**
+     * A department-access row created by update() keeps the column default (alerts on): the ORM
+     * never writes a false to a field it saw as unset, and the row object in memory still has
+     * its flags unset. Re-read the rows from the database and switch alerts off where asked.
+     */
+    private static function applyAlertFlags(Staff $staff, array $vars) {
+        foreach ((array) ($vars['dept_access'] ?? []) as $dept_id) {
+            if (!empty($vars['dept_access_alerts'][$dept_id])) {
+                continue;
+            }
+            $row = StaffDeptAccess::objects()->filter(['staff_id' => $staff->getId(), 'dept_id' => $dept_id])->one();
+            if ($row->isAlertsEnabled()) {
+                $row->setAlerts(false);
+                $row->save();
+            }
+        }
+    }
+
     private static function save(Staff $staff, array $vars) {
         FastApiModel::saveViaUpdate($staff, $vars, 'Staff member');
+        self::applyAlertFlags($staff, $vars);
     }
 
     public static function create($payload, $requester_staff_id) {
