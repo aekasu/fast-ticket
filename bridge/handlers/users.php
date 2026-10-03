@@ -69,6 +69,7 @@ class FastApiUserHandler {
         if ($values && ($errors = FastApiModel::applyAnswers($user, $values, 'U'))) {
             throw new Exception('User data rejected: ' . json_encode($errors));
         }
+        FastApiModel::applyCustomFields($user, (array) ($payload['custom_fields'] ?? []), 'U');
     }
 
     public static function create($payload, $staff_id) {

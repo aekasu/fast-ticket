@@ -51,6 +51,7 @@ class FastApiOrgHandler {
         if ($values && ($errors = FastApiModel::applyAnswers($org, $values, 'O'))) {
             throw new Exception('Organization data rejected: ' . json_encode($errors));
         }
+        FastApiModel::applyCustomFields($org, (array) ($payload['custom_fields'] ?? []), 'O');
     }
 
     private static function uniqueName($name, $except_id = 0) {

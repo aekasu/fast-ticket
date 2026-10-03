@@ -114,6 +114,14 @@ class FastApiTicketHandler {
             'ip'         => '127.0.0.1',
         ];
 
+        // Custom fields are read from the same vars by their variable names (topic forms included).
+        foreach ((array) ($payload['custom_fields'] ?? []) as $name => $value) {
+            if (array_key_exists($name, $vars) || in_array($name, ['uid', 'duedate', 'message'], true)) {
+                throw new Exception("'{$name}' is a built-in ticket field, not a custom one.");
+            }
+            $vars[$name] = $value;
+        }
+
         $errors = [];
         // autorespond=false, alertstaff=false: creating a ticket through the API sends no email.
         $ticket = Ticket::create($vars, $errors, 'API', false, false);
@@ -291,6 +299,19 @@ class FastApiTicketHandler {
             }
             if (!$done) {
                 $errors[$name] = ["The ticket has no '{$name}' field"];
+            }
+        }
+        // Custom fields: any editable field of the ticket's forms (the ticket form and its help topic's forms).
+        foreach ((array) ($payload['custom_fields'] ?? []) as $name => $value) {
+            $errs = ["The ticket has no '{$name}' field"];
+            foreach ($entries as $entry) {
+                if ($entry->getField($name)) {
+                    $errs = FastApiModel::setEntryAnswer($entry, $name, $value);
+                    break;
+                }
+            }
+            if ($errs) {
+                $errors[$name] = $errs;
             }
         }
         if ($errors) {

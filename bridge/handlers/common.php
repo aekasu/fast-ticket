@@ -48,6 +48,91 @@ class FastApiModel {
      *
      * $form_type is DynamicForm.type ('O' organization, 'U' user).
      */
+    /**
+     * Validate $value for the entry's field $name and store it as the entry's answer. Returns the
+     * field's error list ([] on success). osTicket keeps answers in their database form: a choice is
+     * stored as its JSON label map plus the key in value_id, so the cleaned value goes through
+     * to_database() first. Presentation-only and non-editable fields are refused.
+     */
+    static function setEntryAnswer($entry, $name, $value, $staff_view = true) {
+        if (!($field = $entry->getField($name))) {
+            return ["The form has no '{$name}' field"];
+        }
+        if (!$field->hasData() || $field->isPresentationOnly()) {
+            return ["'{$name}' is not a field that holds an answer"];
+        }
+        if ($staff_view && !($field->isVisibleToStaff() && $field->isEditableToStaff())) {
+            return ["'{$name}' cannot be edited by staff"];
+        }
+        $clean = $field->parse($value);
+        // A choice field's parse() turns an unknown key into an empty value without complaint; a value
+        // that was given but parsed to nothing is a rejection, not a clear.
+        $given = !($value === '' || $value === [] || $value === null || $value === false);
+        if ($given && ($clean === null || $clean === [] || $clean === '')) {
+            return [sprintf("%s is not a valid value for '%s'", is_scalar($value) ? "'{$value}'" : json_encode($value), $name)];
+        }
+        $field->validateEntry($clean);
+        if ($field->errors()) {
+            return array_values((array) $field->errors());
+        }
+        // ChoiceField::validateEntry() does not check membership: every given key must be a choice.
+        if ($given && $field instanceof ChoiceField) {
+            $choices = $field->getChoices();
+            foreach ((array) $value as $key) {
+                if (!is_scalar($key) || !isset($choices[$key])) {
+                    return ["'" . (is_scalar($key) ? $key : json_encode($key)) . "' is not one of the choices of '{$name}' ("
+                        . implode(', ', array_keys($choices)) . ')'];
+                }
+            }
+        }
+        $db = $field->to_database($clean);
+        if (is_array($db)) {
+            $entry->setAnswer($name, $db[0], $db[1]);
+        } else {
+            $entry->setAnswer($name, $db);
+        }
+        return [];
+    }
+
+    /**
+     * Set custom-field answers ({variable name => value}) on the owner's form entries of $form_type
+     * (a user, organization or task has one entry of its type). Every name must be a field of that
+     * form that staff may edit; nothing is saved unless all values are accepted.
+     */
+    static function applyCustomFields($owner, array $custom, $form_type) {
+        if (!$custom) {
+            return;
+        }
+        $errors = [];
+        $entries = [];
+        foreach ($owner->getDynamicData() as $entry) {
+            $form = $entry->getDynamicForm();
+            if (!$form || $form->get('type') !== $form_type) {
+                continue;
+            }
+            $entry->addMissingFields();
+            $entries[] = $entry;
+        }
+        foreach ($custom as $name => $value) {
+            $errs = ["The form has no '{$name}' field"];
+            foreach ($entries as $entry) {
+                if ($entry->getField($name)) {
+                    $errs = self::setEntryAnswer($entry, $name, $value);
+                    break;
+                }
+            }
+            if ($errs) {
+                $errors[$name] = $errs;
+            }
+        }
+        if ($errors) {
+            throw new Exception('Custom fields rejected: ' . json_encode($errors));
+        }
+        foreach ($entries as $entry) {
+            $entry->save();
+        }
+    }
+
     static function applyAnswers($owner, array $values, $form_type) {
         $errors = [];
         $entries = [];
