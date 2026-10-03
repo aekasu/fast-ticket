@@ -102,7 +102,8 @@ POLICY = {
     "POST /api/v1/tasks/": "perm:task.create", "DELETE /api/v1/tasks/{task_id}": "perm:task.delete",
     "PATCH /api/v1/tasks/{task_id}": "perm:task.edit", "POST /api/v1/tasks/{task_id}/assign": "perm:task.assign",
     "POST /api/v1/tasks/{task_id}/close": "perm:task.close", "POST /api/v1/tasks/{task_id}/reopen": "perm:task.close",
-    "POST /api/v1/tasks/{task_id}/note": "perm:task.reply",
+    "POST /api/v1/tasks/{task_id}/note": "perm:task.reply", "POST /api/v1/tasks/{task_id}/reply": "perm:task.reply",
+    "POST /api/v1/tasks/{task_id}/claim": "perm:task.assign", "POST /api/v1/tasks/{task_id}/transfer": "perm:task.transfer",
 }
 
 

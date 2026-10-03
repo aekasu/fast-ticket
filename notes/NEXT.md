@@ -23,7 +23,7 @@ after. fast-ticket should work against any osTicket instance out of the box.
 
 ### Depth audit (started 2026-10-03) — do before more breadth
 Field-by-field comparison of each existing create/PATCH against osTicket's own edit page (`include/staff/*.inc.php`).
-Done: tickets (PATCH), staff, departments, help topics, SLAs, organizations, users. **Gaps found, still open:**
+Done: tickets (PATCH), staff, departments, help topics, SLAs, organizations, users, tasks. **Gaps found, still open:**
 - ~~Department~~ done: parent, SLA, schedule, template, auto-response email, signature, status, assignment, auto-claim/reopen flags, alert recipients, auto-responses, extended members (the raw `flags` integer is gone from the API).
 - ~~Help topic~~ done: status, parent, default ticket status, forms (ordered; core ticket form never detached), number format, no-autoresponse, auto-assign. Not yet: switching individual form fields off per topic (`fields[]`) — they are preserved as stored.
 - ~~SLA~~ done: schedule, transient, disable-overdue-alerts (priority escalation flag is preserved, not editable).
@@ -44,7 +44,7 @@ Work in this order; for every item follow the "Adding a scoped read" rule in AGE
 - Ticket export (PDF/ZIP), edit lock: skip until needed (low).
 
 **B. Tasks / users / orgs / staff depth**
-- Tasks: create/assign/close/reopen/note/edit/delete exist; check transfer, thread attachments, task forms.
+- Tasks: ~~assign to a team, claim, transfer, post update~~ done. Still open: collaborators, thread-entry edit/resend (shares ticket code), attachments, custom task-form fields.
 - Users: ~~lock/unlock, register account, password-reset and activation emails~~ done (`/users/{id}/account`, `user.manage`), organizations' account manager/domain/sharing/auto-collaboration/primary contacts done. Still open: CSV import.
 - Organizations: check add/remove members (may ride on user update).
 - Staff: ~~permissions, extra-department access, assigned_only, vacation, visibility, phone_ext, notes~~ now on create/PATCH + detail read. Still open: password reset email, per-team alert flags, auth backend, CSV import.

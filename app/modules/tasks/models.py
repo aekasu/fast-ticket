@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.modules.tickets.models import CommandResponse, ThreadEntry  # reuse shared types
 
@@ -65,8 +65,32 @@ class TaskCreate(BaseModel):
 
 
 class TaskAssign(BaseModel):
-    staff_id: int = Field(gt=0)
+    """Assign to an agent or to a team — exactly one."""
+
+    staff_id: Optional[int] = Field(default=None, gt=0)
+    team_id: Optional[int] = Field(default=None, gt=0)
     note: str = ""
+
+    @model_validator(mode="after")
+    def _one_assignee(self):
+        if (self.staff_id is None) == (self.team_id is None):
+            raise ValueError("give exactly one of staff_id, team_id")
+        return self
+
+
+class TaskClaim(BaseModel):
+    note: str = Field(default="", max_length=10000)
+
+
+class TaskTransfer(BaseModel):
+    dept_id: int = Field(gt=0)
+    note: str = Field(default="", max_length=10000)
+
+
+class TaskReply(BaseModel):
+    """An update posted to the task's collaborators."""
+
+    message: str = Field(min_length=1, max_length=100000)
 
 
 class TaskClose(BaseModel):

@@ -593,6 +593,21 @@ def test_task_lifecycle(bridge, uniq):
     bridge.command("POST", f"/api/v1/tasks/{tid}/note", {"title": "t", "note": "a task note"})
     assert any("a task note" in e["body"] for e in bridge.read(f"/api/v1/tasks/{tid}")["thread"])
 
+    bridge.command("POST", f"/api/v1/tasks/{tid}/reply", {"message": "an update for collaborators"})
+    assert any("an update for collaborators" in e["body"] for e in bridge.read(f"/api/v1/tasks/{tid}")["thread"])
+
+    # claim (held by me already -> allowed), team assignment, transfer
+    bridge.command("POST", f"/api/v1/tasks/{tid}/claim", {"note": "mine"})
+    team = bridge.create("/api/v1/teams", {"name": f"e2e-task-team-{uniq}", "members": [1]}, cleanup="/api/v1/teams/{id}")
+    bridge.command("POST", f"/api/v1/tasks/{tid}/assign", {"team_id": team})
+    got = bridge.read(f"/api/v1/tasks/{tid}")
+    assert got["team_id"] == team
+    bridge.command("POST", f"/api/v1/tasks/{tid}/transfer", {"dept_id": 1, "note": "back"})
+    assert bridge.read(f"/api/v1/tasks/{tid}")["dept_id"] == 1
+    bridge.refuses("POST", f"/api/v1/tasks/{tid}/transfer", {"dept_id": 1}, because="already in the department")
+    bridge.refuses("POST", f"/api/v1/tasks/{tid}/assign", {"team_id": team}, because="already assigned")
+    bridge.refuses("POST", f"/api/v1/tasks/{tid}/assign", {"team_id": 999999}, because="Team not found")
+
     bridge.command("POST", f"/api/v1/tasks/{tid}/close", {"note": "done"})
     assert bridge.read(f"/api/v1/tasks/{tid}")["status"]["state"] == "closed"
     bridge.refuses("POST", f"/api/v1/tasks/{tid}/close", {}, because="already closed")

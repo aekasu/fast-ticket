@@ -376,6 +376,9 @@ async def test_all_write_endpoints_require_auth():
         ("POST",   "/"),
         ("PATCH",  "/1"),
         ("POST",   "/1/assign"),
+        ("POST",   "/1/claim"),
+        ("POST",   "/1/transfer"),
+        ("POST",   "/1/reply"),
         ("POST",   "/1/close"),
         ("POST",   "/1/reopen"),
         ("POST",   "/1/note"),
@@ -387,3 +390,23 @@ async def test_all_write_endpoints_require_auth():
             kwargs = {} if method == "DELETE" else {"json": {}}
             resp = await func(TASKS_URL + path, **kwargs)
             assert resp.status_code == 401, f"{method} {path} → {resp.status_code}"
+
+
+@pytest.mark.asyncio
+async def test_task_assign_takes_exactly_one_assignee_and_claim_transfer_reply_queue():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        staff = await ac.post(TASKS_URL + "/5/assign", json={"staff_id": 2}, headers=_auth(["task.assign"]))
+        team = await ac.post(TASKS_URL + "/5/assign", json={"team_id": 3, "note": "n"}, headers=_auth(["task.assign"]))
+        both = await ac.post(TASKS_URL + "/5/assign", json={"staff_id": 2, "team_id": 3}, headers=_auth(["task.assign"]))
+        none = await ac.post(TASKS_URL + "/5/assign", json={}, headers=_auth(["task.assign"]))
+        claim = await ac.post(TASKS_URL + "/5/claim", json={}, headers=_auth(["task.assign"]))
+        move = await ac.post(TASKS_URL + "/5/transfer", json={"dept_id": 2, "note": "m"}, headers=_auth(["task.transfer"]))
+        reply = await ac.post(TASKS_URL + "/5/reply", json={"message": "an update"}, headers=_auth(["task.reply"]))
+        empty = await ac.post(TASKS_URL + "/5/reply", json={"message": ""}, headers=_auth(["task.reply"]))
+        denied = await ac.post(TASKS_URL + "/5/transfer", json={"dept_id": 2}, headers=_auth(["task.assign"]))
+    assert [r.status_code for r in (staff, team, claim, move, reply)] == [202] * 5
+    assert (both.status_code, none.status_code, empty.status_code, denied.status_code) == (422, 422, 422, 403)
+    rows = await _inbox_rows()
+    assert [r.command_type for r in rows] == ["task.assign", "task.assign", "task.claim", "task.transfer", "task.reply"]
+    assert json.loads(rows[1].payload) == {"task_id": 5, "team_id": 3, "note": "n"}
+    assert json.loads(rows[3].payload) == {"task_id": 5, "dept_id": 2, "note": "m"}

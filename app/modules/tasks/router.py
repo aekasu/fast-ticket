@@ -6,10 +6,11 @@ query (``read_repository.task_visibility``); a task they may not open is a 404.
 Writes — permission map (role permissions):
   task.create  — create tasks
   task.close   — close / reopen tasks
-  task.assign  — assign tasks to staff
+  task.assign  — assign tasks to an agent or team, claim
+  task.transfer — transfer to another department
   task.delete  — delete tasks
   task.edit    — edit task metadata
-  task.reply   — add notes to tasks
+  task.reply   — add notes and post updates
 """
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
@@ -20,6 +21,7 @@ from app.core.security import require_perm, require_staff
 from app.modules.tasks import service
 from app.modules.tasks.models import (
     TaskAssign,
+    TaskClaim,
     TaskClose,
     TaskCreate,
     TaskDetail,
@@ -27,6 +29,8 @@ from app.modules.tasks.models import (
     TaskListResponse,
     TaskNote,
     TaskReopen,
+    TaskReply,
+    TaskTransfer,
 )
 from app.modules.tickets.models import CommandResponse
 
@@ -111,7 +115,7 @@ async def edit_task(
     "/{task_id}/assign",
     response_model=CommandResponse,
     status_code=202,
-    summary="Assign a task to a staff member",
+    summary="Assign a task to an agent or a team",
 )
 async def assign_task(
     task_id: int,
@@ -121,6 +125,60 @@ async def assign_task(
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
     return await service.assign_task(
+        session, task_id, body, current_user["staff_id"], idempotency_key
+    )
+
+
+@router.post(
+    "/{task_id}/claim",
+    response_model=CommandResponse,
+    status_code=202,
+    summary="Assign an open task to yourself",
+)
+async def claim_task(
+    task_id: int,
+    body: TaskClaim,
+    current_user: dict = require_perm("task.assign"),
+    session: AsyncSession = Depends(get_session),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    return await service.claim_task(
+        session, task_id, body, current_user["staff_id"], idempotency_key
+    )
+
+
+@router.post(
+    "/{task_id}/transfer",
+    response_model=CommandResponse,
+    status_code=202,
+    summary="Transfer a task to another department",
+)
+async def transfer_task(
+    task_id: int,
+    body: TaskTransfer,
+    current_user: dict = require_perm("task.transfer"),
+    session: AsyncSession = Depends(get_session),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    return await service.transfer_task(
+        session, task_id, body, current_user["staff_id"], idempotency_key
+    )
+
+
+@router.post(
+    "/{task_id}/reply",
+    response_model=CommandResponse,
+    status_code=202,
+    summary="Post an update to the task's collaborators",
+)
+async def reply_to_task(
+    task_id: int,
+    body: TaskReply,
+    current_user: dict = require_perm("task.reply"),
+    session: AsyncSession = Depends(get_session),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    return await service.reply_to_task(
         session, task_id, body, current_user["staff_id"], idempotency_key
     )
 

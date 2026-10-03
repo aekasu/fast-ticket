@@ -8,6 +8,7 @@ from app.integration.osticket import read_repository as repo
 from app.integration.osticket.commands_service import dispatch_command
 from app.modules.tasks.models import (
     TaskAssign,
+    TaskClaim,
     TaskClose,
     TaskCreate,
     TaskDetail,
@@ -16,6 +17,8 @@ from app.modules.tasks.models import (
     TaskListResponse,
     TaskNote,
     TaskReopen,
+    TaskReply,
+    TaskTransfer,
     TaskStatusSchema,
 )
 from app.modules.tickets.models import CommandResponse, ThreadEntry
@@ -150,6 +153,63 @@ async def assign_task(
     cmd = await dispatch_command(
         session=session,
         command_type="task.assign",
+        aggregate_type="task",
+        aggregate_id=str(task_id),
+        payload={"task_id": task_id, **body.model_dump(exclude_none=True)},
+        requested_by_staff_id=staff_id,
+        idempotency_key=idempotency_key,
+    )
+    return _cmd_resp(cmd, idempotency_key)
+
+
+async def claim_task(
+    session: AsyncSession,
+    task_id: int,
+    body: TaskClaim,
+    staff_id: int,
+    idempotency_key: str | None,
+) -> CommandResponse:
+    cmd = await dispatch_command(
+        session=session,
+        command_type="task.claim",
+        aggregate_type="task",
+        aggregate_id=str(task_id),
+        payload={"task_id": task_id, **body.model_dump()},
+        requested_by_staff_id=staff_id,
+        idempotency_key=idempotency_key,
+    )
+    return _cmd_resp(cmd, idempotency_key)
+
+
+async def transfer_task(
+    session: AsyncSession,
+    task_id: int,
+    body: TaskTransfer,
+    staff_id: int,
+    idempotency_key: str | None,
+) -> CommandResponse:
+    cmd = await dispatch_command(
+        session=session,
+        command_type="task.transfer",
+        aggregate_type="task",
+        aggregate_id=str(task_id),
+        payload={"task_id": task_id, **body.model_dump()},
+        requested_by_staff_id=staff_id,
+        idempotency_key=idempotency_key,
+    )
+    return _cmd_resp(cmd, idempotency_key)
+
+
+async def reply_to_task(
+    session: AsyncSession,
+    task_id: int,
+    body: TaskReply,
+    staff_id: int,
+    idempotency_key: str | None,
+) -> CommandResponse:
+    cmd = await dispatch_command(
+        session=session,
+        command_type="task.reply",
         aggregate_type="task",
         aggregate_id=str(task_id),
         payload={"task_id": task_id, **body.model_dump()},
