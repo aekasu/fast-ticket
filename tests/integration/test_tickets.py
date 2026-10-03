@@ -165,12 +165,14 @@ async def test_thread_and_collaborators_are_read_with_the_same_access():
     row = {"ticket_id": 9, "number": "1", "subject": "s", "status_id": 1, "status_name": "Open",
            "status_state": "open", "dept_id": 1, "dept_name": "Support", "created": "2024-01-01T00:00:00",
            "updated": "2024-01-01T00:00:00"}
-    thread, collab = AsyncMock(return_value=[]), AsyncMock(return_value=[])
+    thread, collab, customs = AsyncMock(return_value=[]), AsyncMock(return_value=[]), AsyncMock(return_value=[])
     with patch("app.modules.tickets.service.repo.get_ticket", new=AsyncMock(return_value=row)), \
          patch("app.modules.tickets.service.repo.get_ticket_thread", new=thread), \
-         patch("app.modules.tickets.service.repo.get_ticket_collaborators", new=collab):
+         patch("app.modules.tickets.service.repo.get_ticket_collaborators", new=collab), \
+         patch("app.modules.tickets.service.repo.get_ticket_custom_fields", new=customs):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             await ac.get(TICKETS_URL + "/9", headers=_auth([]))
+    assert customs.await_args.kwargs["access"].staff_id == 5
     assert thread.await_args.kwargs["access"].staff_id == 5
     assert collab.await_args.kwargs["access"].staff_id == 5
 
@@ -210,6 +212,9 @@ async def test_get_ticket_returns_detail():
         patch("app.modules.tickets.service.repo.get_ticket", new=AsyncMock(return_value=MOCK_TICKET)),
         patch("app.modules.tickets.service.repo.get_ticket_thread", new=AsyncMock(return_value=[MOCK_THREAD_ENTRY])),
         patch("app.modules.tickets.service.repo.get_ticket_collaborators", new=AsyncMock(return_value=[MOCK_COLLABORATOR])),
+        patch("app.modules.tickets.service.repo.get_ticket_custom_fields", new=AsyncMock(return_value=[
+            {"name": "asset", "label": "Asset", "type": "text", "value": "A-1", "value_id": None},
+            {"name": "subject", "label": "Issue", "type": "text", "value": "dup of the top-level subject", "value_id": None}])),
     ):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             resp = await ac.get(TICKETS_URL + "/1", headers=_auth(["ticket.create"]))
@@ -221,6 +226,8 @@ async def test_get_ticket_returns_detail():
     assert data["thread"][0]["type"] == "M"
     assert len(data["collaborators"]) == 1
     assert data["collaborators"][0]["name"] == "Bob Watcher"
+    assert [c["name"] for c in data["custom_fields"]] == ["asset"]       # the built-in subject is not repeated
+    assert data["custom_fields"][0]["value"] == "A-1"
 
 
 @pytest.mark.asyncio
@@ -724,3 +731,20 @@ async def test_entry_edit_and_resend_queue_commands():
     rows = await _inbox_rows()
     assert [r.command_type for r in rows] == ["ticket.entry.edit", "ticket.entry.resend"]
     assert json.loads(rows[0].payload) == {"ticket_id": 5, "entry_id": 8, "body": "fixed", "resend": True, "signature": "mine"}
+
+
+@pytest.mark.asyncio
+async def test_custom_fields_are_accepted_typed_and_queued():
+    body = {"custom_fields": {"asset": "A-9", "urgent": True, "count": 3, "kinds": ["a", "b"], "note": ""}}
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        upd = await ac.patch(TICKETS_URL + "/5", json=body, headers=_auth(["ticket.edit"]))
+        new = await ac.post(TICKETS_URL + "/", json={"subject": "s", "message": "m", **body}, headers=_auth(["ticket.create"]))
+        bad_name = await ac.patch(TICKETS_URL + "/5", json={"custom_fields": {"9bad": "x"}}, headers=_auth(["ticket.edit"]))
+        bad_value = await ac.patch(TICKETS_URL + "/5", json={"custom_fields": {"a": {"nested": 1}}}, headers=_auth(["ticket.edit"]))
+        too_many = await ac.patch(TICKETS_URL + "/5", json={"custom_fields": {f"f{i}": "x" for i in range(65)}},
+                                  headers=_auth(["ticket.edit"]))
+    assert (upd.status_code, new.status_code) == (202, 202)
+    assert (bad_name.status_code, bad_value.status_code, too_many.status_code) == (422, 422, 422)
+    rows = await _inbox_rows()
+    assert json.loads(rows[0].payload)["custom_fields"] == body["custom_fields"]
+    assert json.loads(rows[1].payload)["custom_fields"] == body["custom_fields"]

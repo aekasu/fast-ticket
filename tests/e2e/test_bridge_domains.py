@@ -867,6 +867,89 @@ def test_ticket_thread_entry_edit_and_resend(bridge, uniq):
     bridge.refuses("PATCH", f"{url}/thread/999999", {"body": "x"}, because="not found")
 
 
+def _answers(obj) -> dict:
+    return {a["name"]: a for a in obj["custom_fields"]}
+
+
+def test_ticket_custom_fields_from_a_help_topic_form(bridge, uniq):
+    form = bridge.create("/api/v1/forms", {"title": f"e2e-tkform-{uniq}", "type": "G"}, cleanup="/api/v1/forms/{id}")
+    furl = f"/api/v1/forms/{form}"
+    bridge.command("POST", f"{furl}/fields", {"label": "Asset", "type": "text", "name": "asset", "mode": "required_for_agents"})
+    bridge.command("POST", f"{furl}/fields", {"label": "Kind", "type": "choices", "name": "kind",
+                                              "configuration": {"choices": "a:Alpha\nb:Beta"}})
+    bridge.command("POST", f"{furl}/fields", {"label": "Urgent", "type": "bool", "name": "urgent"})
+    bridge.command("POST", f"{furl}/fields", {"label": "Memo", "type": "memo", "name": "memo"})
+    topic = bridge.create("/api/v1/topics", {"topic": f"e2e-tkt-{uniq}", "dept_id": 1, "form_ids": [2, form]},
+                          cleanup="/api/v1/topics/{id}")
+
+    email = _email(uniq, "cf")
+    # a required custom field left out is refused by osTicket's own form validation
+    bridge.refuses("POST", "/api/v1/tickets/", {"subject": f"cf {uniq}", "message": "m", "email": email, "name": "CF",
+                                                 "dept_id": 1, "topic_id": topic}, because="required")
+    tk = bridge.create("/api/v1/tickets/", {"subject": f"cf {uniq}", "message": "m", "email": email, "name": "CF",
+                                            "dept_id": 1, "topic_id": topic,
+                                            "custom_fields": {"asset": "A-100", "kind": "a", "urgent": True, "memo": "long text"}})
+    holder = bridge.read(f"/api/v1/tickets/{tk}")
+    bridge._cleanups.append(("DELETE", f"/api/v1/users/{holder['user_id']}"))
+    bridge._cleanups.append(("DELETE", f"/api/v1/tickets/{tk}"))
+    got = _answers(holder)
+    assert set(got) == {"asset", "kind", "urgent", "memo"}                 # subject / message / priority are not repeated
+    assert got["asset"]["value"] == "A-100" and got["memo"]["value"] == "long text"
+    assert "Alpha" in got["kind"]["value"]
+    assert got["urgent"]["value"] in ("1", "true", "True")
+
+    url = f"/api/v1/tickets/{tk}"
+    bridge.command("PATCH", url, {"custom_fields": {"asset": "A-200", "kind": "b", "urgent": False, "memo": ""}})
+    got = _answers(bridge.read(url))
+    assert got["asset"]["value"] == "A-200" and "Beta" in got["kind"]["value"]
+    assert got["urgent"]["value"] in (None, "", "0", "false", "False") and not got["memo"]["value"]
+
+    bridge.command("PATCH", url, {"custom_fields": {"memo": "again"}, "source": "Phone"})   # others untouched
+    got = _answers(bridge.read(url))
+    assert got["memo"]["value"] == "again" and got["asset"]["value"] == "A-200"
+
+    bridge.refuses("PATCH", url, {"custom_fields": {"nonexistent": "x"}}, because="no 'nonexistent' field")
+    bridge.refuses("PATCH", url, {"custom_fields": {"kind": "zzz"}}, because="is not one of the choices")
+    bridge.refuses("PATCH", url, {"custom_fields": {"asset": ""}}, because="required")
+    assert _answers(bridge.read(url))["asset"]["value"] == "A-200"          # a refused edit changes nothing
+
+
+def test_user_organization_and_task_custom_fields(bridge, uniq):
+    # the user / organization / task forms are osTicket's own: add a field, use it, and always take it away
+    spec = {1: ("users", "U"), 4: ("orgs", "O"), 5: ("tasks", "A")}
+    field_ids = {}
+    for form_id in spec:
+        fid = bridge.command("POST", f"/api/v1/forms/{form_id}/fields",
+                             {"label": "E2E probe", "type": "text", "name": f"e2eprobe{uniq[:6]}"})["result"]["field_id"]
+        field_ids[form_id] = fid
+        bridge._cleanups.append(("DELETE", f"/api/v1/forms/{form_id}/fields/{fid}?delete_data=true"))
+    name = f"e2eprobe{uniq[:6]}"
+
+    uid = bridge.create("/api/v1/users", {"name": "E2E CF User", "email": _email(uniq, "cfu"), "custom_fields": {name: "u1"}},
+                        cleanup="/api/v1/users/{id}")
+    assert _answers(bridge.read(f"/api/v1/users/{uid}"))[name]["value"] == "u1"
+    bridge.command("PATCH", f"/api/v1/users/{uid}", {"custom_fields": {name: "u2"}})
+    assert _answers(bridge.read(f"/api/v1/users/{uid}"))[name]["value"] == "u2"
+    bridge.refuses("PATCH", f"/api/v1/users/{uid}", {"custom_fields": {"nope": "x"}}, because="no 'nope' field")
+    got = bridge.read(f"/api/v1/users/{uid}")
+    assert "phone" not in _answers(got) and "notes" not in _answers(got)       # built-ins live at the top level
+
+    oid = bridge.create("/api/v1/orgs", {"name": f"e2e-cf-org-{uniq}", "custom_fields": {name: "o1"}}, cleanup="/api/v1/orgs/{id}")
+    assert _answers(bridge.read(f"/api/v1/orgs/{oid}"))[name]["value"] == "o1"
+    bridge.command("PATCH", f"/api/v1/orgs/{oid}", {"custom_fields": {name: "o2"}, "address": "kept"})
+    got = bridge.read(f"/api/v1/orgs/{oid}")
+    assert _answers(got)[name]["value"] == "o2" and got["address"] == "kept"
+
+    tid = bridge.create("/api/v1/tasks/", {"title": f"e2e cf task {uniq}", "description": "d", "dept_id": 1,
+                                           "custom_fields": {name: "t1"}}, cleanup="/api/v1/tasks/{id}")
+    assert _answers(bridge.read(f"/api/v1/tasks/{tid}"))[name]["value"] == "t1"
+    bridge.command("PATCH", f"/api/v1/tasks/{tid}", {"custom_fields": {name: "t2"}})
+    got = bridge.read(f"/api/v1/tasks/{tid}")
+    assert _answers(got)[name]["value"] == "t2" and got["title"] == f"e2e cf task {uniq}"
+    bridge.refuses("POST", "/api/v1/tasks/", {"title": "x", "description": "d", "custom_fields": {"title": "clash"}},
+                   because="built-in task field")
+
+
 def test_ticket_merge_combines_children_into_the_parent_and_closes_them(bridge, uniq):
     holder = {}
     parent = _new_ticket(bridge, uniq, holder, "p")

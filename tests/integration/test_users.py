@@ -75,7 +75,10 @@ async def test_list_orgs_returns_200():
 @pytest.mark.asyncio
 async def test_get_org_returns_detail():
     with patch("app.modules.users.service.repo.get_organization", new=AsyncMock(return_value=dict(MOCK_ORG))), \
-         patch("app.modules.users.service.repo.get_organization_primary_contacts", new=AsyncMock(return_value=[7])):
+         patch("app.modules.users.service.repo.get_organization_primary_contacts", new=AsyncMock(return_value=[7])), \
+         patch("app.modules.users.service.repo.get_organization_custom_fields", new=AsyncMock(return_value=[
+             {"name": "tier", "label": "Tier", "type": "choices", "value": '{"g": "Gold"}', "value_id": 4},
+             {"name": "website", "label": "Website", "type": "text", "value": "dup", "value_id": None}])):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             resp = await ac.get("/api/v1/orgs/1", headers=_auth(["user.dir"]))
     assert resp.status_code == 200
@@ -85,6 +88,7 @@ async def test_get_org_returns_detail():
     assert (data["manager_staff_id"], data["manager_team_id"], data["domain"]) == (0, 4, "acme.corp")
     assert (data["sharing"], data["collab_all_members"], data["collab_primary_contacts"],
             data["assign_account_manager"], data["primary_contact_ids"]) == ("primary_contacts", True, False, True, [7])
+    assert data["custom_fields"] == [{"name": "tier", "label": "Tier", "type": "choices", "value": '{"g": "Gold"}', "value_id": 4}]
 
 
 @pytest.mark.asyncio
@@ -159,7 +163,8 @@ async def test_list_users_returns_200():
 @pytest.mark.asyncio
 async def test_get_user_returns_detail():
     with patch("app.modules.users.service.repo.get_user", new=AsyncMock(return_value=dict(MOCK_USER, status=1))), \
-         patch("app.modules.users.service.repo.get_user_account", new=AsyncMock(return_value=None)):
+         patch("app.modules.users.service.repo.get_user_account", new=AsyncMock(return_value=None)), \
+         patch("app.modules.users.service.repo.get_user_custom_fields", new=AsyncMock(return_value=[])):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             resp = await ac.get("/api/v1/users/1", headers=_auth(["user.dir"]))
     assert resp.status_code == 200
@@ -173,7 +178,8 @@ async def test_get_user_returns_detail():
 async def test_user_detail_decodes_the_account_status_and_never_a_password():
     acct = {"username": "wile", "timezone": "UTC", "status": 0x1 | 0x2 | 0x4, "registered": _NOW, "passwd": "x"}
     with patch("app.modules.users.service.repo.get_user", new=AsyncMock(return_value=dict(MOCK_USER))), \
-         patch("app.modules.users.service.repo.get_user_account", new=AsyncMock(return_value=acct)):
+         patch("app.modules.users.service.repo.get_user_account", new=AsyncMock(return_value=acct)), \
+         patch("app.modules.users.service.repo.get_user_custom_fields", new=AsyncMock(return_value=[])):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             data = (await ac.get("/api/v1/users/1", headers=_auth(["user.dir"]))).json()
     assert data["account"]["status"] == "locked" and data["account"]["require_password_reset"] is True

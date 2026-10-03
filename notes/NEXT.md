@@ -27,7 +27,7 @@ Done: tickets (PATCH), staff, departments, help topics, SLAs, organizations, use
 - ~~Department~~ done: parent, SLA, schedule, template, auto-response email, signature, status, assignment, auto-claim/reopen flags, alert recipients, auto-responses, extended members (the raw `flags` integer is gone from the API).
 - ~~Help topic~~ done: status, parent, default ticket status, forms (ordered; core ticket form never detached), number format, no-autoresponse, auto-assign. Not yet: switching individual form fields off per topic (`fields[]`) — they are preserved as stored.
 - ~~SLA~~ done: schedule, transient, disable-overdue-alerts (priority escalation flag is preserved, not editable).
-- ~~Dynamic forms cannot define fields~~ done: `POST/PATCH/DELETE /forms/{id}/fields` (type, name, label, mode, hint, order, enabled, typed configuration). **Next gap: answering them** — tickets, users, organizations and tasks cannot read or set custom-field answers yet (only the built-in subject/priority/phone/notes). Do that next.
+- ~~Dynamic forms cannot define fields~~ done: `POST/PATCH/DELETE /forms/{id}/fields` (type, name, label, mode, hint, order, enabled, typed configuration). **Answering them is done too** (`custom_fields` on create/PATCH and in the detail reads of tickets, users, organizations and tasks).
 - Team: complete except alert flags. User/org/task: not compared yet.
 
 ### 0. Replicate osTicket — gap audit (2026-09-30)

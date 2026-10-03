@@ -308,6 +308,27 @@ async def get_ticket_thread(session: AsyncSession, ticket_id: int, *, access: "S
     return list(result.mappings().all())
 
 
+_CUSTOM_FIELDS_SQL = """
+    SELECT ff.name, ff.label, ff.type, ev.value, ev.value_id
+    FROM ost_form_entry fe
+    JOIN ost_form_entry_values ev ON ev.entry_id = fe.id
+    JOIN ost_form_field ff ON ff.id = ev.field_id
+    WHERE fe.object_type = :object_type AND fe.object_id = :object_id
+      AND (ff.flags & 1) > 0        -- enabled
+      AND (ff.flags & 4096) > 0     -- visible to agents (FLAG_AGENT_VIEW)
+      AND ff.name <> ''
+      {visible}
+    ORDER BY fe.sort, ff.sort, ff.id
+"""
+
+
+async def get_ticket_custom_fields(session: AsyncSession, ticket_id: int, *, access: "Scope") -> list:
+    """Answers to the ticket's form fields that agents can see (nothing if the agent may not open the ticket)."""
+    sql = _CUSTOM_FIELDS_SQL.replace("{visible}", _visible_ticket(access))
+    result = await session.execute(_sql(sql), {"object_type": "T", "object_id": ticket_id, "ticket_id": ticket_id})
+    return list(result.mappings().all())
+
+
 async def get_ticket_collaborators(session: AsyncSession, ticket_id: int, *, access: "Scope") -> list:
     """Return collaborators for a ticket (nothing if the agent may not open it)."""
     sql = """
@@ -1261,6 +1282,27 @@ async def get_task(session: AsyncSession, task_id: int, *, access: "Scope") -> d
     result = await session.execute(_sql(sql), {"task_id": task_id})
     row = result.mappings().one_or_none()
     return dict(row) if row else None
+
+
+async def get_task_custom_fields(session: AsyncSession, task_id: int, *, access: "Scope") -> list:
+    """Answers to the task's form fields that agents can see (nothing if the agent may not open the task)."""
+    sql = _CUSTOM_FIELDS_SQL.replace("{visible}", _visible_task(access))
+    result = await session.execute(_sql(sql), {"object_type": "A", "object_id": task_id, "task_id": task_id})
+    return list(result.mappings().all())
+
+
+async def get_user_custom_fields(session: AsyncSession, user_id: int) -> list:
+    """Answers to the user form's fields that agents can see."""
+    sql = _CUSTOM_FIELDS_SQL.replace("{visible}", "")
+    result = await session.execute(_sql(sql), {"object_type": "U", "object_id": user_id})
+    return list(result.mappings().all())
+
+
+async def get_organization_custom_fields(session: AsyncSession, org_id: int) -> list:
+    """Answers to the organization form's fields that agents can see."""
+    sql = _CUSTOM_FIELDS_SQL.replace("{visible}", "")
+    result = await session.execute(_sql(sql), {"object_type": "O", "object_id": org_id})
+    return list(result.mappings().all())
 
 
 async def get_task_thread(session: AsyncSession, task_id: int, *, access: "Scope") -> list:

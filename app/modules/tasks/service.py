@@ -4,6 +4,7 @@ import logging
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.custom_fields import BUILT_IN_FIELDS, CustomFieldAnswer
 from app.integration.osticket import read_repository as repo
 from app.integration.osticket.commands_service import dispatch_command
 from app.modules.tasks.models import (
@@ -68,6 +69,15 @@ def _row_to_thread_entry(row: dict) -> ThreadEntry:
     )
 
 
+def _custom_answers(rows, object_type: str) -> list[CustomFieldAnswer]:
+    skip = BUILT_IN_FIELDS[object_type]
+    return [
+        CustomFieldAnswer(name=r["name"], label=r["label"], type=r["type"], value=r["value"], value_id=r["value_id"])
+        for r in map(dict, rows)
+        if r["name"] not in skip
+    ]
+
+
 def _cmd_resp(cmd, idempotency_key: str | None) -> CommandResponse:
     return CommandResponse(
         command_id=cmd.id,
@@ -115,10 +125,12 @@ async def get_task(session: AsyncSession, task_id: int, *, access) -> TaskDetail
     if row is None:
         return None
     thread_rows = await repo.get_task_thread(session, task_id, access=access)
+    custom_rows = await repo.get_task_custom_fields(session, task_id, access=access)
     item = _row_to_list_item(row)
     return TaskDetail(
         **item.model_dump(),
         thread=[_row_to_thread_entry(dict(r)) for r in thread_rows],
+        custom_fields=_custom_answers(custom_rows, "A"),
     )
 
 

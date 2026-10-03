@@ -3,6 +3,7 @@
 import logging
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.custom_fields import BUILT_IN_FIELDS, CustomFieldAnswer
 from app.integration.osticket import read_repository as repo
 from app.integration.osticket.commands_service import dispatch_command
 from app.modules.users.models import (
@@ -22,6 +23,15 @@ from app.modules.users.models import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _custom_answers(rows, object_type: str) -> list[CustomFieldAnswer]:
+    skip = BUILT_IN_FIELDS[object_type]
+    return [
+        CustomFieldAnswer(name=r["name"], label=r["label"], type=r["type"], value=r["value"], value_id=r["value_id"])
+        for r in map(dict, rows)
+        if r["name"] not in skip
+    ]
 
 
 def _cmd_resp(cmd, idempotency_key: str | None) -> CommandResponse:
@@ -75,6 +85,7 @@ async def get_organization(session: AsyncSession, org_id: int) -> OrganizationDe
         collab_primary_contacts=bool(status & 0x2),
         assign_account_manager=bool(status & 0x4),
         primary_contact_ids=await repo.get_organization_primary_contacts(session, org_id),
+        custom_fields=_custom_answers(await repo.get_organization_custom_fields(session, org_id), "O"),
     )
 
 
@@ -182,7 +193,8 @@ async def get_user(session: AsyncSession, user_id: int) -> UserDetail | None:
             require_password_reset=bool(flags & 0x4), forbid_password_reset=bool(flags & 0x8),
             registered=account["registered"],
         )
-    return UserDetail(**row_dict, is_primary_contact=bool(int(row_dict.get("status") or 0) & 0x1), account=info)
+    return UserDetail(**row_dict, is_primary_contact=bool(int(row_dict.get("status") or 0) & 0x1), account=info,
+                      custom_fields=_custom_answers(await repo.get_user_custom_fields(session, user_id), "U"))
 
 async def register_account(session, user_id, body, staff_id, idempotency_key):
     cmd = await dispatch_command(

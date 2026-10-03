@@ -11,6 +11,8 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, Field, model_validator
 
+from app.core.custom_fields import CustomFieldAnswer, CustomFields
+
 
 # ── Shared response ────────────────────────────────────────────────────────────
 
@@ -103,6 +105,7 @@ class TicketDetail(TicketListItem):
 
     thread: list[ThreadEntry] = []
     collaborators: list[Collaborator] = []
+    custom_fields: list[CustomFieldAnswer] = []
 
 
 class TicketListResponse(BaseModel):
@@ -124,6 +127,7 @@ class TicketCreate(BaseModel):
     dept_id: Optional[int] = None
     topic_id: Optional[int] = None
     priority_id: Optional[int] = None
+    custom_fields: Optional[CustomFields] = Field(default=None, description="Answers to custom form fields, by variable name.")
 
 
 class TicketReply(BaseModel):
@@ -181,6 +185,7 @@ class TicketUpdate(BaseModel):
     source: Optional[str] = Field(default=None, min_length=1, max_length=32)
     due_date: Optional[datetime] = Field(default=None, description="Must be in the future; null clears it.")
     note: Optional[str] = Field(default=None, max_length=10000, description="Logged as an internal note.")
+    custom_fields: Optional[CustomFields] = Field(default=None, description="Answers to custom form fields, by variable name.")
 
 
 class TicketClaim(BaseModel):

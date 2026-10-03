@@ -5,6 +5,8 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from app.core.custom_fields import CustomFieldAnswer, CustomFields
+
 from app.modules.tickets.models import CommandResponse
 
 __all__ = ["CommandResponse"]
@@ -40,6 +42,7 @@ class _OrganizationSettings(BaseModel):
     assign_account_manager: Optional[bool] = Field(default=None, description="Assign new tickets to the account manager.")
     primary_contact_ids: Optional[list[int]] = Field(
         default=None, description="Members who are primary contacts; replaces the set ([] clears).")
+    custom_fields: Optional[CustomFields] = Field(default=None, description="Answers to custom organization-form fields, by variable name.")
 
     @model_validator(mode="after")
     def _one_manager(self):
@@ -82,6 +85,7 @@ class OrganizationDetail(OrganizationListItem):
     collab_all_members: bool = False
     assign_account_manager: bool = False
     primary_contact_ids: list[int] = []
+    custom_fields: list[CustomFieldAnswer] = []
 
 
 # ── Users ──────────────────────────────────────────────────────────────────────
@@ -120,6 +124,7 @@ class UserDetail(UserListItem):
     mobile: str = ""
     internal_notes: str = ""
     is_primary_contact: bool = False
+    custom_fields: list[CustomFieldAnswer] = []
     account: Optional[UserAccountInfo] = Field(default=None, description="null until the user registers.")
 
 class UserCreate(BaseModel):
@@ -129,6 +134,7 @@ class UserCreate(BaseModel):
     phone: Optional[str] = None
     mobile: Optional[str] = None
     internal_notes: Optional[str] = None
+    custom_fields: Optional[CustomFields] = Field(default=None, description="Answers to custom user-form fields, by variable name.")
 
 class UserUpdate(BaseModel):
     name: Optional[str] = Field(default=None, min_length=1, max_length=255)
@@ -137,6 +143,7 @@ class UserUpdate(BaseModel):
     phone: Optional[str] = None
     mobile: Optional[str] = None
     internal_notes: Optional[str] = None
+    custom_fields: Optional[CustomFields] = Field(default=None, description="Answers to custom user-form fields, by variable name.")
 
 
 class UserAccountRegister(BaseModel):

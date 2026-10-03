@@ -5,6 +5,8 @@ from typing import Optional
 
 from pydantic import BaseModel, Field, model_validator
 
+from app.core.custom_fields import CustomFieldAnswer, CustomFields
+
 from app.modules.tickets.models import CommandResponse, ThreadEntry  # reuse shared types
 
 __all__ = ["CommandResponse", "ThreadEntry"]  # re-export for convenience
@@ -39,6 +41,7 @@ class TaskListItem(BaseModel):
 
 class TaskDetail(TaskListItem):
     thread: list[ThreadEntry] = []
+    custom_fields: list[CustomFieldAnswer] = []
 
 
 class TaskListResponse(BaseModel):
@@ -62,6 +65,7 @@ class TaskCreate(BaseModel):
         description="Link this task to a ticket. Omit for a standalone task.",
     )
     due_date: Optional[datetime] = None
+    custom_fields: Optional[CustomFields] = Field(default=None, description="Answers to custom task-form fields, by variable name.")
 
 
 class TaskAssign(BaseModel):
@@ -111,3 +115,4 @@ class TaskEdit(BaseModel):
     description: Optional[str] = None
     dept_id: Optional[int] = None
     due_date: Optional[datetime] = None
+    custom_fields: Optional[CustomFields] = Field(default=None, description="Answers to custom task-form fields, by variable name.")

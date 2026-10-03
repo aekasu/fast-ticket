@@ -148,6 +148,9 @@ async def test_get_task_returns_detail():
     with (
         patch("app.modules.tasks.service.repo.get_task", new=AsyncMock(return_value=MOCK_TASK)),
         patch("app.modules.tasks.service.repo.get_task_thread", new=AsyncMock(return_value=[MOCK_THREAD])),
+        patch("app.modules.tasks.service.repo.get_task_custom_fields", new=AsyncMock(return_value=[
+            {"name": "site", "label": "Site", "type": "text", "value": "HQ", "value_id": None},
+            {"name": "title", "label": "Title", "type": "text", "value": "dup", "value_id": None}])),
     ):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             resp = await ac.get(TASKS_URL + "/1", headers=_auth(["task.create"]))
@@ -156,6 +159,7 @@ async def test_get_task_returns_detail():
     assert data["task_id"] == 1
     assert len(data["thread"]) == 1
     assert data["thread"][0]["body"] == "Started investigating the switch logs."
+    assert [c["name"] for c in data["custom_fields"]] == ["site"]
 
 
 @pytest.mark.asyncio
@@ -410,3 +414,17 @@ async def test_task_assign_takes_exactly_one_assignee_and_claim_transfer_reply_q
     assert [r.command_type for r in rows] == ["task.assign", "task.assign", "task.claim", "task.transfer", "task.reply"]
     assert json.loads(rows[1].payload) == {"task_id": 5, "team_id": 3, "note": "n"}
     assert json.loads(rows[3].payload) == {"task_id": 5, "dept_id": 2, "note": "m"}
+
+
+@pytest.mark.asyncio
+async def test_task_custom_fields_are_queued_on_create_and_edit():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        new = await ac.post(TASKS_URL + "/", json={"title": "t", "description": "d", "custom_fields": {"site": "HQ"}},
+                            headers=_auth(["task.create"]))
+        edit = await ac.patch(TASKS_URL + "/5", json={"custom_fields": {"site": "DC", "rack": 4}},
+                              headers=_auth(["task.edit"]))
+        bad = await ac.patch(TASKS_URL + "/5", json={"custom_fields": {"bad name": "x"}}, headers=_auth(["task.edit"]))
+    assert (new.status_code, edit.status_code, bad.status_code) == (202, 202, 422)
+    rows = await _inbox_rows()
+    assert json.loads(rows[0].payload)["custom_fields"] == {"site": "HQ"}
+    assert json.loads(rows[1].payload)["custom_fields"] == {"site": "DC", "rack": 4}
