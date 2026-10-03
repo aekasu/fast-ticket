@@ -13,6 +13,7 @@ Needs the running stack — see conftest.py.
 """
 
 import json
+import time
 import uuid
 
 import httpx
@@ -277,6 +278,49 @@ def test_staff_lifecycle_and_the_password_actually_works(bridge, uniq):
 
     bridge.command("DELETE", f"/api/v1/staff/{sid}")
     assert bridge.get(f"/api/v1/staff/{sid}").status_code == 404
+
+
+def test_staff_access_settings_are_written_read_back_and_take_effect(bridge, uniq):
+    username, password = f"e2eacc{uniq}", "E2e-Pass-9x!Qz"
+    sid = bridge.create(
+        "/api/v1/staff",
+        {"username": username, "firstname": "E2E", "lastname": "Access", "email": _email(uniq, "acc"),
+         "dept_id": 1, "role_id": 3, "password": password, "phone_ext": "12", "notes": "start"},
+        cleanup="/api/v1/staff/{id}",
+    )
+    url = f"/api/v1/staff/{sid}"
+    got = bridge.read(url)
+    assert (got["phone_ext"], got["notes"], got["permissions"], got["department_access"]) == ("12", "start", [], [])
+    assert (got["is_visible"], got["on_vacation"], got["assigned_only"]) == (True, False, False)
+
+    headers = {"Authorization": f"Bearer {login_raw(username, password).json()['access_token']}"}
+    def me():
+        return httpx.get(f"{BASE_URL}/api/v1/auth/me", headers=headers, timeout=30).json()
+    assert me()["global_permissions"] == [] and me()["department_ids"] == [1]
+
+    bridge.command("PATCH", url, {"permissions": ["user.dir", "faq.manage"], "assigned_only": True,
+                                  "on_vacation": True, "is_visible": False, "phone_ext": "34",
+                                  "department_access": [{"dept_id": 2, "role_id": 1, "alerts": False}]})
+    got = bridge.read(url)
+    assert got["permissions"] == ["faq.manage", "user.dir"]
+    assert (got["assigned_only"], got["on_vacation"], got["is_visible"], got["phone_ext"]) == (True, True, False, "34")
+    assert got["department_access"] == [{"dept_id": 2, "role_id": 1, "alerts": False}]
+    assert (got["firstname"], got["notes"], got["role_id"], got["dept_id"]) == ("E2E", "start", 3, 1)   # untouched
+    time.sleep(6)                                              # the per-process access cache (5 s)
+    seen = me()
+    assert sorted(seen["global_permissions"]) == ["faq.manage", "user.dir"]
+    assert 2 in seen["department_ids"]                         # the extra department is now visible
+
+    bridge.command("PATCH", url, {"firstname": "Renamed"})     # an unrelated edit keeps all of it
+    got = bridge.read(url)
+    assert got["permissions"] == ["faq.manage", "user.dir"] and got["assigned_only"] is True
+    assert got["department_access"] == [{"dept_id": 2, "role_id": 1, "alerts": False}]
+
+    bridge.command("PATCH", url, {"permissions": [], "department_access": [], "assigned_only": False})
+    got = bridge.read(url)
+    assert got["permissions"] == [] and got["department_access"] == [] and got["assigned_only"] is False
+    bridge.refuses("PATCH", url, {"department_access": [{"dept_id": 999999, "role_id": 1}]}, because="Department not found")
+    bridge.refuses("PATCH", url, {"department_access": [{"dept_id": 2, "role_id": 999999}]}, because="Role not found")
 
 
 def test_an_agent_cannot_delete_themselves(bridge):

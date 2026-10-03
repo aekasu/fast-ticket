@@ -216,8 +216,12 @@ async def test_list_staff_returns_200():
 @pytest.mark.asyncio
 async def test_get_staff_returns_detail():
     with (
-        patch("app.modules.staff.service.repo.get_staff", new=AsyncMock(return_value=MOCK_STAFF)),
-        patch("app.modules.staff.service.repo.get_staff_teams", new=AsyncMock(return_value=[1]))
+        patch("app.modules.staff.service.repo.get_staff", new=AsyncMock(return_value={
+            **MOCK_STAFF, "phone_ext": "12", "notes": "n", "is_visible": 1, "on_vacation": 0, "assigned_only": 1,
+            "permissions": '{"user.dir":1,"user.edit":0,"ticket.create":1}', "extra": '{"def_assn_role":true}'})),
+        patch("app.modules.staff.service.repo.get_staff_teams", new=AsyncMock(return_value=[1])),
+        patch("app.modules.staff.service.repo.get_staff_dept_access",
+              new=AsyncMock(return_value=[{"dept_id": 3, "role_id": 2, "alerts": 0}])),
     ):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             resp = await ac.get("/api/v1/staff/5", headers=_auth(is_admin=True))
@@ -225,6 +229,30 @@ async def test_get_staff_returns_detail():
     data = resp.json()
     assert data["username"] == "agent"
     assert data["teams"] == [1]
+    assert data["permissions"] == ["user.dir"]              # only enabled, only global keys
+    assert data["assigned_only"] is True and data["assign_use_primary_role"] is True
+    assert data["department_access"] == [{"dept_id": 3, "role_id": 2, "alerts": False}]
+
+
+@pytest.mark.asyncio
+async def test_update_staff_access_fields_are_queued_and_validated():
+    body = {"permissions": ["user.dir", "user.dir", "faq.manage"], "assigned_only": True, "on_vacation": False,
+            "department_access": [{"dept_id": 3, "role_id": 2, "alerts": False}]}
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        ok = await ac.patch("/api/v1/staff/5", json=body, headers=_auth(is_admin=True))
+        role_perm = await ac.patch("/api/v1/staff/5", json={"permissions": ["ticket.create"]}, headers=_auth(is_admin=True))
+        bogus = await ac.patch("/api/v1/staff/5", json={"permissions": ["root"]}, headers=_auth(is_admin=True))
+        dup = await ac.patch("/api/v1/staff/5", json={"department_access": [
+            {"dept_id": 3, "role_id": 2}, {"dept_id": 3, "role_id": 1}]}, headers=_auth(is_admin=True))
+        clear = await ac.patch("/api/v1/staff/5", json={"permissions": [], "department_access": []}, headers=_auth(is_admin=True))
+        agent = await ac.patch("/api/v1/staff/5", json={"permissions": ["user.dir"]}, headers=_auth(["user.edit"]))
+    assert (ok.status_code, role_perm.status_code, bogus.status_code, dup.status_code, clear.status_code,
+            agent.status_code) == (202, 422, 422, 422, 202, 403)
+    rows = await _inbox_rows()
+    first = json.loads(rows[0].payload)
+    assert first["permissions"] == ["faq.manage", "user.dir"] and first["on_vacation"] is False
+    assert first["department_access"] == [{"dept_id": 3, "role_id": 2, "alerts": False}]
+    assert json.loads(rows[1].payload)["permissions"] == [] and json.loads(rows[1].payload)["department_access"] == []
 
 
 @pytest.mark.asyncio

@@ -21,6 +21,14 @@ after. fast-ticket should work against any osTicket instance out of the box.
 
 ## Direction, in order
 
+### Depth audit (started 2026-10-03) — do before more breadth
+Field-by-field comparison of each existing create/PATCH against osTicket's own edit page (`include/staff/*.inc.php`).
+Done: tickets (PATCH), staff. **Gaps found, still open:**
+- Department PATCH lacks: parent (`pid`), SLA, schedule, template, auto-response email, signature, assignment/auto-claim/reopen flags, ticket/message auto-response, extra members.
+- Help topic PATCH lacks: parent topic, status, forms (`form_id`/`forms`), sequence/number format, no-autoresponse, auto-assign (staff/team).
+- SLA PATCH lacks: schedule, transient, disable-overdue-alerts.
+- Team: complete except alert flags. User/org/task: not compared yet.
+
 ### 0. Replicate osTicket — gap audit (2026-09-30)
 Compared `notes/OSTICKET_CAPABILITIES.md` §2 against the routers and `bridge/registry.php` (66 command types).
 Audited: which operations exist. **Not audited:** how completely each PATCH covers the fields osTicket's own
@@ -38,7 +46,7 @@ Work in this order; for every item follow the "Adding a scoped read" rule in AGE
 - Tasks: create/assign/close/reopen/note/edit/delete exist; check transfer, thread attachments, task forms.
 - Users: no lock/unlock, register account, password reset/confirm email, CSV import.
 - Organizations: check add/remove members (may ride on user update).
-- Staff: no password reset, no permissions/access update as its own resource (may ride on PATCH), no CSV import.
+- Staff: ~~permissions, extra-department access, assigned_only, vacation, visibility, phone_ext, notes~~ now on create/PATCH + detail read. Still open: password reset email, per-team alert flags, auth backend, CSV import.
 - Dynamic-form answers as a sub-resource (fill/validate).
 
 **C. Non-admin reference data** (see item 1 "Deferred authorization work" below): teams, agent directory,

@@ -21,6 +21,7 @@ UNSCOPED_BY_DESIGN = {
     "get_sla": "Admin Panel (SLA plans)", "list_slas": "Admin Panel (SLA plans)",
     "get_staff": "Admin Panel (agents)", "list_staff": "Admin Panel (agents)",
     "get_staff_teams": "Admin Panel (agents) — team ids on an agent's detail",
+    "get_staff_dept_access": "Admin Panel (agents) — extra-department access on an agent's detail",
     "get_team": "Admin Panel (teams)", "list_teams": "Admin Panel (teams)",
     "get_team_members": "Admin Panel (teams) — member ids on a team's detail",
     "get_department": "Admin Panel (department detail)",

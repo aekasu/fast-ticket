@@ -1,13 +1,16 @@
 """Staff, Teams, and Departments service layer."""
 
+import json
 import logging
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.permissions import GLOBAL_PERMISSIONS
 from app.core.scope import UNRESTRICTED
 from app.integration.osticket import read_repository as repo
 from app.integration.osticket.commands_service import dispatch_command
 from app.modules.staff.models import (
     CommandResponse,
+    DepartmentAccess,
     DepartmentCreate,
     DepartmentUpdate,
     DepartmentListItem,
@@ -26,6 +29,15 @@ from app.modules.staff.models import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _json_object(raw) -> dict:
+    """osTicket stores permission / extra maps as JSON text, NULL when unset."""
+    try:
+        value = json.loads(raw) if raw else {}
+    except (TypeError, ValueError):
+        return {}
+    return value if isinstance(value, dict) else {}
 
 
 def _cmd_resp(cmd, idempotency_key: str | None) -> CommandResponse:
@@ -262,13 +274,15 @@ async def get_staff(session: AsyncSession, staff_id: int) -> StaffDetail | None:
         return None
     teams = await repo.get_staff_teams(session, staff_id)
     row_dict = dict(row)
-    if row_dict.get("phone") is None:
-        row_dict["phone"] = ""
-    if row_dict.get("mobile") is None:
-        row_dict["mobile"] = ""
+    held = _json_object(row_dict.pop("permissions", None))
+    extra = _json_object(row_dict.pop("extra", None))
+    access = await repo.get_staff_dept_access(session, staff_id)
     return StaffDetail(
         **row_dict,
         teams=teams,
+        permissions=sorted(k for k, v in held.items() if v and k in GLOBAL_PERMISSIONS),
+        assign_use_primary_role=bool(extra.get("def_assn_role")),
+        department_access=[DepartmentAccess(**a) for a in access],
     )
 
 async def create_staff(

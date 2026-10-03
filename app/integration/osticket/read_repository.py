@@ -438,14 +438,33 @@ async def get_staff(session: AsyncSession, staff_id: int) -> dict | None:
             s.role_id,
             s.created,
             s.updated,
-            s.phone,
-            s.mobile
+            COALESCE(s.phone, '')     AS phone,
+            COALESCE(s.mobile, '')    AS mobile,
+            COALESCE(s.phone_ext, '') AS phone_ext,
+            COALESCE(s.notes, '')     AS notes,
+            s.isvisible               AS is_visible,
+            s.onvacation              AS on_vacation,
+            s.assigned_only,
+            s.permissions,
+            s.extra
         FROM ost_staff s
         WHERE s.staff_id = :staff_id
     """
     result = await session.execute(_sql(sql), {"staff_id": staff_id})
     row = result.mappings().one_or_none()
     return dict(row) if row else None
+
+
+async def get_staff_dept_access(session: AsyncSession, staff_id: int) -> list[dict]:
+    """The agent's extra-department access: department, role in it, and whether it sends alerts (flags bit 1)."""
+    sql = """
+        SELECT dept_id, role_id, (flags & 1) > 0 AS alerts
+        FROM ost_staff_dept_access
+        WHERE staff_id = :staff_id
+        ORDER BY dept_id
+    """
+    result = await session.execute(_sql(sql), {"staff_id": staff_id})
+    return [dict(r) for r in result.mappings().all()]
 
 
 async def get_staff_teams(session: AsyncSession, staff_id: int) -> list[int]:
