@@ -506,6 +506,15 @@ async def get_department(session: AsyncSession, dept_id: int) -> dict | None:
             d.updated,
             d.manager_id,
             d.email_id,
+            d.pid                       AS parent_id,
+            d.sla_id,
+            d.schedule_id,
+            d.tpl_id                    AS template_id,
+            d.autoresp_email_id         AS autoresponse_email_id,
+            COALESCE(d.signature, '')   AS signature,
+            d.group_membership,
+            d.ticket_auto_response,
+            d.message_auto_response,
             d.flags
         FROM ost_department d
         WHERE d.id = :dept_id
@@ -513,6 +522,18 @@ async def get_department(session: AsyncSession, dept_id: int) -> dict | None:
     result = await session.execute(_sql(sql), {"dept_id": dept_id})
     row = result.mappings().one_or_none()
     return dict(row) if row else None
+
+
+async def get_department_members(session: AsyncSession, dept_id: int) -> list[dict]:
+    """Extended-access agents of a department (rows of ost_staff_dept_access): agent, role, alerts (flags bit 1)."""
+    sql = """
+        SELECT staff_id, role_id, (flags & 1) > 0 AS alerts
+        FROM ost_staff_dept_access
+        WHERE dept_id = :dept_id
+        ORDER BY staff_id
+    """
+    result = await session.execute(_sql(sql), {"dept_id": dept_id})
+    return [dict(r) for r in result.mappings().all()]
 
 
 # ── Teams ─────────────────────────────────────────────────────────────────────

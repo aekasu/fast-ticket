@@ -15,6 +15,7 @@ from app.modules.staff.models import (
     DepartmentUpdate,
     DepartmentListItem,
     DepartmentDetail,
+    DepartmentMember,
     DepartmentListResponse,
     TeamCreate,
     TeamUpdate,
@@ -83,11 +84,33 @@ async def list_departments(
         page_size=page_size,
     )
 
+# Dept::FLAG_* bits and the Dept::ALERTS_* modes (include/class.dept.php)
+_ALERTS_BY_MODE = {0: "dept_only", 1: "dept_and_extended", 2: "no_one", 3: "admin_only"}
+
+
+def _department_detail(row: dict, members: list[dict]) -> DepartmentDetail:
+    flags = int(row.pop("flags", 0) or 0)
+    mode = row.pop("group_membership", 0)
+    ticket_auto = bool(row.pop("ticket_auto_response", 1))
+    message_auto = bool(row.pop("message_auto_response", 0))
+    return DepartmentDetail(
+        **row,
+        status="archived" if flags & 0x8 else ("active" if flags & 0x4 else "disabled"),
+        assignment="members" if flags & 0x1 else ("primary" if flags & 0x10 else "all"),
+        disable_auto_claim=bool(flags & 0x2),
+        disable_reopen_auto_assign=bool(flags & 0x20),
+        alerts_to=_ALERTS_BY_MODE.get(int(mode or 0), "dept_only"),
+        ticket_auto_response=ticket_auto,
+        message_auto_response=message_auto,
+        members=[DepartmentMember(**m) for m in members],
+    )
+
+
 async def get_department(session: AsyncSession, dept_id: int) -> DepartmentDetail | None:
     row = await repo.get_department(session, dept_id)
     if not row:
         return None
-    return DepartmentDetail(**row)
+    return _department_detail(dict(row), await repo.get_department_members(session, dept_id))
 
 
 async def create_department(

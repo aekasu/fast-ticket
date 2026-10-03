@@ -160,6 +160,45 @@ def test_department_lifecycle_keeps_a_private_department_private(bridge, uniq):
     assert bridge.get(f"/api/v1/departments/{did}").status_code == 404
 
 
+def test_department_settings_round_trip_and_partial_updates_keep_them(bridge, uniq):
+    did = bridge.create(
+        "/api/v1/departments",
+        {"name": f"e2e-dset-{uniq}", "is_public": False, "parent_id": 1, "sla_id": 1, "signature": "regards",
+         "status": "disabled", "assignment": "members", "disable_auto_claim": True, "alerts_to": "admin_only",
+         "ticket_auto_response": False, "message_auto_response": True,
+         "members": [{"staff_id": 1, "role_id": 1, "alerts": False}]},
+        cleanup="/api/v1/departments/{id}",
+    )
+    url = f"/api/v1/departments/{did}"
+    want = {"is_public": False, "parent_id": 1, "sla_id": 1, "signature": "regards", "status": "disabled",
+            "assignment": "members", "disable_auto_claim": True, "disable_reopen_auto_assign": False,
+            "alerts_to": "admin_only", "ticket_auto_response": False, "message_auto_response": True,
+            "members": [{"staff_id": 1, "role_id": 1, "alerts": False}]}
+
+    def check(expected):
+        got = bridge.read(url)
+        assert {k: got[k] for k in expected} == expected, got
+
+    check(want)
+
+    bridge.command("PATCH", url, {"name": f"e2e-dset2-{uniq}"})          # nothing else may move
+    check(want)
+
+    bridge.command("PATCH", url, {"status": "active", "assignment": "primary", "alerts_to": "dept_and_extended",
+                                  "disable_reopen_auto_assign": True, "sla_id": 0, "parent_id": 0})
+    got = bridge.read(url)
+    assert (got["status"], got["assignment"], got["alerts_to"], got["disable_reopen_auto_assign"]) == (
+        "active", "primary", "dept_and_extended", True)
+    assert not got["sla_id"] and got["parent_id"] is None
+    assert got["disable_auto_claim"] is True and got["members"] == want["members"]   # untouched
+
+    bridge.command("PATCH", url, {"members": []})
+    assert bridge.read(url)["members"] == []
+    bridge.refuses("PATCH", url, {"members": [{"staff_id": 999999, "role_id": 1}]}, because="Staff not found")
+    bridge.refuses("PATCH", url, {"sla_id": 999999}, because="Invalid SLA")
+    bridge.refuses("PATCH", url, {"parent_id": did}, because="cannot contain")
+
+
 def test_team_lifecycle_keeps_its_members(bridge, uniq):
     tid = bridge.create(
         "/api/v1/teams", {"name": f"e2e-team-{uniq}", "is_enabled": False, "notes": "n", "members": [1]},

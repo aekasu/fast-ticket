@@ -22,7 +22,9 @@ MOCK_DEPT = {
     "updated": _NOW,
     "manager_id": 5,
     "email_id": 1,
-    "flags": 0,
+    "flags": 0x4 | 0x2 | 0x10,   # active, no auto-claim, primary-members assignment
+    "parent_id": None, "sla_id": 2, "schedule_id": 0, "template_id": 0, "autoresponse_email_id": 0,
+    "signature": "sig", "group_membership": 1, "ticket_auto_response": 1, "message_auto_response": 0,
 }
 
 MOCK_TEAM = {
@@ -85,13 +87,47 @@ async def test_list_departments_returns_200():
 
 @pytest.mark.asyncio
 async def test_get_department_returns_detail():
-    with patch("app.modules.staff.service.repo.get_department", new=AsyncMock(return_value=MOCK_DEPT)):
+    with patch("app.modules.staff.service.repo.get_department", new=AsyncMock(return_value=dict(MOCK_DEPT))), \
+         patch("app.modules.staff.service.repo.get_department_members",
+               new=AsyncMock(return_value=[{"staff_id": 4, "role_id": 2, "alerts": 0}])):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             resp = await ac.get("/api/v1/departments/1", headers=_auth(is_admin=True))
     assert resp.status_code == 200
     data = resp.json()
     assert data["name"] == "Support"
     assert data["manager_id"] == 5
+
+
+@pytest.mark.asyncio
+async def test_department_detail_decodes_the_flag_bits():
+    with patch("app.modules.staff.service.repo.get_department", new=AsyncMock(return_value=dict(MOCK_DEPT))), \
+         patch("app.modules.staff.service.repo.get_department_members",
+               new=AsyncMock(return_value=[{"staff_id": 4, "role_id": 2, "alerts": 0}])):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            data = (await ac.get("/api/v1/departments/1", headers=_auth(is_admin=True))).json()
+    assert (data["status"], data["assignment"], data["disable_auto_claim"], data["disable_reopen_auto_assign"]) == (
+        "active", "primary", True, False)
+    assert (data["alerts_to"], data["sla_id"], data["signature"]) == ("dept_and_extended", 2, "sig")
+    assert data["ticket_auto_response"] is True and data["message_auto_response"] is False
+    assert data["members"] == [{"staff_id": 4, "role_id": 2, "alerts": False}]
+    assert "flags" not in data
+
+
+@pytest.mark.asyncio
+async def test_department_settings_are_queued_and_validated():
+    body = {"parent_id": 1, "sla_id": 2, "status": "disabled", "assignment": "members", "alerts_to": "admin_only",
+            "disable_auto_claim": True, "ticket_auto_response": False,
+            "members": [{"staff_id": 4, "role_id": 2, "alerts": False}]}
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        ok = await ac.patch("/api/v1/departments/2", json=body, headers=_auth(is_admin=True))
+        bad_status = await ac.patch("/api/v1/departments/2", json={"status": "gone"}, headers=_auth(is_admin=True))
+        bad_alerts = await ac.patch("/api/v1/departments/2", json={"alerts_to": "everyone"}, headers=_auth(is_admin=True))
+        dup = await ac.patch("/api/v1/departments/2", json={"members": [
+            {"staff_id": 4, "role_id": 2}, {"staff_id": 4, "role_id": 1}]}, headers=_auth(is_admin=True))
+        agent = await ac.patch("/api/v1/departments/2", json={"status": "active"}, headers=_auth(["user.edit"]))
+    assert (ok.status_code, bad_status.status_code, bad_alerts.status_code, dup.status_code, agent.status_code) == (
+        202, 422, 422, 422, 403)
+    assert json.loads((await _inbox_rows())[0].payload) == {"dept_id": 2, **body}
 
 
 @pytest.mark.asyncio

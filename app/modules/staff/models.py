@@ -1,7 +1,7 @@
 """Staff, Teams, and Departments domain Pydantic models."""
 
 from datetime import datetime
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -12,6 +12,10 @@ from app.modules.tickets.models import CommandResponse
 __all__ = ["CommandResponse"]
 
 # ── Departments ───────────────────────────────────────────────────────────────
+
+DepartmentStatus = Literal["active", "disabled", "archived"]
+DepartmentAssignment = Literal["all", "members", "primary"]
+DepartmentAlerts = Literal["no_one", "admin_only", "dept_only", "dept_and_extended"]
 
 class DepartmentListItem(BaseModel):
     id: int
@@ -26,24 +30,71 @@ class DepartmentListResponse(BaseModel):
     page: int
     page_size: int
 
+class DepartmentMember(BaseModel):
+    """Extended access: an agent from another department who may work this one, with their role in it."""
+
+    staff_id: int = Field(gt=0)
+    role_id: int = Field(gt=0)
+    alerts: bool = True
+
+
 class DepartmentDetail(DepartmentListItem):
     manager_id: Optional[int] = None
     email_id: Optional[int] = None
-    flags: int = 0
+    parent_id: Optional[int] = None
+    sla_id: Optional[int] = None
+    schedule_id: Optional[int] = None
+    template_id: Optional[int] = None
+    autoresponse_email_id: Optional[int] = None
+    signature: str = ""
+    status: DepartmentStatus = "active"
+    assignment: DepartmentAssignment = "all"
+    disable_auto_claim: bool = False
+    disable_reopen_auto_assign: bool = False
+    alerts_to: DepartmentAlerts = "dept_only"
+    ticket_auto_response: bool = True
+    message_auto_response: bool = True
+    members: list[DepartmentMember] = []
 
-class DepartmentCreate(BaseModel):
+
+class _DepartmentFields(BaseModel):
+    """Everything osTicket's department page edits. ``0`` / ``null`` for an id means none."""
+
+    manager_id: Optional[int] = Field(default=None, ge=0)
+    email_id: Optional[int] = Field(default=None, ge=0)
+    parent_id: Optional[int] = Field(default=None, ge=0)
+    sla_id: Optional[int] = Field(default=None, ge=0)
+    schedule_id: Optional[int] = Field(default=None, ge=0)
+    template_id: Optional[int] = Field(default=None, ge=0)
+    autoresponse_email_id: Optional[int] = Field(default=None, ge=0)
+    signature: Optional[str] = Field(default=None, max_length=10000)
+    status: Optional[DepartmentStatus] = None
+    assignment: Optional[DepartmentAssignment] = Field(
+        default=None, description="Who tickets can be assigned to: all agents, department members, or primary members.")
+    disable_auto_claim: Optional[bool] = None
+    disable_reopen_auto_assign: Optional[bool] = None
+    alerts_to: Optional[DepartmentAlerts] = None
+    ticket_auto_response: Optional[bool] = None
+    message_auto_response: Optional[bool] = None
+    members: Optional[list[DepartmentMember]] = Field(
+        default=None, description="Extended-access agents; [] removes them all.")
+
+    @field_validator("members")
+    @classmethod
+    def _one_row_per_agent(cls, value):
+        if value is not None and len({m.staff_id for m in value}) != len(value):
+            raise ValueError("an agent may appear once")
+        return value
+
+
+class DepartmentCreate(_DepartmentFields):
     name: str = Field(min_length=1, max_length=128)
     is_public: bool = True
-    manager_id: Optional[int] = None
-    email_id: Optional[int] = None
-    flags: int = 0
 
-class DepartmentUpdate(BaseModel):
+
+class DepartmentUpdate(_DepartmentFields):
     name: Optional[str] = Field(default=None, min_length=1, max_length=128)
     is_public: Optional[bool] = None
-    manager_id: Optional[int] = None
-    email_id: Optional[int] = None
-    flags: Optional[int] = None
 
 
 # ── Teams ─────────────────────────────────────────────────────────────────────
