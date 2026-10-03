@@ -13,13 +13,15 @@
  *             description is the thread's original message; a department change is a
  *             transfer; due date is a column.
  *  - close / reopen: Task::setStatus() (Task::close()/reopen() are protected).
- *  - assign:  Task::assign() with an AssignmentForm, as Task::create() does itself.
+ *  - assign:  Task::assign() with an AssignmentForm (an agent or a team), as Task::create() does itself.
+ *  - claim / transfer / reply: ajax.tasks.php claim() / transfer(), and the "Post Update" form.
  *
  * Payload field names match app/modules/tasks/models.py.
  */
 
 require_once INCLUDE_DIR . 'class.task.php';
 require_once INCLUDE_DIR . 'class.staff.php';
+require_once INCLUDE_DIR . 'class.team.php';
 require_once dirname(__FILE__) . '/common.php';
 
 class FastApiTaskHandler {
@@ -166,16 +168,31 @@ class FastApiTaskHandler {
         return ['task_id' => $task->getId()];
     }
 
+    /** Assign to an agent (staff_id) or a team (team_id): Task::assign() with an AssignmentForm. */
     public static function assign($payload, $staff_id) {
-        global $thisstaff;
         $task = self::requireTask($payload['task_id'] ?? 0);
         self::requirePerm($task, Task::PERM_ASSIGN, 'assign');
 
-        $assignee = Staff::lookup((int) ($payload['staff_id'] ?? 0));
-        if (!$assignee) {
-            throw new Exception('Staff not found: ' . ($payload['staff_id'] ?? 'none'));
+        if (!empty($payload['team_id'])) {
+            $team = Team::lookup((int) $payload['team_id']);
+            if (!$team) {
+                throw new Exception('Team not found: ' . $payload['team_id']);
+            }
+            if (!$team->isActive()) {
+                throw new Exception("Assignment refused: team '{$team->getName()}' is disabled.");
+            }
+            if (!$team->getNumMembers()) {
+                throw new Exception("Assignment refused: team '{$team->getName()}' does not have members.");
+            }
+            $target = 't' . $team->getId();
+        } else {
+            $assignee = Staff::lookup((int) ($payload['staff_id'] ?? 0));
+            if (!$assignee) {
+                throw new Exception('Staff not found: ' . ($payload['staff_id'] ?? 'none'));
+            }
+            $target = 's' . $assignee->getId();
         }
-        $form = AssignmentForm::instantiate(['assignee' => 's' . $assignee->getId(), 'comments' => (string) ($payload['note'] ?? '')]);
+        $form = AssignmentForm::instantiate(['assignee' => $target, 'comments' => (string) ($payload['note'] ?? '')]);
         if (!$form->isValid()) {
             throw new Exception('Assignment refused: ' . json_encode($form->errors()));
         }
@@ -183,7 +200,60 @@ class FastApiTaskHandler {
         if (!$task->assign($form, $errors) || $errors) {
             throw new Exception('Task could not be assigned: ' . json_encode($errors ?: 'assignment failed'));
         }
-        return ['task_id' => $task->getId(), 'assignee_staff_id' => $assignee->getId()];
+        return ['task_id' => $task->getId(),
+                'assignee_staff_id' => $target[0] === 's' ? (int) substr($target, 1) : 0,
+                'assignee_team_id' => $target[0] === 't' ? (int) substr($target, 1) : 0];
+    }
+
+    /** Claim: ajax.tasks.php claim() — task.assign, with the ClaimForm osTicket builds for the acting agent. */
+    public static function claim($payload, $staff_id) {
+        global $thisstaff;
+        $task = self::requireTask($payload['task_id'] ?? 0);
+        self::requirePerm($task, Task::PERM_ASSIGN, 'claim');
+        if (!$task->isOpen()) {
+            throw new Exception('Only open tasks can be claimed.');
+        }
+        if ($task->getStaffId() && $task->getStaffId() != $thisstaff->getId()) {
+            throw new Exception('Task is already assigned to ' . $task->getAssigned() . '.');
+        }
+        $form = $task->getClaimForm(['assignee' => ['s' . $thisstaff->getId()], 'comments' => (string) ($payload['note'] ?? '')]);
+        if (!$form->isValid()) {
+            throw new Exception('Claim refused: ' . json_encode($form->errors()));
+        }
+        $errors = [];
+        if (!$task->claim($form, $errors) || $errors) {
+            throw new Exception('Task was not claimed: ' . json_encode($errors ?: 'claim failed'));
+        }
+        return ['task_id' => $task->getId(), 'assignee_staff_id' => (int) $thisstaff->getId()];
+    }
+
+    /** Transfer to another department: Task::transfer() with a TransferForm (no alert emails). */
+    public static function transfer($payload, $staff_id) {
+        $task = self::requireTask($payload['task_id'] ?? 0);
+        self::requirePerm($task, Task::PERM_TRANSFER, 'transfer');
+        $dept = self::requireDept($payload['dept_id'] ?? 0);
+        $form = TransferForm::instantiate(['dept' => $dept->getId(), 'comments' => (string) ($payload['note'] ?? '')]);
+        $errors = [];
+        if (!$task->transfer($form, $errors, false) || $errors) {
+            throw new Exception('Task could not be transferred: ' . json_encode($errors ?: 'transfer failed'));
+        }
+        return ['task_id' => $task->getId(), 'dept_id' => $dept->getId()];
+    }
+
+    /** Post an update to the task's collaborators: Task::postReply() (the "Post Update" form). */
+    public static function reply($payload, $staff_id) {
+        $task = self::requireTask($payload['task_id'] ?? 0);
+        self::requirePerm($task, Task::PERM_REPLY, 'reply to');
+        $message = trim((string) ($payload['message'] ?? ''));
+        if ($message === '') {
+            throw new Exception("A reply 'message' is required.");
+        }
+        $errors = [];
+        $entry = $task->postReply(['response' => $message, 'ip_address' => '127.0.0.1'], $errors, false);
+        if (!$entry || $errors) {
+            throw new Exception('Reply could not be posted: ' . json_encode($errors ?: 'post failed'));
+        }
+        return ['task_id' => $task->getId(), 'entry_id' => (int) $entry->getId()];
     }
 
     private static function changeStatus($payload, $status, $perm, $what) {

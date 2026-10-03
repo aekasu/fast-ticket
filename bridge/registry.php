@@ -47,6 +47,9 @@ return [
 
     'task.create'             => ['tasks', 'FastApiTaskHandler', 'create', 'task.created', 'role:task.create'],
     'task.assign'             => ['tasks', 'FastApiTaskHandler', 'assign', 'task.assigned', 'role:task.assign'],
+    'task.claim'              => ['tasks', 'FastApiTaskHandler', 'claim', 'task.claimed', 'role:task.assign'],
+    'task.transfer'           => ['tasks', 'FastApiTaskHandler', 'transfer', 'task.transferred', 'role:task.transfer'],
+    'task.reply'              => ['tasks', 'FastApiTaskHandler', 'reply', 'task.replied', 'role:task.reply'],
     'task.close'              => ['tasks', 'FastApiTaskHandler', 'close', 'task.closed', 'role:task.close'],
     'task.delete'             => ['tasks', 'FastApiTaskHandler', 'delete', 'task.deleted', 'role:task.delete'],
     'task.reopen'             => ['tasks', 'FastApiTaskHandler', 'reopen', 'task.reopened', 'role:task.close'],
