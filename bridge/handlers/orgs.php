@@ -7,11 +7,14 @@
  * written through FastApiModel::applyAnswers(). The API's `internal_notes` is the
  * form field named `notes`.
  *
- * Payload field names match app/modules/users/models.py (OrganizationCreate,
+ * Profile settings (account manager, email domain, ticket sharing, auto-collaboration flags, primary
+ * contacts) are written by applySettings(). Payload field names match app/modules/users/models.py (OrganizationCreate,
  * OrganizationUpdate).
  */
 
 require_once INCLUDE_DIR . 'class.organization.php';
+require_once INCLUDE_DIR . 'class.staff.php';
+require_once INCLUDE_DIR . 'class.team.php';
 require_once dirname(__FILE__) . '/common.php';
 
 class FastApiOrgHandler {
@@ -62,6 +65,109 @@ class FastApiOrgHandler {
         return $name;
     }
 
+    /** Which of the profile settings the payload carries (anything but the form fields and name). */
+    private static function hasSettings(array $payload) {
+        foreach (['manager_staff_id', 'manager_team_id', 'domain', 'sharing', 'collab_primary_contacts',
+                  'collab_all_members', 'assign_account_manager', 'primary_contact_ids'] as $key) {
+            if (array_key_exists($key, $payload)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * The profile settings of osTicket's organization page — Organization::update()'s second half, which
+     * we cannot call as a whole (it validates the form against a web request). Only keys present in the
+     * payload change; the rest stays as stored. The status bits are written through set(), as the model's
+     * own protected setStatus() does.
+     */
+    private static function applySettings(Organization $org, array $payload) {
+        if (!self::hasSettings($payload)) {
+            return;
+        }
+        $changed = [];
+        $status = (int) $org->status;
+
+        foreach (['collab_all_members' => Organization::COLLAB_ALL_MEMBERS,
+                  'collab_primary_contacts' => Organization::COLLAB_PRIMARY_CONTACT,
+                  'assign_account_manager' => Organization::ASSIGN_AGENT_MANAGER] as $key => $flag) {
+            if (array_key_exists($key, $payload)) {
+                $on = (bool) $payload[$key];
+                if ((bool) ($status & $flag) !== $on) $changed[] = $key;
+                $status = $on ? ($status | $flag) : ($status & ~$flag);
+            }
+        }
+        if (array_key_exists('sharing', $payload)) {
+            $share = Organization::SHARE_PRIMARY_CONTACT | Organization::SHARE_EVERYBODY;
+            $bit = ['disabled' => 0, 'primary_contacts' => Organization::SHARE_PRIMARY_CONTACT,
+                    'all_members' => Organization::SHARE_EVERYBODY][$payload['sharing']] ?? null;
+            if ($bit === null) {
+                throw new Exception("Unknown sharing mode: {$payload['sharing']}");
+            }
+            if (($status & $share) !== $bit) $changed[] = 'sharing';
+            $status = ($status & ~$share) | $bit;
+        }
+        if ($status !== (int) $org->status) {
+            $org->set('status', $status);
+        }
+
+        if (array_key_exists('domain', $payload)) {
+            $domain = trim((string) $payload['domain']);
+            foreach ($domain === '' ? [] : explode(',', $domain) as $d) {
+                if (!Validator::is_email('t@' . trim($d))) {
+                    throw new Exception('Enter a valid email domain, like domain.com');
+                }
+            }
+            if ($domain !== (string) $org->domain) $changed[] = 'domain';
+            $org->set('domain', $domain);
+        }
+
+        if (array_key_exists('manager_staff_id', $payload) || array_key_exists('manager_team_id', $payload)) {
+            $staff = (int) ($payload['manager_staff_id'] ?? 0);
+            $team = (int) ($payload['manager_team_id'] ?? 0);
+            if ($staff && !Staff::lookup($staff)) {
+                throw new Exception("Staff not found: {$staff}");
+            }
+            if ($team && !Team::lookup($team)) {
+                throw new Exception("Team not found: {$team}");
+            }
+            $manager = $staff ? "s{$staff}" : ($team ? "t{$team}" : '');
+            if ($manager !== (string) $org->manager) $changed[] = 'manager';
+            $org->set('manager', $manager);
+        }
+
+        if (array_key_exists('primary_contact_ids', $payload)) {
+            $wanted = array_map('intval', (array) $payload['primary_contact_ids']);
+            $members = [];
+            foreach ($org->allMembers() as $u) {
+                $members[(int) $u->id] = $u;
+            }
+            foreach ($wanted as $user_id) {
+                if (!isset($members[$user_id])) {
+                    throw new Exception("User {$user_id} is not a member of this organization.");
+                }
+            }
+            foreach ($members as $user_id => $u) {
+                $is = in_array($user_id, $wanted, true);
+                if ((bool) $u->isPrimaryContact() !== $is) {
+                    $u->setPrimaryContact($is);
+                    $u->save();
+                    $changed[] = 'contacts';
+                }
+            }
+        }
+
+        $org->updated = SqlFunction::NOW();
+        if (!$org->save()) {
+            throw new Exception('Organization settings could not be saved.');
+        }
+        foreach (array_unique($changed) as $key) {
+            $type = ['type' => 'edited', 'key' => $key];   // Signal::send takes its data by reference
+            Signal::send('object.edited', $org, $type);
+        }
+    }
+
     public static function create($payload, $staff_id) {
         $name = self::uniqueName($payload['name'] ?? '');
 
@@ -73,6 +179,7 @@ class FastApiOrgHandler {
         }
         try {
             self::applyForm($org, $payload);
+            self::applySettings($org, $payload);
         } catch (Exception $e) {
             $org->delete();   // don't leave a half-populated organization behind
             throw $e;
@@ -87,6 +194,7 @@ class FastApiOrgHandler {
             $name = self::uniqueName($payload['name'], $org->getId());
         }
         self::applyForm($org, $payload);
+        self::applySettings($org, $payload);
         if (isset($name) && $name !== $org->name) {
             $org->name = $name;
             $org->updated = SqlFunction::NOW();
