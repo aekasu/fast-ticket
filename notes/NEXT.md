@@ -25,8 +25,9 @@ after. fast-ticket should work against any osTicket instance out of the box.
 Field-by-field comparison of each existing create/PATCH against osTicket's own edit page (`include/staff/*.inc.php`).
 Done: tickets (PATCH), staff. **Gaps found, still open:**
 - ~~Department~~ done: parent, SLA, schedule, template, auto-response email, signature, status, assignment, auto-claim/reopen flags, alert recipients, auto-responses, extended members (the raw `flags` integer is gone from the API).
-- Help topic PATCH lacks: parent topic, status, forms (`form_id`/`forms`), sequence/number format, no-autoresponse, auto-assign (staff/team).
-- SLA PATCH lacks: schedule, transient, disable-overdue-alerts.
+- ~~Help topic~~ done: status, parent, default ticket status, forms (ordered; core ticket form never detached), number format, no-autoresponse, auto-assign. Not yet: switching individual form fields off per topic (`fields[]`) — they are preserved as stored.
+- ~~SLA~~ done: schedule, transient, disable-overdue-alerts (priority escalation flag is preserved, not editable).
+- **Dynamic forms cannot define fields** through the API (forms have title/instructions/notes only; fields are read-only). Needed to build custom ticket forms; do after user/org/task are compared.
 - Team: complete except alert flags. User/org/task: not compared yet.
 
 ### 0. Replicate osTicket — gap audit (2026-09-30)

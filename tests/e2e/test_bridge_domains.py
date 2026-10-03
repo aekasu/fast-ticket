@@ -73,10 +73,34 @@ def test_sla_lifecycle(bridge, uniq):
     assert bridge.get(f"/api/v1/slas/{sid}").status_code == 404
 
 
+def test_sla_settings_round_trip_and_partial_updates_keep_them(bridge, uniq):
+    sid = bridge.create(
+        "/api/v1/slas",
+        {"name": f"e2e-slaset-{uniq}", "grace_period": 6, "schedule_id": 2, "transient": True,
+         "disable_overdue_alerts": True, "notes": "n"},
+        cleanup="/api/v1/slas/{id}",
+    )
+    url = f"/api/v1/slas/{sid}"
+    want = {"grace_period": 6, "schedule_id": 2, "transient": True, "disable_overdue_alerts": True,
+            "is_active": True, "notes": "n"}
+
+    def check(expected):
+        got = bridge.read(url)
+        assert {k: got[k] for k in expected} == expected, got
+
+    check(want)
+    bridge.command("PATCH", url, {"grace_period": 12})                 # nothing else may move
+    check({**want, "grace_period": 12})
+    bridge.command("PATCH", url, {"transient": False, "schedule_id": 0, "is_active": False})
+    check({**want, "grace_period": 12, "transient": False, "schedule_id": 0, "is_active": False})
+    bridge.refuses("PATCH", url, {"schedule_id": 999999}, because="Schedule not found")
+    bridge.refuses("POST", "/api/v1/slas", {"name": f"e2e-slazero-{uniq}", "grace_period": 0}, because="Grace period required")
+
+
 def test_help_topic_lifecycle(bridge, uniq):
     tid = bridge.create(
         "/api/v1/topics",
-        {"topic": f"e2e-topic-{uniq}", "is_active": True, "is_public": True, "dept_id": 1, "priority_id": 2},
+        {"topic": f"e2e-topic-{uniq}", "status": "active", "is_public": True, "dept_id": 1, "priority_id": 2},
         cleanup="/api/v1/topics/{id}",
     )
     got = bridge.read(f"/api/v1/topics/{tid}")
@@ -86,11 +110,56 @@ def test_help_topic_lifecycle(bridge, uniq):
     got = bridge.read(f"/api/v1/topics/{tid}")
     assert (got["topic"], got["dept_id"], got["priority_id"]) == (f"e2e-renamed-{uniq}", 1, 2)
 
-    bridge.command("PATCH", f"/api/v1/topics/{tid}", {"is_active": False})
+    bridge.command("PATCH", f"/api/v1/topics/{tid}", {"status": "disabled"})
     assert bridge.read(f"/api/v1/topics/{tid}")["is_active"] is False
 
     bridge.command("DELETE", f"/api/v1/topics/{tid}")
     assert bridge.get(f"/api/v1/topics/{tid}").status_code == 404
+
+
+def test_help_topic_settings_round_trip_and_partial_updates_keep_them(bridge, uniq):
+    form_a = bridge.create("/api/v1/forms", {"title": f"e2e-tf-a-{uniq}", "type": "G"}, cleanup="/api/v1/forms/{id}")
+    form_b = bridge.create("/api/v1/forms", {"title": f"e2e-tf-b-{uniq}", "type": "G"}, cleanup="/api/v1/forms/{id}")
+    team = bridge.create("/api/v1/teams", {"name": f"e2e-topic-team-{uniq}", "members": [1]}, cleanup="/api/v1/teams/{id}")
+    parent = bridge.create("/api/v1/topics", {"topic": f"e2e-parent-{uniq}", "dept_id": 1}, cleanup="/api/v1/topics/{id}")
+    tid = bridge.create(
+        "/api/v1/topics",
+        {"topic": f"e2e-tset-{uniq}", "dept_id": 1, "priority_id": 2, "sla_id": 1, "parent_id": parent,
+         "no_auto_response": True, "custom_numbers": True, "number_format": "E2E-####", "sequence_id": 1,
+         "assign_staff_id": 1, "notes": "n", "status_id": 1, "form_ids": [form_a, form_b]},
+        cleanup="/api/v1/topics/{id}",
+    )
+    url = f"/api/v1/topics/{tid}"
+    want = {"parent_id": parent, "sla_id": 1, "priority_id": 2, "no_auto_response": True, "custom_numbers": True,
+            "number_format": "E2E-####", "assign_staff_id": 1, "assign_team_id": 0, "status": "active",
+            "notes": "n", "form_ids": [form_a, form_b]}
+
+    def check(expected):
+        got = bridge.read(url)
+        assert {k: got[k] for k in expected} == expected, got
+
+    check(want)
+    bridge.command("PATCH", url, {"notes": "changed"})                  # nothing else may move (forms included)
+    check({**want, "notes": "changed"})
+
+    bridge.command("PATCH", url, {"form_ids": [form_b, form_a], "assign_team_id": team, "assign_staff_id": 0})
+    check({**want, "notes": "changed", "form_ids": [form_b, form_a], "assign_staff_id": 0, "assign_team_id": team})
+    bridge.command("PATCH", url, {"form_ids": [form_b], "no_auto_response": False, "status": "archived"})
+    check({**want, "notes": "changed", "form_ids": [form_b], "assign_staff_id": 0, "assign_team_id": team,
+           "no_auto_response": False, "status": "archived"})
+    bridge.command("PATCH", url, {"form_ids": [], "assign_team_id": 0, "custom_numbers": False, "status": "active"})
+    got = bridge.read(url)
+    assert got["form_ids"] == [] and got["assign_team_id"] == 0 and got["custom_numbers"] is False
+
+    # the core "Ticket Details" form (id 2, type T) can be attached but never detached
+    bridge.command("PATCH", url, {"form_ids": [2, form_a]})
+    assert bridge.read(url)["form_ids"] == [2, form_a]
+    bridge.command("PATCH", url, {"form_ids": [form_a]})
+    assert bridge.read(url)["form_ids"] == [2, form_a]
+
+    bridge.refuses("PATCH", url, {"form_ids": [999999]}, because="Form not found")
+    bridge.refuses("PATCH", url, {"assign_staff_id": 999999}, because="Staff not found")
+    bridge.refuses("PATCH", url, {"custom_numbers": True, "number_format": "no-hash"}, because="hash character")
 
 
 def test_help_topic_name_must_be_at_least_five_characters(bridge):

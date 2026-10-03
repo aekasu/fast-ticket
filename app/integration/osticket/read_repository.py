@@ -618,10 +618,17 @@ async def get_topic(session: AsyncSession, topic_id: int) -> dict | None:
             ht.ispublic > 0 AS is_public,
             ht.created,
             ht.updated,
+            ht.topic_pid                AS parent_id,
             ht.dept_id,
             ht.priority_id,
+            ht.status_id,
             ht.sla_id,
             ht.page_id,
+            ht.noautoresp               AS no_auto_response,
+            ht.sequence_id,
+            COALESCE(ht.number_format, '') AS number_format,
+            ht.staff_id                 AS assign_staff_id,
+            ht.team_id                  AS assign_team_id,
             COALESCE(ht.flags, 0) AS flags,
             COALESCE(ht.notes, '') AS notes
         FROM ost_help_topic ht
@@ -630,6 +637,15 @@ async def get_topic(session: AsyncSession, topic_id: int) -> dict | None:
     result = await session.execute(_sql(sql), {"topic_id": topic_id})
     row = result.mappings().one_or_none()
     return dict(row) if row else None
+
+
+async def get_topic_form_ids(session: AsyncSession, topic_id: int) -> list[int]:
+    """Forms attached to a help topic, in their order (ost_help_topic_form.sort)."""
+    result = await session.execute(
+        _sql("SELECT form_id FROM ost_help_topic_form WHERE topic_id = :topic_id ORDER BY sort, id"),
+        {"topic_id": topic_id},
+    )
+    return [int(r[0]) for r in result.all()]
 
 
 # ── SLAs (Service Level Agreements) ───────────────────────────────────────────
@@ -659,7 +675,9 @@ async def get_sla(session: AsyncSession, sla_id: int) -> dict | None:
             (s.flags & 1) > 0 AS is_active,   -- SLA::FLAG_ACTIVE
             s.created,
             s.updated,
-            s.flags,
+            s.schedule_id,
+            (s.flags & 8) > 0 AS transient,                 -- SLA::FLAG_TRANSIENT
+            (s.flags & 4) > 0 AS disable_overdue_alerts,    -- SLA::FLAG_NOALERTS
             COALESCE(s.notes, '') AS notes
         FROM ost_sla s
         WHERE s.id = :sla_id

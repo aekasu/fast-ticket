@@ -25,8 +25,10 @@ MOCK_TOPIC = {
     "priority_id": 1,
     "sla_id": 1,
     "page_id": 0,
-    "flags": 0,
+    "flags": 0x2 | 0x1,         # active, custom numbers
     "notes": "Default topic",
+    "parent_id": 0, "status_id": 0, "no_auto_response": 1, "sequence_id": 3, "number_format": "T-####",
+    "assign_staff_id": 0, "assign_team_id": 4,
 }
 
 MOCK_SLA = {
@@ -36,7 +38,7 @@ MOCK_SLA = {
     "is_active": True,
     "created": _NOW,
     "updated": _NOW,
-    "flags": 0,
+    "schedule_id": 2, "transient": 1, "disable_overdue_alerts": 0,
     "notes": "Default 48h SLA",
 }
 
@@ -82,13 +84,33 @@ async def test_list_topics_returns_200():
 
 @pytest.mark.asyncio
 async def test_get_topic_returns_detail():
-    with patch("app.modules.lookups.service.repo.get_topic", new=AsyncMock(return_value=MOCK_TOPIC)):
+    with patch("app.modules.lookups.service.repo.get_topic", new=AsyncMock(return_value=dict(MOCK_TOPIC))), \
+         patch("app.modules.lookups.service.repo.get_topic_form_ids", new=AsyncMock(return_value=[2, 5])):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             resp = await ac.get("/api/v1/topics/1", headers=_auth(is_admin=True))
     assert resp.status_code == 200
     data = resp.json()
     assert data["topic"] == "General Inquiry"
     assert data["notes"] == "Default topic"
+    assert (data["status"], data["custom_numbers"], data["no_auto_response"]) == ("active", True, True)
+    assert (data["number_format"], data["assign_team_id"], data["form_ids"]) == ("T-####", 4, [2, 5])
+    assert "flags" not in data
+
+
+@pytest.mark.asyncio
+async def test_topic_settings_are_queued_and_validated():
+    body = {"status": "archived", "parent_id": 2, "status_id": 3, "no_auto_response": True, "custom_numbers": True,
+            "number_format": "X-###", "sequence_id": 1, "assign_team_id": 4, "form_ids": [2, 9]}
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        ok = await ac.patch("/api/v1/topics/2", json=body, headers=_auth(is_admin=True))
+        both = await ac.patch("/api/v1/topics/2", json={"assign_staff_id": 1, "assign_team_id": 2}, headers=_auth(is_admin=True))
+        status = await ac.patch("/api/v1/topics/2", json={"status": "gone"}, headers=_auth(is_admin=True))
+        dup = await ac.patch("/api/v1/topics/2", json={"form_ids": [2, 2]}, headers=_auth(is_admin=True))
+        zero = await ac.patch("/api/v1/topics/2", json={"form_ids": [0]}, headers=_auth(is_admin=True))
+        agent = await ac.patch("/api/v1/topics/2", json={"status": "active"}, headers=_auth(["faq.manage"]))
+    assert (ok.status_code, both.status_code, status.status_code, dup.status_code, zero.status_code,
+            agent.status_code) == (202, 422, 422, 422, 422, 403)
+    assert json.loads((await _inbox_rows())[0].payload) == {"topic_id": 2, **body}
 
 
 @pytest.mark.asyncio
@@ -151,6 +173,8 @@ async def test_get_sla_returns_detail():
     assert resp.status_code == 200
     data = resp.json()
     assert data["name"] == "Standard SLA"
+    assert (data["schedule_id"], data["transient"], data["disable_overdue_alerts"]) == (2, True, False)
+    assert "flags" not in data
     assert data["grace_period"] == 48
 
 
@@ -284,3 +308,15 @@ async def test_all_endpoints_require_auth():
             kwargs = {} if method in ("GET", "DELETE") else {"json": {}}
             resp = await func(path, **kwargs)
             assert resp.status_code == 401, f"{method} {path} → {resp.status_code}"
+
+
+@pytest.mark.asyncio
+async def test_sla_settings_are_queued_and_validated():
+    body = {"grace_period": 24, "schedule_id": 2, "transient": True, "disable_overdue_alerts": False, "is_active": False}
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        ok = await ac.patch("/api/v1/slas/3", json=body, headers=_auth(is_admin=True))
+        huge = await ac.patch("/api/v1/slas/3", json={"grace_period": 9000}, headers=_auth(is_admin=True))
+        neg = await ac.patch("/api/v1/slas/3", json={"schedule_id": -1}, headers=_auth(is_admin=True))
+        agent = await ac.patch("/api/v1/slas/3", json={"transient": True}, headers=_auth(["faq.manage"]))
+    assert (ok.status_code, huge.status_code, neg.status_code, agent.status_code) == (202, 422, 422, 403)
+    assert json.loads((await _inbox_rows())[0].payload) == {"sla_id": 3, **body}

@@ -100,7 +100,14 @@ async def get_topic(session: AsyncSession, topic_id: int) -> TopicDetail | None:
     row = await repo.get_topic(session, topic_id)
     if not row:
         return None
-    return TopicDetail(**row)
+    row = dict(row)
+    flags = int(row.pop("flags", 0) or 0)   # Topic::FLAG_CUSTOM_NUMBERS 1, FLAG_ACTIVE 2, FLAG_ARCHIVED 4
+    return TopicDetail(
+        **row,
+        status="archived" if flags & 0x4 else ("active" if flags & 0x2 else "disabled"),
+        custom_numbers=bool(flags & 0x1),
+        form_ids=await repo.get_topic_form_ids(session, topic_id),
+    )
 
 
 async def create_topic(
