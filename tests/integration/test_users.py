@@ -23,6 +23,7 @@ MOCK_ORG = {
     "phone": "555-0100",
     "website": "www.acme.corp",
     "internal_notes": "Key account",
+    "manager": "t4", "domain": "acme.corp", "status": 0x1 | 0x4 | 0x8,
 }
 
 MOCK_USER = {
@@ -73,13 +74,32 @@ async def test_list_orgs_returns_200():
 
 @pytest.mark.asyncio
 async def test_get_org_returns_detail():
-    with patch("app.modules.users.service.repo.get_organization", new=AsyncMock(return_value=MOCK_ORG)):
+    with patch("app.modules.users.service.repo.get_organization", new=AsyncMock(return_value=dict(MOCK_ORG))), \
+         patch("app.modules.users.service.repo.get_organization_primary_contacts", new=AsyncMock(return_value=[7])):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             resp = await ac.get("/api/v1/orgs/1", headers=_auth(["user.dir"]))
     assert resp.status_code == 200
     data = resp.json()
     assert data["name"] == "Acme Corp"
     assert data["address"] == "123 Coyote Way"
+    assert (data["manager_staff_id"], data["manager_team_id"], data["domain"]) == (0, 4, "acme.corp")
+    assert (data["sharing"], data["collab_all_members"], data["collab_primary_contacts"],
+            data["assign_account_manager"], data["primary_contact_ids"]) == ("primary_contacts", True, False, True, [7])
+
+
+@pytest.mark.asyncio
+async def test_org_settings_are_queued_and_validated():
+    body = {"manager_staff_id": 3, "domain": "a.com,b.com", "sharing": "all_members", "collab_all_members": True,
+            "assign_account_manager": False, "primary_contact_ids": [7, 8]}
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        ok = await ac.patch("/api/v1/orgs/2", json=body, headers=_auth(["org.edit"]))
+        both = await ac.patch("/api/v1/orgs/2", json={"manager_staff_id": 1, "manager_team_id": 2}, headers=_auth(["org.edit"]))
+        mode = await ac.patch("/api/v1/orgs/2", json={"sharing": "everyone"}, headers=_auth(["org.edit"]))
+        dup = await ac.patch("/api/v1/orgs/2", json={"primary_contact_ids": [7, 7]}, headers=_auth(["org.edit"]))
+        denied = await ac.patch("/api/v1/orgs/2", json={"domain": "x.com"}, headers=_auth(["org.create"]))
+    assert (ok.status_code, both.status_code, mode.status_code, dup.status_code, denied.status_code) == (
+        202, 422, 422, 422, 403)
+    assert json.loads((await _inbox_rows())[0].payload) == {"org_id": 2, **body}
 
 
 @pytest.mark.asyncio

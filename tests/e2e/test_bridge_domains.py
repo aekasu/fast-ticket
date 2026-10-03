@@ -314,6 +314,49 @@ def test_organization_lifecycle(bridge, uniq):
     assert bridge.get(f"/api/v1/orgs/{oid}").status_code == 404
 
 
+def test_organization_settings_round_trip_and_partial_updates_keep_them(bridge, uniq):
+    oid = bridge.create("/api/v1/orgs", {"name": f"e2e-orgset-{uniq}", "address": "kept"}, cleanup="/api/v1/orgs/{id}")
+    member = bridge.create("/api/v1/users", {"name": "E2E Member", "email": _email(uniq, "mem"), "org_id": oid},
+                           cleanup="/api/v1/users/{id}")
+    other = bridge.create("/api/v1/users", {"name": "E2E Member 2", "email": _email(uniq, "mem2"), "org_id": oid},
+                          cleanup="/api/v1/users/{id}")
+    team = bridge.create("/api/v1/teams", {"name": f"e2e-orgteam-{uniq}", "members": [1]}, cleanup="/api/v1/teams/{id}")
+    url = f"/api/v1/orgs/{oid}"
+    base = bridge.read(url)     # osTicket gives a new organization its own sharing / collaboration defaults
+    assert (base["domain"], base["manager_staff_id"], base["primary_contact_ids"]) == ("", 0, [])
+
+    bridge.command("PATCH", url, {"manager_staff_id": 1, "domain": "e2e-org.example", "sharing": "primary_contacts",
+                                  "collab_primary_contacts": True, "assign_account_manager": True,
+                                  "collab_all_members": False, "primary_contact_ids": [member]})
+    want = {"manager_staff_id": 1, "manager_team_id": 0, "domain": "e2e-org.example", "sharing": "primary_contacts",
+            "collab_primary_contacts": True, "collab_all_members": False, "assign_account_manager": True,
+            "primary_contact_ids": [member], "address": "kept", "name": f"e2e-orgset-{uniq}"}
+
+    def check(expected):
+        got = bridge.read(url)
+        assert {k: got[k] for k in expected} == expected, got
+
+    check(want)
+    bridge.command("PATCH", url, {"website": "https://w.example"})        # form edit: settings untouched
+    check(want)
+    bridge.command("PATCH", url, {"address": "moved"})
+    check({**want, "address": "moved"})
+
+    bridge.command("PATCH", url, {"manager_team_id": team, "sharing": "all_members", "collab_all_members": True,
+                                  "collab_primary_contacts": False, "primary_contact_ids": [member, other]})
+    check({**want, "address": "moved", "manager_staff_id": 0, "manager_team_id": team, "sharing": "all_members",
+           "collab_all_members": True, "collab_primary_contacts": False, "primary_contact_ids": [member, other]})
+    bridge.command("PATCH", url, {"sharing": "disabled", "domain": "", "manager_team_id": 0, "primary_contact_ids": []})
+    got = bridge.read(url)
+    assert (got["sharing"], got["domain"], got["manager_team_id"], got["primary_contact_ids"]) == ("disabled", "", 0, [])
+    assert got["collab_all_members"] is True and got["assign_account_manager"] is True     # not mentioned: kept
+
+    bridge.refuses("PATCH", url, {"manager_staff_id": 999999}, because="Staff not found")
+    bridge.refuses("PATCH", url, {"manager_team_id": 999999}, because="Team not found")
+    bridge.refuses("PATCH", url, {"domain": "not a domain"}, because="valid email domain")
+    bridge.refuses("PATCH", url, {"primary_contact_ids": [1]}, because="not a member")
+
+
 def test_organization_rejects_a_duplicate_name_and_a_bad_phone(bridge, uniq):
     bridge.create("/api/v1/orgs", {"name": f"e2e-dup-{uniq}"}, cleanup="/api/v1/orgs/{id}")
     bridge.refuses("POST", "/api/v1/orgs", {"name": f"e2e-dup-{uniq}"}, because="already exists")

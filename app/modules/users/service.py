@@ -61,7 +61,19 @@ async def get_organization(session: AsyncSession, org_id: int) -> OrganizationDe
     row = await repo.get_organization(session, org_id)
     if not row:
         return None
-    return OrganizationDetail(**row)
+    row = dict(row)
+    manager = row.pop("manager", "") or ""         # 's<staff id>' or 't<team id>'
+    status = int(row.pop("status", 0) or 0)        # Organization::COLLAB_* / ASSIGN_* / SHARE_* bits
+    return OrganizationDetail(
+        **row,
+        manager_staff_id=int(manager[1:]) if manager[:1] == "s" and manager[1:].isdigit() else 0,
+        manager_team_id=int(manager[1:]) if manager[:1] == "t" and manager[1:].isdigit() else 0,
+        sharing="all_members" if status & 0x10 else ("primary_contacts" if status & 0x8 else "disabled"),
+        collab_all_members=bool(status & 0x1),
+        collab_primary_contacts=bool(status & 0x2),
+        assign_account_manager=bool(status & 0x4),
+        primary_contact_ids=await repo.get_organization_primary_contacts(session, org_id),
+    )
 
 
 async def create_organization(

@@ -23,6 +23,7 @@ UNSCOPED_BY_DESIGN = {
     "get_staff_teams": "Admin Panel (agents) — team ids on an agent's detail",
     "get_staff_dept_access": "Admin Panel (agents) — extra-department access on an agent's detail",
     "get_topic_form_ids": "Admin Panel (help topics) — forms on a topic's detail",
+    "get_organization_primary_contacts": "directory (route needs user.dir) — primary contacts on an organization's detail",
     "get_department_members": "Admin Panel (departments) — extended-access agents on a department's detail",
     "get_team": "Admin Panel (teams)", "list_teams": "Admin Panel (teams)",
     "get_team_members": "Admin Panel (teams) — member ids on a team's detail",

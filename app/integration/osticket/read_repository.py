@@ -1084,7 +1084,10 @@ async def get_organization(session: AsyncSession, org_id: int) -> dict | None:
             COALESCE(c.address, '') AS address,
             COALESCE(c.phone, '')   AS phone,
             COALESCE(c.website, '') AS website,
-            COALESCE(c.notes, '')   AS internal_notes
+            COALESCE(c.notes, '')   AS internal_notes,
+            COALESCE(o.manager, '') AS manager,
+            COALESCE(o.domain, '')  AS domain,
+            o.status
         FROM ost_organization o
         LEFT JOIN ost_organization__cdata c ON c.org_id = o.id
         WHERE o.id = :org_id
@@ -1092,6 +1095,14 @@ async def get_organization(session: AsyncSession, org_id: int) -> dict | None:
     result = await session.execute(_sql(sql), {"org_id": org_id})
     row = result.mappings().one_or_none()
     return dict(row) if row else None
+
+
+async def get_organization_primary_contacts(session: AsyncSession, org_id: int) -> list[int]:
+    """Members flagged as primary contacts (User::PRIMARY_ORG_CONTACT, bit 1 of ost_user.status)."""
+    result = await session.execute(
+        _sql("SELECT id FROM ost_user WHERE org_id = :org_id AND (status & 1) > 0 ORDER BY id"), {"org_id": org_id}
+    )
+    return [int(r[0]) for r in result.all()]
 
 
 # ── Users ─────────────────────────────────────────────────────────────────────
