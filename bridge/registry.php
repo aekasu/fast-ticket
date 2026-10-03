@@ -56,6 +56,10 @@ return [
     'user.create'             => ['users', 'FastApiUserHandler', 'create', 'user.created', 'global:user.create'],
     'user.update'             => ['users', 'FastApiUserHandler', 'update', 'user.updated', 'global:user.edit'],
     'user.delete'             => ['users', 'FastApiUserHandler', 'delete', 'user.deleted', 'global:user.delete'],
+    'user.account.register'   => ['users', 'FastApiUserHandler', 'registerAccount', 'user.account_registered', 'global:user.manage'],
+    'user.account.update'     => ['users', 'FastApiUserHandler', 'updateAccount', 'user.account_updated', 'global:user.manage'],
+    'user.account.password_reset' => ['users', 'FastApiUserHandler', 'sendPasswordReset', 'user.password_reset_sent', 'global:user.manage'],
+    'user.account.confirmation' => ['users', 'FastApiUserHandler', 'sendConfirmation', 'user.confirmation_sent', 'global:user.manage'],
 
     'org.create'              => ['orgs', 'FastApiOrgHandler', 'create', 'org.created', 'global:org.create'],
     'org.update'              => ['orgs', 'FastApiOrgHandler', 'update', 'org.updated', 'global:org.edit'],

@@ -137,6 +137,106 @@ class FastApiUserHandler {
         return ['user_id' => $user->getId()];
     }
 
+    /** The end user's account row (login settings), or a refusal if the user never registered. */
+    private static function requireAccount(User $user) {
+        $account = $user->getAccount();
+        if (!$account) {
+            throw new Exception('This user has no account (register one first).');
+        }
+        return $account;
+    }
+
+    private static function accountEvent($subject, $key) {
+        $type = ['type' => 'edited', 'key' => $key];   // Signal::send takes its data by reference
+        Signal::send('object.edited', $subject, $type);
+    }
+
+    /**
+     * Register an account: UserAccount::register(), as the "Register" pop-up. With send_email the user
+     * gets an activation email and picks their own password; otherwise a temporary password is required
+     * and the account is confirmed at once. Payload: user_id, username, timezone, password, send_email,
+     * require_password_reset, forbid_password_reset.
+     */
+    public static function registerAccount($payload, $staff_id) {
+        $user = self::requireUser($payload['user_id'] ?? 0);
+        if ($user->getAccount()) {
+            throw new Exception('User already registered.');
+        }
+        $send = !empty($payload['send_email']);
+        $vars = ['username' => (string) ($payload['username'] ?? ''), 'timezone' => (string) ($payload['timezone'] ?? '')];
+        if ($send) {
+            $vars['sendemail'] = true;
+        } else {
+            $vars['passwd1'] = $vars['passwd2'] = (string) ($payload['password'] ?? '');
+            if (!empty($payload['require_password_reset'])) $vars['pwreset-flag'] = 1;
+            if (!empty($payload['forbid_password_reset'])) $vars['forbid-pwreset-flag'] = 1;
+        }
+        $errors = [];
+        if (!UserAccount::register($user, $vars, $errors) || $errors) {
+            throw new Exception('Account was not created: ' . json_encode($errors ?: 'registration failed'));
+        }
+        self::accountEvent($user, 'user-registered');
+        return ['user_id' => $user->getId(), 'confirmed' => !$send];
+    }
+
+    /**
+     * Change an account: UserAccount::update(). It overwrites username, timezone and every status flag
+     * from its vars, so they start from the stored account and only the payload's keys are overlaid.
+     * Payload: user_id, username, timezone, password (also confirms the account), is_locked,
+     * require_password_reset, forbid_password_reset.
+     */
+    public static function updateAccount($payload, $staff_id) {
+        $user = self::requireUser($payload['user_id'] ?? 0);
+        $account = self::requireAccount($user);
+        $vars = ['username' => (string) $account->username, 'timezone' => (string) $account->timezone];
+        foreach (['username', 'timezone'] as $field) {
+            if (array_key_exists($field, $payload)) {
+                $vars[$field] = (string) $payload[$field];
+            }
+        }
+        $flags = [
+            'is_locked'              => ['locked-flag', UserAccountStatus::LOCKED],
+            'require_password_reset' => ['pwreset-flag', UserAccountStatus::REQUIRE_PASSWD_RESET],
+            'forbid_password_reset'  => ['forbid-pwchange-flag', UserAccountStatus::FORBID_PASSWD_RESET],
+        ];
+        foreach ($flags as $key => list($form_key, $bit)) {
+            $on = array_key_exists($key, $payload) ? (bool) $payload[$key] : $account->getStatus()->check($bit);
+            if ($on) $vars[$form_key] = 1;
+        }
+        if (!empty($payload['password'])) {
+            $vars['passwd1'] = (string) $payload['password'];
+        }
+        $errors = [];
+        if (!$account->update($vars, $errors) || $errors) {
+            throw new Exception('Account was not updated: ' . json_encode($errors ?: 'update failed'));
+        }
+        return ['user_id' => $user->getId(), 'is_locked' => $account->isLocked(), 'is_confirmed' => $account->isConfirmed()];
+    }
+
+    /** Email the user a password-reset link (the Reset Password action). */
+    public static function sendPasswordReset($payload, $staff_id) {
+        $user = self::requireUser($payload['user_id'] ?? 0);
+        $account = self::requireAccount($user);
+        if (!$account->sendResetEmail()) {
+            throw new Exception('The password reset email could not be sent.');
+        }
+        self::accountEvent($account, 'pwreset-sent');
+        return ['user_id' => $user->getId()];
+    }
+
+    /** Email the user an account-activation link (the Send Activation Email action). */
+    public static function sendConfirmation($payload, $staff_id) {
+        $user = self::requireUser($payload['user_id'] ?? 0);
+        $account = self::requireAccount($user);
+        if ($account->isConfirmed()) {
+            throw new Exception('Account is already confirmed.');
+        }
+        if (!$account->sendConfirmEmail()) {
+            throw new Exception('The activation email could not be sent.');
+        }
+        return ['user_id' => $user->getId()];
+    }
+
     public static function delete($payload, $staff_id) {
         $user = self::requireUser($payload['user_id'] ?? 0);
         if (!$user->delete()) {
