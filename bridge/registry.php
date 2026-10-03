@@ -105,6 +105,9 @@ return [
     'form.create'             => ['forms', 'FastApiFormHandler', 'create', 'form.created', 'admin'],
     'form.update'             => ['forms', 'FastApiFormHandler', 'update', 'form.updated', 'admin'],
     'form.delete'             => ['forms', 'FastApiFormHandler', 'delete', 'form.deleted', 'admin'],
+    'form.field.add'          => ['forms', 'FastApiFormHandler', 'addField', 'form.field_added', 'admin'],
+    'form.field.update'       => ['forms', 'FastApiFormHandler', 'updateField', 'form.field_updated', 'admin'],
+    'form.field.delete'       => ['forms', 'FastApiFormHandler', 'deleteField', 'form.field_deleted', 'admin'],
 
     'banlist.create'          => ['banlist', 'FastApiBanlistHandler', 'create', 'banlist.created', 'admin'],
     'banlist.update'          => ['banlist', 'FastApiBanlistHandler', 'update', 'banlist.updated', 'admin'],
