@@ -1138,6 +1138,18 @@ async def list_users(
     result = await session.execute(_sql(sql), params)
     return list(result.mappings().all())
 
+async def get_user_account(session: AsyncSession, user_id: int) -> dict | None:
+    """The end user's login account, or None before they register. Never selects the password hash."""
+    sql = """
+        SELECT username, COALESCE(timezone, '') AS timezone, status, registered
+        FROM ost_user_account
+        WHERE user_id = :user_id
+    """
+    result = await session.execute(_sql(sql), {"user_id": user_id})
+    row = result.mappings().one_or_none()
+    return dict(row) if row else None
+
+
 async def get_user(session: AsyncSession, user_id: int) -> dict | None:
     # phone / notes are answers of the user dynamic form, mirrored by osTicket in
     # ost_user__cdata. The form has no mobile field, so that stays empty.

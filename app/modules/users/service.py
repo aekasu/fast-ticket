@@ -6,7 +6,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.integration.osticket import read_repository as repo
 from app.integration.osticket.commands_service import dispatch_command
 from app.modules.users.models import (
+    UserAccountInfo,
     CommandResponse,
+    UserAccountInfo,
     OrganizationCreate,
     OrganizationUpdate,
     OrganizationListItem,
@@ -169,7 +171,70 @@ async def get_user(session: AsyncSession, user_id: int) -> UserDetail | None:
     row_dict = dict(row)
     if row_dict.get("email") is None:
         row_dict["email"] = ""
-    return UserDetail(**row_dict)
+    account = await repo.get_user_account(session, user_id)
+    info = None
+    if account:
+        flags = int(account["status"] or 0)    # UserAccountStatus: CONFIRMED 1, LOCKED 2, REQUIRE_RESET 4, FORBID_RESET 8
+        info = UserAccountInfo(
+            username=account["username"], timezone=account["timezone"],
+            status="locked" if flags & 0x2 else ("active" if flags & 0x1 else "pending"),
+            is_confirmed=bool(flags & 0x1), is_locked=bool(flags & 0x2),
+            require_password_reset=bool(flags & 0x4), forbid_password_reset=bool(flags & 0x8),
+            registered=account["registered"],
+        )
+    return UserDetail(**row_dict, is_primary_contact=bool(int(row_dict.get("status") or 0) & 0x1), account=info)
+
+async def register_account(session, user_id, body, staff_id, idempotency_key):
+    cmd = await dispatch_command(
+        session=session,
+        command_type="user.account.register",
+        aggregate_type="user",
+        aggregate_id=str(user_id),
+        payload={"user_id": user_id, **body.model_dump(exclude_none=True)},
+        requested_by_staff_id=staff_id,
+        idempotency_key=idempotency_key,
+    )
+    return _cmd_resp(cmd, idempotency_key)
+
+
+async def update_account(session, user_id, body, staff_id, idempotency_key):
+    cmd = await dispatch_command(
+        session=session,
+        command_type="user.account.update",
+        aggregate_type="user",
+        aggregate_id=str(user_id),
+        payload={"user_id": user_id, **body.model_dump(exclude_none=True)},
+        requested_by_staff_id=staff_id,
+        idempotency_key=idempotency_key,
+    )
+    return _cmd_resp(cmd, idempotency_key)
+
+
+async def send_password_reset(session, user_id, staff_id, idempotency_key):
+    cmd = await dispatch_command(
+        session=session,
+        command_type="user.account.password_reset",
+        aggregate_type="user",
+        aggregate_id=str(user_id),
+        payload={"user_id": user_id},
+        requested_by_staff_id=staff_id,
+        idempotency_key=idempotency_key,
+    )
+    return _cmd_resp(cmd, idempotency_key)
+
+
+async def send_confirmation(session, user_id, staff_id, idempotency_key):
+    cmd = await dispatch_command(
+        session=session,
+        command_type="user.account.confirmation",
+        aggregate_type="user",
+        aggregate_id=str(user_id),
+        payload={"user_id": user_id},
+        requested_by_staff_id=staff_id,
+        idempotency_key=idempotency_key,
+    )
+    return _cmd_resp(cmd, idempotency_key)
+
 
 async def create_user(
     session: AsyncSession,

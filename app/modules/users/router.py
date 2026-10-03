@@ -4,6 +4,8 @@ Permissions (global permissions on the staff member — ``Staff::hasPerm($key)``
   reads          user.dir      the user/organization directory (osTicket does not gate organization
                                pages by URL; the API uses the directory permission as the nearest gate)
   users          user.create   user.edit   user.delete
+  accounts       user.manage   (register, change/lock/unlock, password-reset and activation emails — osTicket's
+                               "Manage Account" pop-ups)
   organizations  org.create    org.edit    org.delete
 """
 
@@ -19,6 +21,8 @@ from app.modules.users.models import (
     OrganizationUpdate,
     OrganizationDetail,
     OrganizationListResponse,
+    UserAccountRegister,
+    UserAccountUpdate,
     UserCreate,
     UserUpdate,
     UserDetail,
@@ -136,3 +140,51 @@ async def delete_user(
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
     return await service.delete_user(session, user_id, current_user["staff_id"], idempotency_key)
+
+
+# ── End-user accounts (user.manage, as osTicket's "Manage Account") ───────────────
+
+@router.post("/users/{user_id}/account", response_model=CommandResponse, status_code=202,
+             summary="Register a login account for a user")
+async def register_account(
+    user_id: int,
+    body: UserAccountRegister,
+    current_user: dict = require_perm("user.manage"),
+    session: AsyncSession = Depends(get_session),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    return await service.register_account(session, user_id, body, current_user["staff_id"], idempotency_key)
+
+
+@router.patch("/users/{user_id}/account", response_model=CommandResponse, status_code=202,
+              summary="Change a user's account: username, timezone, password, lock, password-reset flags")
+async def update_account(
+    user_id: int,
+    body: UserAccountUpdate,
+    current_user: dict = require_perm("user.manage"),
+    session: AsyncSession = Depends(get_session),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    return await service.update_account(session, user_id, body, current_user["staff_id"], idempotency_key)
+
+
+@router.post("/users/{user_id}/account/password-reset", response_model=CommandResponse, status_code=202,
+             summary="Email the user a password-reset link")
+async def send_password_reset(
+    user_id: int,
+    current_user: dict = require_perm("user.manage"),
+    session: AsyncSession = Depends(get_session),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    return await service.send_password_reset(session, user_id, current_user["staff_id"], idempotency_key)
+
+
+@router.post("/users/{user_id}/account/confirmation", response_model=CommandResponse, status_code=202,
+             summary="Email the user an account-activation link")
+async def send_confirmation(
+    user_id: int,
+    current_user: dict = require_perm("user.manage"),
+    session: AsyncSession = Depends(get_session),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    return await service.send_confirmation(session, user_id, current_user["staff_id"], idempotency_key)

@@ -102,10 +102,25 @@ class UserListResponse(BaseModel):
     page: int
     page_size: int
 
+class UserAccountInfo(BaseModel):
+    """The end user's login account (never the password)."""
+
+    username: Optional[str] = None
+    timezone: str = ""
+    status: Literal["active", "pending", "locked"]
+    is_confirmed: bool
+    is_locked: bool
+    require_password_reset: bool
+    forbid_password_reset: bool
+    registered: Optional[datetime] = None
+
+
 class UserDetail(UserListItem):
     phone: str = ""
     mobile: str = ""
     internal_notes: str = ""
+    is_primary_contact: bool = False
+    account: Optional[UserAccountInfo] = Field(default=None, description="null until the user registers.")
 
 class UserCreate(BaseModel):
     name: str = Field(min_length=1, max_length=255)
@@ -122,3 +137,42 @@ class UserUpdate(BaseModel):
     phone: Optional[str] = None
     mobile: Optional[str] = None
     internal_notes: Optional[str] = None
+
+
+class UserAccountRegister(BaseModel):
+    """Register a login account. Either email the user an activation link (they pick the password) or
+    set a temporary one (the account is active at once)."""
+
+    send_email: bool = False
+    password: Optional[str] = Field(default=None, min_length=1, max_length=128, description="Temporary password; required unless send_email.")
+    username: Optional[str] = Field(default=None, max_length=64, description="Optional; users can always sign in with their email.")
+    timezone: Optional[str] = Field(default=None, max_length=64)
+    require_password_reset: bool = False
+    forbid_password_reset: bool = False
+
+    @model_validator(mode="after")
+    def _password_or_email(self):
+        if not self.send_email and not self.password:
+            raise ValueError("give a temporary password, or set send_email to email an activation link")
+        if self.username and "@" in self.username:
+            raise ValueError("a username cannot be an email address (users can always sign in with it)")
+        return self
+
+
+class UserAccountUpdate(BaseModel):
+    """Absent = leave as is. Setting a password also confirms the account."""
+
+    username: Optional[str] = Field(default=None, max_length=64)
+    timezone: Optional[str] = Field(default=None, max_length=64)
+    password: Optional[str] = Field(default=None, min_length=1, max_length=128)
+    is_locked: Optional[bool] = None
+    require_password_reset: Optional[bool] = None
+    forbid_password_reset: Optional[bool] = None
+
+    @model_validator(mode="after")
+    def _something_to_change(self):
+        if all(getattr(self, f) is None for f in self.model_fields):
+            raise ValueError("give at least one field to change")
+        if self.username and "@" in self.username:
+            raise ValueError("a username cannot be an email address (users can always sign in with it)")
+        return self

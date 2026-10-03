@@ -387,6 +387,46 @@ def test_user_lifecycle_with_organization_membership(bridge, uniq):
     assert bridge.get(f"/api/v1/users/{uid}").status_code == 404
 
 
+def test_user_account_lifecycle(bridge, uniq):
+    uid = bridge.create("/api/v1/users", {"name": "E2E Acct", "email": _email(uniq, "acct")}, cleanup="/api/v1/users/{id}")
+    url = f"/api/v1/users/{uid}/account"
+    assert bridge.read(f"/api/v1/users/{uid}")["account"] is None
+    bridge.refuses("PATCH", url, {"is_locked": True}, because="no account")
+    bridge.refuses("POST", f"{url}/password-reset", None, because="no account")
+    bridge.refuses("POST", url, {"password": "short"}, because="passwd1")        # osTicket's password policy
+
+    bridge.command("POST", url, {"password": "Tmp-Pass-9x!Qz", "username": f"e2eacct{uniq}",
+                                 "require_password_reset": True})
+    acct = bridge.read(f"/api/v1/users/{uid}")["account"]
+    assert (acct["status"], acct["is_confirmed"], acct["username"], acct["require_password_reset"],
+            acct["forbid_password_reset"]) == ("active", True, f"e2eacct{uniq}", True, False)
+    assert "password" not in acct and "passwd" not in acct
+    bridge.refuses("POST", url, {"password": "Tmp-Pass-9x!Qz"}, because="already registered")
+
+    bridge.command("PATCH", url, {"is_locked": True})
+    acct = bridge.read(f"/api/v1/users/{uid}")["account"]
+    assert (acct["status"], acct["is_locked"], acct["require_password_reset"]) == ("locked", True, True)   # flag kept
+    bridge.command("PATCH", url, {"is_locked": False, "require_password_reset": False, "forbid_password_reset": True,
+                                  "timezone": "UTC"})
+    acct = bridge.read(f"/api/v1/users/{uid}")["account"]
+    assert (acct["status"], acct["require_password_reset"], acct["forbid_password_reset"], acct["username"]) == (
+        "active", False, True, f"e2eacct{uniq}")
+    bridge.command("PATCH", url, {"password": "New-Pass-7y!Wq"})
+    assert bridge.read(f"/api/v1/users/{uid}")["account"]["status"] == "active"
+    bridge.refuses("PATCH", url, {"password": "x"}, because="passwd1")
+    bridge.refuses("POST", f"{url}/confirmation", None, because="already confirmed")
+
+
+def test_user_account_activation_email_flow(bridge, uniq):
+    uid = bridge.create("/api/v1/users", {"name": "E2E Mail", "email": _email(uniq, "mail")}, cleanup="/api/v1/users/{id}")
+    url = f"/api/v1/users/{uid}/account"
+    bridge.command("POST", url, {"send_email": True})
+    acct = bridge.read(f"/api/v1/users/{uid}")["account"]
+    assert (acct["status"], acct["is_confirmed"]) == ("pending", False)          # waits for the user to activate
+    bridge.command("POST", f"{url}/confirmation")
+    bridge.command("POST", f"{url}/password-reset")
+
+
 def test_user_refusals(bridge, uniq):
     bridge.create("/api/v1/users", {"name": "E2E Dup", "email": _email(uniq)}, cleanup="/api/v1/users/{id}")
     bridge.refuses("POST", "/api/v1/users", {"name": "E2E Dup Again", "email": _email(uniq)}, because="already exists")

@@ -158,13 +158,48 @@ async def test_list_users_returns_200():
 
 @pytest.mark.asyncio
 async def test_get_user_returns_detail():
-    with patch("app.modules.users.service.repo.get_user", new=AsyncMock(return_value=MOCK_USER)):
+    with patch("app.modules.users.service.repo.get_user", new=AsyncMock(return_value=dict(MOCK_USER, status=1))), \
+         patch("app.modules.users.service.repo.get_user_account", new=AsyncMock(return_value=None)):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             resp = await ac.get("/api/v1/users/1", headers=_auth(["user.dir"]))
     assert resp.status_code == 200
     data = resp.json()
     assert data["name"] == "Wile E. Coyote"
     assert data["email"] == "wile@acme.corp"
+    assert data["account"] is None and data["is_primary_contact"] is True
+
+
+@pytest.mark.asyncio
+async def test_user_detail_decodes_the_account_status_and_never_a_password():
+    acct = {"username": "wile", "timezone": "UTC", "status": 0x1 | 0x2 | 0x4, "registered": _NOW, "passwd": "x"}
+    with patch("app.modules.users.service.repo.get_user", new=AsyncMock(return_value=dict(MOCK_USER))), \
+         patch("app.modules.users.service.repo.get_user_account", new=AsyncMock(return_value=acct)):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            data = (await ac.get("/api/v1/users/1", headers=_auth(["user.dir"]))).json()
+    assert data["account"]["status"] == "locked" and data["account"]["require_password_reset"] is True
+    assert data["account"]["is_confirmed"] is True and data["account"]["forbid_password_reset"] is False
+    assert "passwd" not in json.dumps(data) and "password" not in data["account"]
+
+
+@pytest.mark.asyncio
+async def test_account_commands_are_queued_validated_and_need_user_manage():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        reg = await ac.post("/api/v1/users/4/account", json={"password": "Tmp-pass-1!", "require_password_reset": True},
+                            headers=_auth(["user.manage"]))
+        mail = await ac.post("/api/v1/users/4/account", json={"send_email": True}, headers=_auth(["user.manage"]))
+        upd = await ac.patch("/api/v1/users/4/account", json={"is_locked": True}, headers=_auth(["user.manage"]))
+        reset = await ac.post("/api/v1/users/4/account/password-reset", headers=_auth(["user.manage"]))
+        conf = await ac.post("/api/v1/users/4/account/confirmation", headers=_auth(["user.manage"]))
+        no_pw = await ac.post("/api/v1/users/4/account", json={}, headers=_auth(["user.manage"]))
+        email_name = await ac.patch("/api/v1/users/4/account", json={"username": "a@b.com"}, headers=_auth(["user.manage"]))
+        empty = await ac.patch("/api/v1/users/4/account", json={}, headers=_auth(["user.manage"]))
+        denied = await ac.patch("/api/v1/users/4/account", json={"is_locked": True}, headers=_auth(["user.edit"]))
+    assert [r.status_code for r in (reg, mail, upd, reset, conf)] == [202] * 5
+    assert (no_pw.status_code, email_name.status_code, empty.status_code, denied.status_code) == (422, 422, 422, 403)
+    rows = await _inbox_rows()
+    assert [r.command_type for r in rows] == ["user.account.register", "user.account.register", "user.account.update",
+                                              "user.account.password_reset", "user.account.confirmation"]
+    assert json.loads(rows[2].payload) == {"user_id": 4, "is_locked": True}
 
 
 @pytest.mark.asyncio
