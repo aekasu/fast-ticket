@@ -14,7 +14,11 @@
  */
 
 require_once INCLUDE_DIR . 'class.topic.php';
+require_once INCLUDE_DIR . 'class.dynamic_forms.php';
+require_once INCLUDE_DIR . 'class.staff.php';
+require_once INCLUDE_DIR . 'class.team.php';
 require_once INCLUDE_DIR . 'class.sla.php';
+require_once INCLUDE_DIR . 'class.schedule.php';
 require_once INCLUDE_DIR . 'class.priority.php';
 require_once dirname(__FILE__) . '/common.php';
 
@@ -22,12 +26,16 @@ require_once dirname(__FILE__) . '/common.php';
 // ── Help Topics ───────────────────────────────────────────────────────────────
 
 /**
- * State is driven by `status` (active|disabled|archived) only: Topic::update() also
- * assigns $this->isactive, but ost_help_topic has no such column in 1.18, so passing
- * it makes the INSERT fail. `flags` accepts Topic::FLAG_ARCHIVED; is_active controls
- * FLAG_ACTIVE. Ticket-number
- * format, form attachments and auto-assignment are not exposed by the API and are
- * preserved as stored on update.
+ * Mirrors osTicket's help-topic page. State is `status` (active|disabled|archived): Topic::update()
+ * also assigns $this->isactive, but ost_help_topic has no such column in 1.18, so it is never passed.
+ * Payload: topic, status, is_public, parent_id, dept_id, priority_id, status_id, sla_id, page_id, notes,
+ * no_auto_response, custom_numbers + sequence_id + number_format, assign_staff_id / assign_team_id
+ * (auto-assignment, 0 = none) and form_ids (ordered; replaces the attached forms — the core ticket form
+ * is never detached, and fields a form had switched off for this topic stay off).
+ *
+ * Topic::updateForms() only touches forms when `forms` is an array, and then rewrites every form's
+ * "disabled fields" from `fields` (the ids that stay enabled). So updates always pass both, rebuilt
+ * from the stored state.
  */
 class FastApiTopicHandler {
 
@@ -37,6 +45,35 @@ class FastApiTopicHandler {
             throw new Exception("Help topic not found: {$topic_id}");
         }
         return $topic;
+    }
+
+    /** [form_id => [field ids switched off for this topic]] in attachment order. */
+    private static function storedForms(Topic $topic) {
+        $forms = [];
+        foreach (TopicFormModel::objects()->filter(['topic_id' => $topic->getId()])->order_by('sort') as $F) {
+            $extra = JsonDataParser::decode($F->extra) ?: [];
+            $forms[(int) $F->form_id] = array_map('intval', $extra['disable'] ?? []);
+        }
+        return $forms;
+    }
+
+    private static function fieldIds($form_id) {
+        $ids = [];
+        if ($form = DynamicForm::lookup((int) $form_id)) {
+            foreach ($form->fields->values_flat('id') as $row) {
+                $ids[] = (int) $row[0];
+            }
+        }
+        return $ids;
+    }
+
+    /** `forms` + `fields` vars for a given ordered form list, keeping what is already switched off. */
+    private static function formVars(array $form_ids, array $disabled_by_form) {
+        $enabled = [];
+        foreach ($form_ids as $form_id) {
+            $enabled = array_merge($enabled, array_diff(self::fieldIds($form_id), $disabled_by_form[$form_id] ?? []));
+        }
+        return ['forms' => array_values($form_ids), 'fields' => array_values($enabled)];
     }
 
     private static function storedVars(Topic $topic) {
@@ -62,22 +99,58 @@ class FastApiTopicHandler {
         // Auto-assignment is overloaded into one field: 's<staff_id>' or 't<team_id>'.
         if ($topic->staff_id)     $vars['assign'] = 's' . $topic->staff_id;
         elseif ($topic->team_id)  $vars['assign'] = 't' . $topic->team_id;
-        return $vars;
+        $stored = self::storedForms($topic);
+        return $vars + self::formVars(array_keys($stored), $stored);
     }
 
-    private static function overlay(array $vars, array $payload) {
-        foreach (['topic', 'dept_id', 'priority_id', 'sla_id', 'page_id', 'notes'] as $field) {
+    private static function overlay(array $vars, array $payload, array $stored_forms = []) {
+        foreach (['topic', 'dept_id', 'priority_id', 'status_id', 'sla_id', 'page_id', 'notes', 'sequence_id', 'number_format'] as $field) {
             if (isset($payload[$field])) {
                 $vars[$field] = $payload[$field];
             }
         }
+        if (isset($payload['parent_id'])) {
+            $vars['topic_pid'] = (int) $payload['parent_id'];
+        }
         if (isset($payload['is_public'])) {
             $vars['ispublic'] = (int) $payload['is_public'];
         }
-        $archived = isset($payload['flags']) ? (bool) ((int) $payload['flags'] & Topic::FLAG_ARCHIVED) : null;
-        if (isset($payload['is_active']) || $archived !== null) {
-            $active = isset($payload['is_active']) ? (bool) $payload['is_active'] : ($vars['status'] === 'active');
-            $vars['status'] = ($archived ?? ($vars['status'] === 'archived')) ? 'archived' : ($active ? 'active' : 'disabled');
+        if (isset($payload['status'])) {
+            $vars['status'] = $payload['status'];
+        }
+        foreach (['no_auto_response' => 'noautoresp', 'custom_numbers' => 'custom-numbers'] as $key => $form_key) {
+            if (isset($payload[$key])) {
+                if ($payload[$key]) $vars[$form_key] = 1; else unset($vars[$form_key]);
+            }
+        }
+        if (isset($payload['assign_staff_id']) || isset($payload['assign_team_id'])) {
+            $staff = (int) ($payload['assign_staff_id'] ?? 0);
+            $team = (int) ($payload['assign_team_id'] ?? 0);
+            if ($staff && !Staff::lookup($staff)) {
+                throw new Exception("Staff not found: {$staff}");
+            }
+            if ($team && !Team::lookup($team)) {
+                throw new Exception("Team not found: {$team}");
+            }
+            unset($vars['assign']);
+            if ($staff)     $vars['assign'] = 's' . $staff;
+            elseif ($team)  $vars['assign'] = 't' . $team;
+        }
+        if (isset($payload['form_ids'])) {
+            $ids = array_map('intval', (array) $payload['form_ids']);
+            foreach ($ids as $form_id) {
+                if (!DynamicForm::lookup($form_id)) {
+                    throw new Exception("Form not found: {$form_id}");
+                }
+            }
+            // the core ticket form can never be detached (Topic::updateForms keeps type 'T')
+            foreach (array_keys($stored_forms) as $form_id) {
+                $form = DynamicForm::lookup($form_id);
+                if ($form && $form->get('type') == 'T' && !in_array($form_id, $ids)) {
+                    array_unshift($ids, $form_id);
+                }
+            }
+            $vars = array_diff_key($vars, ['forms' => 1, 'fields' => 1]) + self::formVars($ids, $stored_forms);
         }
         return $vars;
     }
@@ -99,7 +172,7 @@ class FastApiTopicHandler {
 
     public static function update($payload, $requester_staff_id) {
         $topic = self::requireTopic($payload['topic_id'] ?? 0);
-        self::save($topic, self::overlay(self::storedVars($topic), $payload));
+        self::save($topic, self::overlay(self::storedVars($topic), $payload, self::storedForms($topic)));
         return ['topic_id' => $topic->getId()];
     }
 
@@ -116,9 +189,10 @@ class FastApiTopicHandler {
 // ── SLAs ──────────────────────────────────────────────────────────────────────
 
 /**
- * `flags` accepts SLA::FLAG_ESCALATE, FLAG_NOALERTS and FLAG_TRANSIENT; is_active
- * controls FLAG_ACTIVE (SLA::update() rebuilds the whole bitmask from named keys, so a
- * raw value would otherwise be ignored).
+ * Mirrors osTicket's SLA page: name, grace_period (hours), is_active, schedule_id, transient,
+ * disable_overdue_alerts, notes. SLA::update() rebuilds the whole flag bitmask from named keys,
+ * so updates start from the stored flags; FLAG_ESCALATE (priority escalation, not on the page)
+ * is carried over as stored.
  */
 class FastApiSlaHandler {
 
@@ -153,17 +227,23 @@ class FastApiSlaHandler {
         return self::varsFromFlags($vars, $flags);
     }
 
-    private static function overlay(array $vars, array $payload, $stored_flags) {
-        foreach (['name', 'grace_period', 'notes'] as $field) {
+    private static function overlay(array $vars, array $payload) {
+        foreach (['name', 'grace_period', 'notes', 'schedule_id'] as $field) {
             if (isset($payload[$field])) {
                 $vars[$field] = $payload[$field];
             }
         }
+        if (!empty($vars['schedule_id']) && !Schedule::lookup((int) $vars['schedule_id'])) {
+            throw new Exception('Schedule not found: ' . $vars['schedule_id']);
+        }
         if (isset($payload['is_active'])) {
             $vars['isactive'] = (int) $payload['is_active'];
         }
-        if (isset($payload['flags'])) {
-            $vars = self::varsFromFlags($vars, (int) $payload['flags']);
+        // checkboxes: present = on
+        foreach (['transient', 'disable_overdue_alerts'] as $key) {
+            if (isset($payload[$key])) {
+                if ($payload[$key]) $vars[$key] = 1; else unset($vars[$key]);
+            }
         }
         return $vars;
     }
@@ -175,13 +255,13 @@ class FastApiSlaHandler {
     public static function create($payload, $requester_staff_id) {
         $defaults = ['name' => '', 'grace_period' => 0, 'schedule_id' => 0, 'notes' => '', 'isactive' => 1];
         $sla = SLA::create();
-        self::save($sla, self::overlay($defaults, $payload, 0));
+        self::save($sla, self::overlay($defaults, $payload));
         return ['sla_id' => $sla->getId(), 'name' => $sla->name];
     }
 
     public static function update($payload, $requester_staff_id) {
         $sla = self::requireSla($payload['sla_id'] ?? 0);
-        self::save($sla, self::overlay(self::storedVars($sla), $payload, (int) $sla->flags));
+        self::save($sla, self::overlay(self::storedVars($sla), $payload));
         return ['sla_id' => $sla->getId()];
     }
 
