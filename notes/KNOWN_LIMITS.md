@@ -38,6 +38,14 @@ Each entry: what is true today · what it means for you · what will resolve it 
 | **Custom-field answers are read as stored and written as osTicket's parsers accept them.** A read returns the text (`value`); a choice field's `value` is osTicket's JSON label map (`{"a":"Alpha"}`) and a list-type field's `value_id` is the item id. Writes take a choice key (or a list of keys), a boolean, a number or text. Answers to file-upload and custom-list (`list-N`) fields cannot be written, and a **ticket create** with an invalid choice key is stored as given (osTicket's create does not check it; an update does). When two forms on one ticket define the same variable name, the first wins. | Clients must interpret choice answers themselves. | Typed answer values per field type |
 | **A required custom field with no answer blocks every `PATCH /tickets/{id}`** (osTicket validates the whole form on each edit, as its own edit page does). | After adding a required field to a ticket form, old tickets must be given an answer on their next edit. | By design (osTicket) |
 
+## Lists and queues
+
+| Limit | Impact | Resolved by |
+|---|---|---|
+| **Ticket queues are osTicket's eight default ones, fixed in code** (`GET /tickets/queues`, `?queue=`): Open (unanswered, answered, overdue), My Tickets (assigned to me, to my teams), Closed. osTicket keeps its queues in `ost_queue` as an editable query builder; that table is not read. | Custom queues, renamed queues, the "Closed today / this week…" sub-queues and per-queue column or sort settings are not reflected. The default queues' ticket sets are checked against osTicket's own by the oracle test. | By design (the queue query builder is not exposed); read `ost_queue` titles if renames matter |
+| **List search (`q`) matches ticket number, subject and the requester's name or email; it does not search message bodies**, and tasks match number and title only. Matching is a plain contains, not osTicket's full-text index. | A word that appears only in a message is not found by the list search. | A full-text search over thread bodies, if a screen needs it |
+| **Sorting covers the columns that have a database column** (ticket: updated, created, due date, number, subject, status, department; task: updated, created, due date, number, title, department). osTicket's queue also sorts by priority, assignee and requester. | Those three cannot be sorted on here. | As needed |
+
 ## Attachments
 
 | Limit | Impact | Resolved by |

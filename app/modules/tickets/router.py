@@ -25,6 +25,9 @@ from app.core.security import require_perm, require_staff
 from app.modules.agents.models import AssigneeOptions
 from app.modules.tickets import service
 from app.modules.tickets.models import (
+    QueueCounts,
+    TicketQueue,
+    TicketSort,
     CommandResponse,
     TicketAssign,
     TicketAssignTeam,
@@ -67,6 +70,10 @@ async def list_tickets(
     topic_id: int | None = Query(default=None, description="Filter by help topic ID"),
     sla_id: int | None = Query(default=None, description="Filter by SLA plan ID"),
     is_answered: bool | None = Query(default=None, description="Filter by answered flag"),
+    q: str | None = Query(default=None, max_length=100, description="Ticket number, subject, or the requester's name or email (contains)"),
+    queue: TicketQueue | None = Query(default=None, description="One of osTicket's default queues (see GET /tickets/queues)"),
+    sort: TicketSort = Query(default="updated"),
+    descending: bool = Query(default=True),
     page: int = Query(default=1, ge=1, description="Page number (1-indexed)"),
     page_size: int = Query(default=50, ge=1, le=200, description="Rows per page"),
     current_user: dict = require_staff(),
@@ -88,9 +95,27 @@ async def list_tickets(
         topic_id=topic_id,
         sla_id=sla_id,
         is_answered=is_answered,
+        q=q,
+        queue=queue,
+        sort=sort,
+        descending=descending,
         page=page,
         page_size=page_size,
     )
+
+
+@router.get(
+    "/queues",
+    response_model=QueueCounts,
+    summary="Ticket counts for osTicket's default queues",
+)
+async def ticket_queues(
+    current_user: dict = require_staff(),
+    session: AsyncSession = Depends(get_session),
+):
+    """Open (unanswered / answered / overdue), My Tickets (assigned to me / to my teams) and Closed — each counted
+    among the tickets the agent's own list shows."""
+    return await service.queue_counts(session, access=current_user["access"])
 
 
 @router.get(

@@ -118,6 +118,23 @@ class TicketDetail(TicketListItem):
     custom_fields: list[CustomFieldAnswer] = []
 
 
+TicketQueue = Literal["open", "unanswered", "answered", "overdue", "mine", "assigned_me", "assigned_teams", "closed"]
+TicketSort = Literal["updated", "created", "due_date", "number", "subject", "status", "dept"]
+
+
+class QueueCount(BaseModel):
+    key: TicketQueue
+    title: str
+    parent: Optional[TicketQueue] = None
+    count: int
+
+
+class QueueCounts(BaseModel):
+    """osTicket's default queues in its own order (a child follows its parent), counted over the agent's list."""
+
+    queues: list[QueueCount]
+
+
 class TicketListResponse(BaseModel):
     items: list[TicketListItem]
     total: Optional[int] = None

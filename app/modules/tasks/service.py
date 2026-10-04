@@ -100,23 +100,21 @@ async def list_tasks(
     dept_id: int | None = None,
     assignee_staff_id: int | None = None,
     ticket_id: int | None = None,
+    q: str | None = None,
+    sort: str = "updated",
+    descending: bool = True,
     page: int = 1,
     page_size: int = 50,
 ) -> TaskListResponse:
     page_size = min(page_size, 200)
     offset = (page - 1) * page_size
-    rows = await repo.list_tasks(
-        session,
-        access=access,
-        status_id=status_id,
-        dept_id=dept_id,
-        assignee_staff_id=assignee_staff_id,
-        ticket_id=ticket_id,
-        limit=page_size,
-        offset=offset,
-    )
+    filters = dict(status_id=status_id, dept_id=dept_id, assignee_staff_id=assignee_staff_id,
+                   ticket_id=ticket_id, q=q)
+    rows = await repo.list_tasks(session, access=access, **filters, sort=sort, descending=descending, limit=page_size, offset=offset)
+    total = await repo.count_tasks(session, access=access, **filters)
     return TaskListResponse(
         items=[_row_to_list_item(dict(r)) for r in rows],
+        total=total,
         page=page,
         page_size=page_size,
     )

@@ -82,6 +82,14 @@ async def _inbox_rows() -> list[IntegrationInbox]:
 # ─────────────────────────────────────────────────────────────────────────────
 
 
+
+@pytest.fixture(autouse=True)
+def _total_of_the_list():
+    """The list services also ask for the total; tests that care patch it themselves."""
+    with patch("app.modules.tasks.service.repo.count_tasks", new=AsyncMock(return_value=0)) as count:
+        yield count
+
+
 @pytest.mark.asyncio
 async def test_list_tasks_returns_200():
     with patch("app.modules.tasks.service.repo.list_tasks", new=AsyncMock(return_value=[MOCK_TASK])):

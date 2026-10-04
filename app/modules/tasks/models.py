@@ -1,7 +1,7 @@
 """Task domain Pydantic models."""
 
 from datetime import datetime
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -19,6 +19,9 @@ class TaskStatusSchema(BaseModel):
     id: int
     name: str
     state: str  # open | closed
+
+
+TaskSort = Literal["updated", "created", "due_date", "number", "title", "dept"]
 
 
 class TaskListItem(BaseModel):

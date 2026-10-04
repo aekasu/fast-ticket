@@ -25,6 +25,7 @@ require_once INCLUDE_DIR . 'class.ticket.php';
 require_once INCLUDE_DIR . 'class.task.php';
 require_once INCLUDE_DIR . 'class.canned.php';
 require_once INCLUDE_DIR . 'class.topic.php';
+require_once INCLUDE_DIR . 'class.queue.php';
 
 $in = json_decode($argv[1] ?? '{}', true);
 $ticket_ids = array_map('intval', $in['ticket_ids'] ?? []);
@@ -67,6 +68,18 @@ foreach ($in['staff_ids'] ?? [] as $sid) {
     foreach ($ticket_ids as $id)
         if (($t = Ticket::lookup($id)) && $t->checkStaffPerm($staff)) $page[] = $id;
     $row['tickets_page'] = $ints($page);
+
+    // ── the default ticket queues: osTicket's own saved criteria, within the agent's list ─────────
+    $row['queues'] = [];
+    foreach (['open' => 1, 'unanswered' => 2, 'answered' => 3, 'overdue' => 4, 'mine' => 5,
+              'assigned_me' => 6, 'assigned_teams' => 7, 'closed' => 8] as $key => $queue_id) {
+        $ids = [];
+        if ($ticket_ids && ($queue = CustomQueue::lookup($queue_id))) {
+            $qs = $queue->getBasicQuery()->filter(['ticket_id__in' => $ticket_ids])->filter($staff->getTicketsVisibility());
+            foreach ($qs->values_flat('ticket_id') as $r) $ids[] = (int) $r[0];
+        }
+        $row['queues'][$key] = $ints($ids);
+    }
 
     // ── tasks: the visibility block of include/staff/tasks.inc.php, and Task::checkStaffPerm ──
     $list = [];

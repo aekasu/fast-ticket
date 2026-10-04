@@ -1021,6 +1021,44 @@ def test_agent_directory_and_assign_form_choices(bridge, uniq):
     bridge.command("POST", f"/api/v1/tickets/{ticket}/assign", {"staff_id": options["agents"][0]["id"], "note": "offered"})
 
 
+def test_ticket_and_task_lists_search_sort_count_and_queues_agree(bridge, uniq):
+    holder = {}
+    first = _new_ticket(bridge, uniq, holder, "qa")
+    second = _new_ticket(bridge, uniq, {}, "qb")
+    bridge.command("POST", f"/api/v1/tickets/{second}/close", {"note": "q"})
+
+    # every queue's count equals the total its own list reports; children never exceed their parent
+    queues = {q["key"]: q for q in bridge.read("/api/v1/tickets/queues")["queues"]}
+    assert list(queues) == ["open", "unanswered", "answered", "overdue", "mine", "assigned_me", "assigned_teams", "closed"]
+    for key, queue in queues.items():
+        assert bridge.read(f"/api/v1/tickets/?queue={key}&page_size=1")["total"] == queue["count"], key
+        if queue["parent"]:
+            assert queue["count"] <= queues[queue["parent"]]["count"]
+    assert queues["closed"]["count"] >= 1 and queues["open"]["count"] >= 1
+
+    # search by subject text and by ticket number; the total counts across pages
+    found = bridge.read(f"/api/v1/tickets/?q=e2e ticket {uniq}&page_size=1")
+    assert found["total"] == 2 and len(found["items"]) == 1
+    number = bridge.read(f"/api/v1/tickets/{first}")["number"]
+    assert first in {t["ticket_id"] for t in bridge.read(f"/api/v1/tickets/?q={number}")["items"]}
+    assert bridge.read("/api/v1/tickets/?q=zz-no-such-ticket-zz")["total"] == 0
+    assert bridge.read(f"/api/v1/tickets/?q=e2e ticket {uniq}&queue=closed")["total"] == 1
+    assert bridge.read("/api/v1/tickets/?q=100%25_")["total"] == 0                     # wildcards are literal
+
+    # sorting
+    asc = [t["ticket_id"] for t in bridge.read(f"/api/v1/tickets/?q={uniq}&sort=number&descending=false")["items"]]
+    desc = [t["ticket_id"] for t in bridge.read(f"/api/v1/tickets/?q={uniq}&sort=number")["items"]]
+    assert asc == desc[::-1] and set(asc) == {first, second}
+
+    # tasks: search, sort and the real total
+    t1 = bridge.create("/api/v1/tasks/", {"title": f"e2e qtask {uniq} alpha", "description": "d", "dept_id": 1}, cleanup="/api/v1/tasks/{id}")
+    t2 = bridge.create("/api/v1/tasks/", {"title": f"e2e qtask {uniq} beta", "description": "d", "dept_id": 1}, cleanup="/api/v1/tasks/{id}")
+    got = bridge.read(f"/api/v1/tasks/?q=qtask {uniq}&sort=title&descending=false&page_size=1")
+    assert got["total"] == 2 and [t["task_id"] for t in got["items"]] == [t1]
+    assert [t["task_id"] for t in bridge.read(f"/api/v1/tasks/?q=qtask {uniq}&sort=title")["items"]] == [t2, t1]
+    assert bridge.read("/api/v1/tasks/?q=zz-no-such-task-zz")["total"] == 0
+
+
 def test_ticket_merge_combines_children_into_the_parent_and_closes_them(bridge, uniq):
     holder = {}
     parent = _new_ticket(bridge, uniq, holder, "p")

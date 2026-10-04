@@ -47,8 +47,8 @@ Remaining before that is true, in order:
    **Upload deliberately not built**: the inbox is JSON-only, so it needs a design (shared volume vs size-capped
    payload) that also decides whether the API can sit on a different host from osTicket. Not needed for the demo;
    revisit only if the user wants file upload in the UI.
-4. **Queue ergonomics**: ticket list text search, sorting, and per-status counts for the queue tabs (the list has
-   only id filters today). Task list likewise.
+4. ~~Queue ergonomics~~ done: ticket list `q` / `queue` / `sort` / real `total`, `GET /tickets/queues` counts (default
+   queues checked against osTicket's own by the oracle), task list `q` / `sort` / `total`.
 5. A final full e2e + `/security-review`, review KNOWN_LIMITS, then tell the user the milestone is met.
 Not required for the demo: CSV import, custom lists, filters, schedules, export, logs, Wave 3.
 

@@ -19,6 +19,8 @@ from app.modules.agents import service as agents_service
 from app.integration.osticket.commands_service import dispatch_command
 from app.modules.tickets.models import (
     Attachment,
+    QueueCount,
+    QueueCounts,
     Collaborator,
     CommandResponse,
     ThreadEntry,
@@ -144,29 +146,40 @@ async def list_tickets(
     topic_id: int | None = None,
     sla_id: int | None = None,
     is_answered: bool | None = None,
+    q: str | None = None,
+    queue: str | None = None,
+    sort: str = "updated",
+    descending: bool = True,
     page: int = 1,
     page_size: int = 50,
 ) -> TicketListResponse:
     page_size = min(page_size, 200)
     offset = (page - 1) * page_size
-    rows = await repo.list_tickets(
-        session,
-        access=access,
-        status_id=status_id,
-        dept_id=dept_id,
-        assignee_staff_id=assignee_staff_id,
-        assignee_team_id=assignee_team_id,
-        topic_id=topic_id,
-        sla_id=sla_id,
-        is_answered=is_answered,
-        limit=page_size,
-        offset=offset,
+    filters = dict(
+        status_id=status_id, dept_id=dept_id, assignee_staff_id=assignee_staff_id,
+        assignee_team_id=assignee_team_id, topic_id=topic_id, sla_id=sla_id, is_answered=is_answered, q=q, queue=queue,
     )
+    rows = await repo.list_tickets(session, access=access, **filters, sort=sort, descending=descending, limit=page_size, offset=offset)
+    total = await repo.count_tickets(session, access=access, **filters)
     return TicketListResponse(
         items=[_row_to_list_item(dict(r)) for r in rows],
+        total=total,
         page=page,
         page_size=page_size,
     )
+
+
+_QUEUE_TITLES = (   # osTicket's default queues, parents first with their children after (ost_queue ids 1-8)
+    ("open", "Open", None), ("unanswered", "Open", "open"), ("answered", "Answered", "open"),
+    ("overdue", "Overdue", "open"), ("mine", "My Tickets", None), ("assigned_me", "Assigned to Me", "mine"),
+    ("assigned_teams", "Assigned to Teams", "mine"), ("closed", "Closed", None),
+)
+
+
+async def queue_counts(session: AsyncSession, *, access) -> QueueCounts:
+    counts = await repo.count_ticket_queues(session, access=access)
+    return QueueCounts(queues=[QueueCount(key=key, title=title, parent=parent, count=counts[key])
+                               for key, title, parent in _QUEUE_TITLES])
 
 
 async def get_ticket(session: AsyncSession, ticket_id: int, *, access) -> TicketDetail | None:

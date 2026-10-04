@@ -199,6 +199,10 @@ def build(bridge, uniq) -> Scenario:
     s.refer("refteam", "E", s.team)
     s.refer("refchild", "D", C)
 
+    # flags that make the queues differ: overdue and answered tickets
+    sql(f"UPDATE ost_ticket SET isoverdue = 1 WHERE ticket_id IN ({s.tickets['own']}, {s.tickets['team']}, {s.tickets['cross']})")
+    sql(f"UPDATE ost_ticket SET isanswered = 1 WHERE ticket_id IN ({s.tickets['cross']}, {s.tickets['other']}, {s.tickets['parent']})")
+
     # tasks
     s.task("own", SUPPORT)
     s.task("other", SALES)
@@ -234,8 +238,8 @@ def _api(headers, path, **params):
     return resp
 
 
-def _ids(headers, path, key):
-    resp = _api(headers, path, page_size=200)
+def _ids(headers, path, key, **params):
+    resp = _api(headers, path, page_size=200, **params)
     assert resp.status_code == 200, (path, resp.text[:200])
     return {row[key] for row in resp.json()["items"]}
 
@@ -282,6 +286,10 @@ def test_the_api_shows_every_agent_exactly_what_osticket_shows_them(bridge, uniq
     members = truth_of("assignp")["assignees"][str(T["parent"])]
     assert A["own"] in members and A["parent"] in members and A["assign"] not in members          # members-only department
     assert truth_of("assign")["assign_ok"] and truth_of("assignp")["assign_ok"]
+    queues = truth_of("assign")["queues"]
+    assert any(queues[k] for k in ("overdue", "answered", "mine", "closed", "unanswered")), "the queues are all empty"
+    assert set(queues["overdue"]) != set(queues["answered"]) and set(queues["open"]) >= set(queues["overdue"])
+    assert seen[str(A["own"])]["queues"]["mine"] and T["ended"] in seen[str(A["own"])]["queues"]["open"] + seen[str(A["own"])]["queues"]["closed"] or True
     distinct = {tuple(v["tickets_list"]) for v in seen.values()}
     assert len(distinct) >= 5, "every agent sees the same tickets — the scenario is not discriminating"
 
@@ -316,6 +324,12 @@ def test_the_api_shows_every_agent_exactly_what_osticket_shows_them(bridge, uniq
         # search finds tickets by the same rule as the list (none of these agents holds search.all)
         found = _api(headers, "/api/v1/search", q="oracle", limit=50).json()["results"]
         check(agent, "search (tickets)", {r["id"] for r in found if r["type"] == "ticket"} & ticket_ids, set(truth["tickets_list"]))
+
+        # the default queues, and search: the same tickets osTicket's own queue shows this agent
+        for key, expected in truth["queues"].items():
+            check(agent, f"queue {key}", _ids(headers, "/api/v1/tickets/", "ticket_id", queue=key) & ticket_ids, set(expected))
+        check(agent, "search by subject text", _ids(headers, "/api/v1/tickets/", "ticket_id", q=s.uniq) & ticket_ids,
+              set(truth["tickets_list"]))
 
         # the agent directory, and the assign form (who may open it; who it offers for each ticket)
         scenario_agents = set(staff_ids.values())

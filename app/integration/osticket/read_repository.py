@@ -189,6 +189,57 @@ _TICKET_SELECT = """
 """
 
 
+def _queue_condition(queue: str, access: "Scope") -> str:
+    """osTicket's default ticket queues (the ``ost_queue`` rows it ships with), over ``ost_ticket t`` joined to
+    ``ost_ticket_status ts``. "Mine" is ``assignee includes Me or One of my teams``."""
+    me = int(getattr(access, "staff_id", 0) or 0)
+    teams = getattr(access, "team_ids", frozenset())
+    mine = [f"t.staff_id = {me}"] + ([f"t.team_id IN ({_ids(teams)})"] if teams else [])
+    opened = "ts.state = 'open'"
+    return {
+        "open": opened,
+        "unanswered": f"{opened} AND t.isanswered = 0",
+        "answered": f"{opened} AND t.isanswered = 1",
+        "overdue": f"{opened} AND t.isoverdue = 1",
+        "mine": f"{opened} AND ({' OR '.join(mine)})",
+        "assigned_me": f"{opened} AND t.staff_id = {me}",
+        "assigned_teams": f"{opened} AND t.staff_id <> {me} AND " + (f"t.team_id IN ({_ids(teams)})" if teams else "1 = 0"),
+        "closed": "ts.state = 'closed'",
+    }[queue]
+
+
+_TICKET_SORTS = {   # the columns of osTicket's ticket queue that have a database column
+    "updated": "t.updated", "created": "t.created", "due_date": "t.duedate", "number": "t.number",
+    "subject": "c.subject", "status": "ts.name", "dept": "d.name",
+}
+
+
+def _ticket_filters(
+    access: "Scope", *, status_id, dept_id, assignee_staff_id, assignee_team_id, topic_id, sla_id, is_answered, q, queue,
+) -> tuple[list[str], dict]:
+    where = [ticket_visibility(access, detail=False)]
+    params: dict = {}
+    for column, name, value in (
+        ("t.status_id", "status_id", status_id), ("t.dept_id", "dept_id", dept_id),
+        ("t.staff_id", "assignee_staff_id", assignee_staff_id), ("t.team_id", "assignee_team_id", assignee_team_id),
+        ("t.topic_id", "topic_id", topic_id), ("t.sla_id", "sla_id", sla_id),
+    ):
+        if value is not None:
+            where.append(f"{column} = :{name}")
+            params[name] = value
+    if is_answered is not None:
+        where.append("t.isanswered = :is_answered")
+        params["is_answered"] = 1 if is_answered else 0
+    if queue:
+        where.append("(" + _queue_condition(queue, access) + ")")
+    if q:   # ticket number, subject, or the requester's name or any of their email addresses
+        where.append(
+            "(t.number LIKE :like OR c.subject LIKE :like OR u.name LIKE :like OR EXISTS ("
+            "SELECT 1 FROM ost_user_email ue WHERE ue.user_id = t.user_id AND ue.address LIKE :like))")
+        params["like"] = _like(q)
+    return where, params
+
+
 async def list_tickets(
     session: AsyncSession,
     *,
@@ -200,43 +251,61 @@ async def list_tickets(
     topic_id: int | None = None,
     sla_id: int | None = None,
     is_answered: bool | None = None,
+    q: str | None = None,
+    queue: str | None = None,
+    sort: str = "updated",
+    descending: bool = True,
     limit: int = 50,
     offset: int = 0,
 ) -> list:
-    """Return a filtered, paginated list of ticket rows."""
-    where_clauses = [ticket_visibility(access, detail=False)]
-    params: dict = {"limit": limit, "offset": offset}
-
-    if status_id is not None:
-        where_clauses.append("t.status_id = :status_id")
-        params["status_id"] = status_id
-    if dept_id is not None:
-        where_clauses.append("t.dept_id = :dept_id")
-        params["dept_id"] = dept_id
-    if assignee_staff_id is not None:
-        where_clauses.append("t.staff_id = :assignee_staff_id")
-        params["assignee_staff_id"] = assignee_staff_id
-    if assignee_team_id is not None:
-        where_clauses.append("t.team_id = :assignee_team_id")
-        params["assignee_team_id"] = assignee_team_id
-    if topic_id is not None:
-        where_clauses.append("t.topic_id = :topic_id")
-        params["topic_id"] = topic_id
-    if sla_id is not None:
-        where_clauses.append("t.sla_id = :sla_id")
-        params["sla_id"] = sla_id
-    if is_answered is not None:
-        where_clauses.append("t.isanswered = :is_answered")
-        params["is_answered"] = 1 if is_answered else 0
-
+    """A filtered, sorted, paginated list of ticket rows the agent's list shows."""
+    where, params = _ticket_filters(
+        access, status_id=status_id, dept_id=dept_id, assignee_staff_id=assignee_staff_id,
+        assignee_team_id=assignee_team_id, topic_id=topic_id, sla_id=sla_id, is_answered=is_answered, q=q, queue=queue)
+    column = _TICKET_SORTS.get(sort, "t.updated")
+    direction = "DESC" if descending else "ASC"
     sql = (
-        _TICKET_SELECT
-        + " WHERE " + " AND ".join(where_clauses)
-        + " ORDER BY t.updated DESC"
-        + " LIMIT :limit OFFSET :offset"
+        _TICKET_SELECT + " WHERE " + " AND ".join(where)
+        + f" ORDER BY {column} {direction}, t.ticket_id {direction} LIMIT :limit OFFSET :offset"
     )
-    result = await session.execute(_sql(sql), params)
+    result = await session.execute(_sql(sql), {**params, "limit": limit, "offset": offset})
     return list(result.mappings().all())
+
+
+async def count_tickets(
+    session: AsyncSession,
+    *,
+    access: "Scope",
+    status_id: int | None = None,
+    dept_id: int | None = None,
+    assignee_staff_id: int | None = None,
+    assignee_team_id: int | None = None,
+    topic_id: int | None = None,
+    sla_id: int | None = None,
+    is_answered: bool | None = None,
+    q: str | None = None,
+    queue: str | None = None,
+) -> int:
+    """How many tickets ``list_tickets`` would return across all pages."""
+    where, params = _ticket_filters(
+        access, status_id=status_id, dept_id=dept_id, assignee_staff_id=assignee_staff_id,
+        assignee_team_id=assignee_team_id, topic_id=topic_id, sla_id=sla_id, is_answered=is_answered, q=q, queue=queue)
+    sql = ("SELECT COUNT(*) FROM ost_ticket t LEFT JOIN ost_ticket_status ts ON t.status_id = ts.id "
+           "LEFT JOIN ost_ticket__cdata c ON c.ticket_id = t.ticket_id LEFT JOIN ost_user u ON t.user_id = u.id "
+           "WHERE " + " AND ".join(where))
+    return int((await session.execute(_sql(sql), params)).scalar() or 0)
+
+
+QUEUE_KEYS = ("open", "unanswered", "answered", "overdue", "mine", "assigned_me", "assigned_teams", "closed")
+
+
+async def count_ticket_queues(session: AsyncSession, *, access: "Scope") -> dict[str, int]:
+    """Tickets in each default queue, among those the agent's list shows (``CustomQueue::getCount``)."""
+    cells = ", ".join(f"COALESCE(SUM(CASE WHEN {_queue_condition(key, access)} THEN 1 ELSE 0 END), 0) AS {key}" for key in QUEUE_KEYS)
+    sql = ("SELECT " + cells + " FROM ost_ticket t JOIN ost_ticket_status ts ON ts.id = t.status_id WHERE "
+           + ticket_visibility(access, detail=False))
+    row = (await session.execute(_sql(sql))).mappings().one()
+    return {key: int(row[key]) for key in QUEUE_KEYS}
 
 
 async def get_ticket(session: AsyncSession, ticket_id: int, *, access: "Scope") -> dict | None:
@@ -1389,6 +1458,31 @@ _TASK_SELECT = """
 """
 
 
+_TASK_SORTS = {"updated": "t.updated", "created": "t.created", "due_date": "t.duedate", "number": "t.number",
+               "title": "c.title", "dept": "d.name"}
+
+
+def _task_filters(access: "Scope", *, status_id, dept_id, assignee_staff_id, ticket_id, q) -> tuple[list[str], dict]:
+    where = [task_visibility(access, detail=False)]
+    params: dict = {}
+    if status_id is not None:  # synthetic: 1 = open, anything else = closed
+        where.append("(t.flags & 1) = :is_open")
+        params["is_open"] = 1 if status_id == 1 else 0
+    if dept_id is not None:
+        where.append("t.dept_id = :dept_id")
+        params["dept_id"] = dept_id
+    if assignee_staff_id is not None:
+        where.append("t.staff_id = :assignee_staff_id")
+        params["assignee_staff_id"] = assignee_staff_id
+    if ticket_id is not None:
+        where.append("t.object_type = 'T' AND t.object_id = :ticket_id")
+        params["ticket_id"] = ticket_id
+    if q:
+        where.append("(t.number LIKE :like OR c.title LIKE :like)")
+        params["like"] = _like(q)
+    return where, params
+
+
 async def list_tasks(
     session: AsyncSession,
     *,
@@ -1397,33 +1491,36 @@ async def list_tasks(
     dept_id: int | None = None,
     assignee_staff_id: int | None = None,
     ticket_id: int | None = None,
+    q: str | None = None,
+    sort: str = "updated",
+    descending: bool = True,
     limit: int = 50,
     offset: int = 0,
 ) -> list:
-    where_clauses = [task_visibility(access, detail=False)]
-    params: dict = {"limit": limit, "offset": offset}
-
-    if status_id is not None:  # synthetic: 1 = open, anything else = closed
-        where_clauses.append("(t.flags & 1) = :is_open")
-        params["is_open"] = 1 if status_id == 1 else 0
-    if dept_id is not None:
-        where_clauses.append("t.dept_id = :dept_id")
-        params["dept_id"] = dept_id
-    if assignee_staff_id is not None:
-        where_clauses.append("t.staff_id = :assignee_staff_id")
-        params["assignee_staff_id"] = assignee_staff_id
-    if ticket_id is not None:
-        where_clauses.append("t.object_type = 'T' AND t.object_id = :ticket_id")
-        params["ticket_id"] = ticket_id
-
-    sql = (
-        _TASK_SELECT
-        + " WHERE " + " AND ".join(where_clauses)
-        + " ORDER BY t.updated DESC"
-        + " LIMIT :limit OFFSET :offset"
-    )
-    result = await session.execute(_sql(sql), params)
+    where, params = _task_filters(access, status_id=status_id, dept_id=dept_id, assignee_staff_id=assignee_staff_id,
+                                  ticket_id=ticket_id, q=q)
+    direction = "DESC" if descending else "ASC"
+    sql = (_TASK_SELECT + " WHERE " + " AND ".join(where)
+           + f" ORDER BY {_TASK_SORTS.get(sort, 't.updated')} {direction}, t.id {direction} LIMIT :limit OFFSET :offset")
+    result = await session.execute(_sql(sql), {**params, "limit": limit, "offset": offset})
     return list(result.mappings().all())
+
+
+async def count_tasks(
+    session: AsyncSession,
+    *,
+    access: "Scope",
+    status_id: int | None = None,
+    dept_id: int | None = None,
+    assignee_staff_id: int | None = None,
+    ticket_id: int | None = None,
+    q: str | None = None,
+) -> int:
+    """How many tasks ``list_tasks`` would return across all pages."""
+    where, params = _task_filters(access, status_id=status_id, dept_id=dept_id, assignee_staff_id=assignee_staff_id,
+                                  ticket_id=ticket_id, q=q)
+    sql = "SELECT COUNT(*) FROM ost_task t LEFT JOIN ost_task__cdata c ON c.task_id = t.id WHERE " + " AND ".join(where)
+    return int((await session.execute(_sql(sql), params)).scalar() or 0)
 
 
 async def get_task(session: AsyncSession, task_id: int, *, access: "Scope") -> dict | None:

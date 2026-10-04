@@ -22,6 +22,7 @@ from app.core.security import require_perm, require_staff
 from app.modules.agents.models import AssigneeOptions
 from app.modules.tasks import service
 from app.modules.tasks.models import (
+    TaskSort,
     TaskAssign,
     TaskClaim,
     TaskClose,
@@ -48,6 +49,9 @@ async def list_tasks(
     dept_id: int | None = Query(default=None, description="Filter by department ID"),
     assignee_staff_id: int | None = Query(default=None, description="Filter by assigned staff"),
     ticket_id: int | None = Query(default=None, description="Filter to tasks linked to a ticket"),
+    q: str | None = Query(default=None, max_length=100, description="Task number or title (contains)"),
+    sort: TaskSort = Query(default="updated"),
+    descending: bool = Query(default=True),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200),
     current_user: dict = require_staff(),
@@ -62,6 +66,9 @@ async def list_tasks(
         dept_id=dept_id,
         assignee_staff_id=assignee_staff_id,
         ticket_id=ticket_id,
+        q=q,
+        sort=sort,
+        descending=descending,
         page=page,
         page_size=page_size,
     )
