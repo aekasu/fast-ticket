@@ -148,6 +148,7 @@ async def test_get_task_returns_detail():
     with (
         patch("app.modules.tasks.service.repo.get_task", new=AsyncMock(return_value=MOCK_TASK)),
         patch("app.modules.tasks.service.repo.get_task_thread", new=AsyncMock(return_value=[MOCK_THREAD])),
+        patch("app.modules.tasks.service.repo.get_task_attachments", new=AsyncMock(return_value=[])),
         patch("app.modules.tasks.service.repo.get_task_custom_fields", new=AsyncMock(return_value=[
             {"name": "site", "label": "Site", "type": "text", "value": "HQ", "value_id": None},
             {"name": "title", "label": "Title", "type": "text", "value": "dup", "value_id": None}])),

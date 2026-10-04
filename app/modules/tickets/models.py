@@ -74,6 +74,15 @@ class TicketListItem(BaseModel):
     due_date: Optional[datetime] = None
 
 
+class Attachment(BaseModel):
+    id: int
+    name: str
+    size: int
+    content_type: str
+    inline: bool = False
+    # download: GET /tickets/{id}/attachments/{attachment id} (tasks: /tasks/{id}/attachments/{attachment id})
+
+
 class ThreadEntry(BaseModel):
     id: int
     type: str = Field(description="Entry type: M=message, R=reply, N=note, E=event")
@@ -85,6 +94,7 @@ class ThreadEntry(BaseModel):
     ip_address: Optional[str] = None
     created: datetime
     is_edited: bool = False
+    attachments: list[Attachment] = []
 
 
 class Collaborator(BaseModel):

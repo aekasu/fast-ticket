@@ -19,6 +19,7 @@ per-department check when it runs the command):
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.attachments import file_response
 from app.core.db import get_session
 from app.core.security import require_perm, require_staff
 from app.modules.agents.models import AssigneeOptions
@@ -107,6 +108,24 @@ async def get_ticket(
     if ticket is None:
         raise HTTPException(status_code=404, detail=f"Ticket {ticket_id} not found.")
     return ticket
+
+
+@router.get(
+    "/{ticket_id}/attachments/{attachment_id}",
+    summary="Download a file attached to one of the ticket's thread entries",
+    responses={200: {"content": {"application/octet-stream": {}}}},
+)
+async def download_ticket_attachment(
+    ticket_id: int,
+    attachment_id: int,
+    current_user: dict = require_staff(),
+    session: AsyncSession = Depends(get_session),
+):
+    # 404 for a ticket the agent may not open, and for a file that is not attached to it.
+    row = await service.ticket_attachment(session, ticket_id, attachment_id, access=current_user["access"])
+    if row is None:
+        raise HTTPException(status_code=404, detail="Attachment not found.")
+    return file_response(row)
 
 
 @router.get(

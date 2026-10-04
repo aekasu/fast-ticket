@@ -13,10 +13,12 @@ from datetime import timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.custom_fields import BUILT_IN_FIELDS, CustomFieldAnswer
+from app.core.attachments import group_by_entry
 from app.integration.osticket import read_repository as repo
 from app.modules.agents import service as agents_service
 from app.integration.osticket.commands_service import dispatch_command
 from app.modules.tickets.models import (
+    Attachment,
     Collaborator,
     CommandResponse,
     ThreadEntry,
@@ -84,8 +86,9 @@ def _row_to_list_item(row: dict) -> TicketListItem:
     )
 
 
-def _row_to_thread_entry(row: dict) -> ThreadEntry:
+def _row_to_thread_entry(row: dict, attachments: list[dict] | None = None) -> ThreadEntry:
     return ThreadEntry(
+        attachments=[Attachment(**{k: a[k] for k in ('id', 'name', 'size', 'content_type', 'inline')}) for a in attachments or []],
         id=row["id"],
         type=row.get("type") or "M",
         title=row.get("title"),
@@ -172,12 +175,13 @@ async def get_ticket(session: AsyncSession, ticket_id: int, *, access) -> Ticket
     if row is None:
         return None
     thread_rows = await repo.get_ticket_thread(session, ticket_id, access=access)
+    files = group_by_entry(await repo.get_ticket_attachments(session, ticket_id, access=access))
     collab_rows = await repo.get_ticket_collaborators(session, ticket_id, access=access)
     custom_rows = await repo.get_ticket_custom_fields(session, ticket_id, access=access)
     item = _row_to_list_item(row)
     return TicketDetail(
         **item.model_dump(),
-        thread=[_row_to_thread_entry(dict(r)) for r in thread_rows],
+        thread=[_row_to_thread_entry(dict(r), files.get(int(r['id']))) for r in thread_rows],
         collaborators=[_row_to_collaborator(dict(r)) for r in collab_rows],
         custom_fields=_custom_answers(custom_rows, "T"),
     )
@@ -612,3 +616,9 @@ async def resend_entry(
         idempotency_key=idempotency_key,
     )
     return _make_cmd_response(cmd, idempotency_key)
+
+
+async def ticket_attachment(session: AsyncSession, ticket_id: int, attachment_id: int, *, access) -> dict | None:
+    """The attachment's file row if it is attached to this ticket's thread and the ticket may be opened, else None."""
+    rows = await repo.get_ticket_attachments(session, ticket_id, access=access, attachment_id=attachment_id)
+    return dict(rows[0]) if rows else None

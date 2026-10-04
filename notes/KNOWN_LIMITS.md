@@ -38,6 +38,13 @@ Each entry: what is true today · what it means for you · what will resolve it 
 | **Custom-field answers are read as stored and written as osTicket's parsers accept them.** A read returns the text (`value`); a choice field's `value` is osTicket's JSON label map (`{"a":"Alpha"}`) and a list-type field's `value_id` is the item id. Writes take a choice key (or a list of keys), a boolean, a number or text. Answers to file-upload and custom-list (`list-N`) fields cannot be written, and a **ticket create** with an invalid choice key is stored as given (osTicket's create does not check it; an update does). When two forms on one ticket define the same variable name, the first wins. | Clients must interpret choice answers themselves. | Typed answer values per field type |
 | **A required custom field with no answer blocks every `PATCH /tickets/{id}`** (osTicket validates the whole form on each edit, as its own edit page does). | After adding a required field to a ticket form, old tickets must be given an answer on their next edit. | By design (osTicket) |
 
+## Attachments
+
+| Limit | Impact | Resolved by |
+|---|---|---|
+| **The API cannot upload files.** No create / reply / note / task endpoint takes an attachment. Files already on a ticket or task thread are listed on their entry (`attachments`) and downloaded with `GET /tickets/{id}/attachments/{attachment_id}` (tasks the same), scoped like the thread (404 when the agent may not open the ticket). | An API client cannot attach a file; files added in osTicket's own UI or by email are readable. The inbox carries JSON only, so an upload needs the bytes handed to PHP some other way (a volume the API and osTicket share, or a size-capped payload) — a design that also decides whether the API works against an osTicket on another host. | A decision on that design (raise it with the user); not needed for a read-only demo |
+| **Only files in osTicket's database storage (backend `D`, its default) can be downloaded.** A file kept by a storage plugin (filesystem, S3) is listed but its download answers 501. Files attached to a ticket's *form fields* (file-upload custom fields) and to canned responses / FAQs are not exposed. Downloads are always sent as an attachment, never rendered inline, and the file's stored type is passed through only if it is a well-formed media type. | A helpdesk using a storage plugin cannot download through the API. | A bridge read mode (planned "HTTP fallback read mode"), where osTicket's own backend reads the file |
+
 ## Login and abuse protection
 
 | Limit | Impact | Resolved by |

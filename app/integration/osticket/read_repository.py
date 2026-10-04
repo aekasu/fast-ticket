@@ -309,6 +309,55 @@ async def get_ticket_thread(session: AsyncSession, ticket_id: int, *, access: "S
     return list(result.mappings().all())
 
 
+_THREAD_ATTACHMENTS_SQL = """
+    SELECT a.id, te.id AS entry_id, COALESCE(NULLIF(a.name, ''), f.name) AS name, f.size, f.type AS content_type,
+           a.inline > 0 AS inline, f.id AS file_id, f.bk AS backend
+    FROM ost_thread th
+    JOIN ost_thread_entry te ON te.thread_id = th.id
+    JOIN ost_attachment a ON a.object_id = te.id AND a.type = 'H'   -- 'H': attached to a thread entry
+    JOIN ost_file f ON f.id = a.file_id
+    WHERE th.object_type = '{kind}' AND th.object_id = :{key}
+      AND (te.flags & 4) = 0   -- FLAG_HIDDEN: the superseded version of an edited entry
+      {visible} {only}
+    ORDER BY a.id
+"""
+
+
+async def get_ticket_attachments(
+    session: AsyncSession, ticket_id: int, *, access: "Scope", attachment_id: int | None = None
+) -> list:
+    """Files attached to the ticket's thread entries (nothing if the agent may not open the ticket); one file
+    when ``attachment_id`` is given. Rows carry ``file_id`` and ``backend`` for the download, not for clients."""
+    sql = _THREAD_ATTACHMENTS_SQL.format(
+        kind="T", key="ticket_id", visible=_visible_ticket(access), only="AND a.id = :attachment_id" if attachment_id else "")
+    params = {"ticket_id": ticket_id, **({"attachment_id": attachment_id} if attachment_id else {})}
+    return list((await session.execute(_sql(sql), params)).mappings().all())
+
+
+async def get_task_attachments(
+    session: AsyncSession, task_id: int, *, access: "Scope", attachment_id: int | None = None
+) -> list:
+    """As ``get_ticket_attachments``, for a task's thread."""
+    sql = _THREAD_ATTACHMENTS_SQL.format(
+        kind="A", key="task_id", visible=_visible_task(access), only="AND a.id = :attachment_id" if attachment_id else "")
+    params = {"task_id": task_id, **({"attachment_id": attachment_id} if attachment_id else {})}
+    return list((await session.execute(_sql(sql), params)).mappings().all())
+
+
+async def iter_file_chunks(session: AsyncSession, file_id: int):
+    """The bytes of a file kept in osTicket's database (backend ``D``), chunk by chunk. Called only with a file id
+    that a scoped attachment read returned."""
+    last = -1
+    while True:
+        row = (await session.execute(
+            _sql("SELECT chunk_id, filedata FROM ost_file_chunk WHERE file_id = :file_id AND chunk_id > :last "
+                 "ORDER BY chunk_id LIMIT 1"), {"file_id": file_id, "last": last})).first()
+        if row is None:
+            return
+        last = row[0]
+        yield bytes(row[1])
+
+
 _CUSTOM_FIELDS_SQL = """
     SELECT ff.name, ff.label, ff.type, ev.value, ev.value_id
     FROM ost_form_entry fe

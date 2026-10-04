@@ -168,6 +168,7 @@ async def test_thread_and_collaborators_are_read_with_the_same_access():
     thread, collab, customs = AsyncMock(return_value=[]), AsyncMock(return_value=[]), AsyncMock(return_value=[])
     with patch("app.modules.tickets.service.repo.get_ticket", new=AsyncMock(return_value=row)), \
          patch("app.modules.tickets.service.repo.get_ticket_thread", new=thread), \
+         patch("app.modules.tickets.service.repo.get_ticket_attachments", new=AsyncMock(return_value=[])), \
          patch("app.modules.tickets.service.repo.get_ticket_collaborators", new=collab), \
          patch("app.modules.tickets.service.repo.get_ticket_custom_fields", new=customs):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
@@ -211,6 +212,7 @@ async def test_get_ticket_returns_detail():
     with (
         patch("app.modules.tickets.service.repo.get_ticket", new=AsyncMock(return_value=MOCK_TICKET)),
         patch("app.modules.tickets.service.repo.get_ticket_thread", new=AsyncMock(return_value=[MOCK_THREAD_ENTRY])),
+        patch("app.modules.tickets.service.repo.get_ticket_attachments", new=AsyncMock(return_value=[])),
         patch("app.modules.tickets.service.repo.get_ticket_collaborators", new=AsyncMock(return_value=[MOCK_COLLABORATOR])),
         patch("app.modules.tickets.service.repo.get_ticket_custom_fields", new=AsyncMock(return_value=[
             {"name": "asset", "label": "Asset", "type": "text", "value": "A-1", "value_id": None},

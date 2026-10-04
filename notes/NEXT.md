@@ -24,8 +24,8 @@ Pick the next item from "Direction" below, or ask the user about attachments / C
 
 ## What needs the user (ask, do not guess)
 
-- **Attachments** (upload/download) and **user CSV import**: need a decision on upload size limits and whether
-  downloads stream through the API or osTicket. Raise it; do not slip one in.
+- **Attachment upload** and **user CSV import**: both need bytes handed to PHP, so need a design decision (shared
+  volume vs size-capped payload). Download is done and streams through the API. Raise it; do not slip one in.
 
 ## Goal reminder
 
@@ -43,8 +43,10 @@ Remaining before that is true, in order:
    remaining gaps (referral list/remove) and the help-topic per-field switches are left — both minor.
 2. ~~Non-admin reference data~~ done (agent directory `GET /agents`; assignable agents/teams per ticket and task;
    oracle-verified). Teams list/detail and SLAs stay admin-only until a UI screen needs them.
-3. **Attachments** (upload on reply/create, download): a ticket demo without files looks hollow. Needs the user's
-   decision (size limits; stream through the API or osTicket) — raise it when step 2 is done.
+3. ~~Attachments~~ read side done (files listed on thread entries, scoped download; KNOWN_LIMITS → Attachments).
+   **Upload deliberately not built**: the inbox is JSON-only, so it needs a design (shared volume vs size-capped
+   payload) that also decides whether the API can sit on a different host from osTicket. Not needed for the demo;
+   revisit only if the user wants file upload in the UI.
 4. **Queue ergonomics**: ticket list text search, sorting, and per-status counts for the queue tabs (the list has
    only id filters today). Task list likewise.
 5. A final full e2e + `/security-review`, review KNOWN_LIMITS, then tell the user the milestone is met.

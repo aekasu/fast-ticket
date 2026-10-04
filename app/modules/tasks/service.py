@@ -5,6 +5,7 @@ import logging
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.custom_fields import BUILT_IN_FIELDS, CustomFieldAnswer
+from app.core.attachments import group_by_entry
 from app.integration.osticket import read_repository as repo
 from app.modules.agents import service as agents_service
 from app.integration.osticket.commands_service import dispatch_command
@@ -23,7 +24,7 @@ from app.modules.tasks.models import (
     TaskTransfer,
     TaskStatusSchema,
 )
-from app.modules.tickets.models import CommandResponse, ThreadEntry
+from app.modules.tickets.models import Attachment, CommandResponse, ThreadEntry
 
 logger = logging.getLogger(__name__)
 
@@ -55,8 +56,9 @@ def _row_to_list_item(row: dict) -> TaskListItem:
     )
 
 
-def _row_to_thread_entry(row: dict) -> ThreadEntry:
+def _row_to_thread_entry(row: dict, attachments: list[dict] | None = None) -> ThreadEntry:
     return ThreadEntry(
+        attachments=[Attachment(**{k: a[k] for k in ('id', 'name', 'size', 'content_type', 'inline')}) for a in attachments or []],
         id=row["id"],
         type=row.get("type") or "N",
         title=row.get("title"),
@@ -136,11 +138,12 @@ async def get_task(session: AsyncSession, task_id: int, *, access) -> TaskDetail
     if row is None:
         return None
     thread_rows = await repo.get_task_thread(session, task_id, access=access)
+    files = group_by_entry(await repo.get_task_attachments(session, task_id, access=access))
     custom_rows = await repo.get_task_custom_fields(session, task_id, access=access)
     item = _row_to_list_item(row)
     return TaskDetail(
         **item.model_dump(),
-        thread=[_row_to_thread_entry(dict(r)) for r in thread_rows],
+        thread=[_row_to_thread_entry(dict(r), files.get(int(r['id']))) for r in thread_rows],
         custom_fields=_custom_answers(custom_rows, "A"),
     )
 
@@ -334,3 +337,9 @@ async def delete_task(
         idempotency_key=idempotency_key,
     )
     return _cmd_resp(cmd, idempotency_key)
+
+
+async def task_attachment(session: AsyncSession, task_id: int, attachment_id: int, *, access) -> dict | None:
+    """The attachment's file row if it is attached to this task's thread and the task may be opened, else None."""
+    rows = await repo.get_task_attachments(session, task_id, access=access, attachment_id=attachment_id)
+    return dict(rows[0]) if rows else None

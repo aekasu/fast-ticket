@@ -16,6 +16,7 @@ Writes — permission map (role permissions):
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.attachments import file_response
 from app.core.db import get_session
 from app.core.security import require_perm, require_staff
 from app.modules.agents.models import AssigneeOptions
@@ -64,6 +65,23 @@ async def list_tasks(
         page=page,
         page_size=page_size,
     )
+
+
+@router.get(
+    "/{task_id}/attachments/{attachment_id}",
+    summary="Download a file attached to one of the task's thread entries",
+    responses={200: {"content": {"application/octet-stream": {}}}},
+)
+async def download_task_attachment(
+    task_id: int,
+    attachment_id: int,
+    current_user: dict = require_staff(),
+    session: AsyncSession = Depends(get_session),
+):
+    row = await service.task_attachment(session, task_id, attachment_id, access=current_user["access"])
+    if row is None:
+        raise HTTPException(status_code=404, detail="Attachment not found.")
+    return file_response(row)
 
 
 @router.get("/{task_id}/assignees", response_model=AssigneeOptions, summary="Agents and teams this task can be assigned to")
