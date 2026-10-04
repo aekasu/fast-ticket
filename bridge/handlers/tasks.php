@@ -77,11 +77,14 @@ class FastApiTaskHandler {
 
         // Custom fields ride in the same form as the title and description: feed them to the form source so
         // osTicket validates them with the rest (required fields, formats) and stores them on the new task.
-        foreach ((array) ($payload['custom_fields'] ?? []) as $name => $value) {
-            if (array_key_exists($name, $data)) {
-                throw new Exception("'{$name}' is a built-in task field, not a custom one.");
+        // Only names that are real fields of the task form get through, never a key Task::create() reads
+        // to decide linking or assignment (mass assignment).
+        $custom = (array) ($payload['custom_fields'] ?? []);
+        if ($custom) {
+            $core = ['title', 'description', 'assignee', 'duedate', 'dept_id'];
+            foreach (FastApiModel::checkCreateCustomFields($custom, [TaskForm::getInstance()], $core) as $name => $value) {
+                $data[$name] = $value;
             }
-            $data[$name] = $value;
         }
 
         $form = TaskForm::getInstance();

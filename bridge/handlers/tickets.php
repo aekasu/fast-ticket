@@ -115,11 +115,22 @@ class FastApiTicketHandler {
         ];
 
         // Custom fields are read from the same vars by their variable names (topic forms included).
-        foreach ((array) ($payload['custom_fields'] ?? []) as $name => $value) {
-            if (array_key_exists($name, $vars) || in_array($name, ['uid', 'duedate', 'message'], true)) {
-                throw new Exception("'{$name}' is a built-in ticket field, not a custom one.");
+        // Only names that are real fields of the ticket form or the chosen topic's forms get through, and never
+        // a key Ticket::create() reads to decide assignment, SLA, collaborators or status (mass assignment).
+        $custom = (array) ($payload['custom_fields'] ?? []);
+        if ($custom) {
+            $forms = [TicketForm::getNewInstance()];
+            if (!empty($vars['topicId']) && ($topic = Topic::lookup($vars['topicId']))) {
+                foreach ($topic->getForms() as $f) {
+                    if ($f->get('type') !== 'T') {
+                        $forms[] = $f->instanciate(0);
+                    }
+                }
             }
-            $vars[$name] = $value;
+            $core = ['subject', 'message', 'email', 'name', 'phone', 'priority', 'topic', 'topicId', 'duedate'];
+            foreach (FastApiModel::checkCreateCustomFields($custom, $forms, $core) as $name => $value) {
+                $vars[$name] = $value;
+            }
         }
 
         $errors = [];

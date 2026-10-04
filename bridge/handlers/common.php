@@ -133,6 +133,47 @@ class FastApiModel {
         }
     }
 
+    /**
+     * Keys that Ticket::create() / Task::create() read from their $vars to decide *what happens* (who the
+     * object is assigned to, which SLA, whom to copy, what it links to). A custom field must never reach them.
+     */
+    const CREATE_CONTROL_KEYS = [
+        'assignId', 'staffId', 'teamId', 'slaId', 'ccs', 'emailId', 'statusId', 'autorespond', 'alert',
+        'deptId', 'topicId', 'priorityId', 'source', 'ip', 'ip_address', 'uid', 'duedate', 'message',
+        'object_id', 'object_type', 'poster', 'default_formdata', 'internal_formdata', 'description',
+        'user_id', 'userId', 'flags', 'number', 'created', 'lastupdate', 'staff_id', 'team_id', 'dept_id',
+    ];
+
+    /**
+     * Check the {variable name => value} map of a create request against the forms that really define the
+     * object's custom fields, and return the entries to merge into the create vars. Refuses unknown names,
+     * the built-in fields ($builtin) and the control keys above, whatever a form calls its field.
+     */
+    static function checkCreateCustomFields(array $custom, array $forms, array $builtin) {
+        $allowed = [];
+        foreach ($forms as $form) {
+            foreach ($form->getFields() as $field) {
+                if ($field->hasData() && !$field->isPresentationOnly()
+                        && $field->isVisibleToStaff() && $field->isEditableToStaff()) {
+                    $allowed[$field->get('name')] = true;
+                }
+            }
+        }
+        $errors = [];
+        foreach ($custom as $name => $value) {
+            $name = (string) $name;
+            if (in_array($name, $builtin, true) || in_array(strtolower($name), array_map('strtolower', self::CREATE_CONTROL_KEYS), true)) {
+                $errors[$name] = ["'{$name}' is a built-in field, not a custom one"];
+            } elseif (!isset($allowed[$name])) {
+                $errors[$name] = ["The form has no '{$name}' field"];
+            }
+        }
+        if ($errors) {
+            throw new Exception('Custom fields rejected: ' . json_encode($errors));
+        }
+        return $custom;
+    }
+
     static function applyAnswers($owner, array $values, $form_type) {
         $errors = [];
         $entries = [];

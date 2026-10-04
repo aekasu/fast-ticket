@@ -4,22 +4,15 @@ Last updated 2026-10-04. Branch: `feat/bridge-worker-and-portability` (stay on i
 branches). Overwrite this file when the direction changes; delete finished items. A fresh session starts here
 (see `CLAUDE.md` → "Starting a session").
 
-## Do first — open security findings (from the 2026-10-04 `/security-review`)
+## Do first
 
-Both are mass assignment through `custom_fields`, introduced in `6f2b3f4`; fix both, with e2e coverage, in one change:
-1. **`bridge/handlers/tickets.php` `create`** copies every `custom_fields` entry into the `$vars` array that goes to
-   `Ticket::create()`, which reads control keys from it (`assignId`, `staffId`, `teamId`, `slaId`, `ccs`, `emailId`,
-   `statusId`, `autorespond`). An agent with only `ticket.create` can assign a ticket without `ticket.assign`.
-2. **`bridge/handlers/tasks.php` `create`** does the same into `Task::create($vars)`; without `ticket_id` a custom field
-   named `object_id` / `object_type` links the task to any ticket.
-Fix: accept only names that are real fields of the object's forms (ticket form + the chosen topic's forms; the task
-form) and keep custom values out of the array whose keys control creation (set them on the form entries, as `update`
-does with `FastApiModel::setEntryAnswer`). Add a hard denylist of the control keys as defence in depth. Test: the
-e2e must prove `{"custom_fields": {"assignId": "s1"}}` is refused and assigns nothing.
+Nothing is open. (The 2026-10-04 `/security-review` findings — mass assignment through `custom_fields` on ticket and
+task create — are fixed: names are checked against the object's real forms and a control-key denylist; e2e proves it.)
+Pick the next item from "Direction" below, or ask the user about attachments / CSV import.
 
 ## Where things stand
 
-- Committed and green (`make test` 700, `make test-docker`, `make test-e2e` 56 on a rebuilt stack at `b6102c2`):
+- Committed and green (`make test` 700, `make test-docker`, `make test-e2e` 56 on a rebuilt stack, after the custom_fields hardening):
   bridge worker + portability, security overhaul S0–S6, access cache, and — this month — ticket PATCH / claim / release /
   refer / collaborators / thread-entry edit+resend; the depth pass over staff (permissions, extra-department access),
   departments, help topics, SLAs, organizations (manager, sharing, contacts), user accounts, tasks (team assign,
@@ -27,6 +20,10 @@ e2e must prove `{"custom_fields": {"assignId": "s1"}}` is refused and assigns no
 - The raw `flags` integer was removed from the department, help-topic and SLA APIs (explicit fields instead).
 - `.claude/settings.json` has an uncommitted user change — never commit it.
 - Read first: `AGENTS.md`, `notes/KNOWN_LIMITS.md`, `notes/SECURITY.md`.
+
+- Seen once: `tests/e2e/test_events.py` failed twice right after a rebuild (admin never heard `staff.created`), then
+  passed 3 times on a warm stack and in the full run. Suspected stack warm-up (worker restarting); if it recurs, look
+  at the outbox cursor / listener connect order.
 
 ## What needs the user (ask, do not guess)
 

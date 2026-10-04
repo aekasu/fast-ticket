@@ -908,6 +908,14 @@ def test_ticket_custom_fields_from_a_help_topic_form(bridge, uniq):
     got = _answers(bridge.read(url))
     assert got["memo"]["value"] == "again" and got["asset"]["value"] == "A-200"
 
+    # mass assignment: a custom field may not smuggle in a key that Ticket::create() acts on
+    base = {"subject": f"ma {uniq}", "message": "m", "email": email, "name": "CF", "dept_id": 1, "topic_id": topic}
+    for key in ("assignId", "staffId", "teamId", "slaId", "ccs", "statusId", "emailId", "autorespond"):
+        bridge.refuses("POST", "/api/v1/tickets/", {**base, "custom_fields": {"asset": "A-1", key: "1"}},
+                       because="Custom fields rejected")
+    bridge.refuses("POST", "/api/v1/tickets/", {**base, "custom_fields": {"asset": "A-1", "nosuch": "x"}},
+                   because="no 'nosuch' field")
+
     bridge.refuses("PATCH", url, {"custom_fields": {"nonexistent": "x"}}, because="no 'nonexistent' field")
     bridge.refuses("PATCH", url, {"custom_fields": {"kind": "zzz"}}, because="is not one of the choices")
     bridge.refuses("PATCH", url, {"custom_fields": {"asset": ""}}, because="required")
@@ -947,7 +955,16 @@ def test_user_organization_and_task_custom_fields(bridge, uniq):
     got = bridge.read(f"/api/v1/tasks/{tid}")
     assert _answers(got)[name]["value"] == "t2" and got["title"] == f"e2e cf task {uniq}"
     bridge.refuses("POST", "/api/v1/tasks/", {"title": "x", "description": "d", "custom_fields": {"title": "clash"}},
-                   because="built-in task field")
+                   because="built-in field")
+
+    # mass assignment: a custom field may not smuggle in a key that Task::create() acts on
+    parent = bridge.create("/api/v1/tasks/", {"title": f"e2e ma task {uniq}", "description": "d", "dept_id": 1},
+                           cleanup="/api/v1/tasks/{id}")
+    for key in ("object_id", "object_type", "staffId", "internal_formdata"):
+        bridge.refuses("POST", "/api/v1/tasks/", {"title": f"e2e ma {uniq}", "description": "d", "dept_id": 1,
+                                                  "custom_fields": {key: "T" if key == "object_type" else "1"}},
+                       because="Custom fields rejected")
+    assert bridge.read(f"/api/v1/tasks/{parent}")["title"] == f"e2e ma task {uniq}"
 
 
 def test_ticket_merge_combines_children_into_the_parent_and_closes_them(bridge, uniq):
