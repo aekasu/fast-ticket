@@ -50,7 +50,7 @@ POLICY = {
 
     # ── reads any agent may make; the query narrows what they get back ─────
     **{f"GET {p}": "staff" for p in [
-        "/api/v1/canned", "/api/v1/canned/{canned_id}", "/api/v1/commands", "/api/v1/commands/{command_id}",
+        "/api/v1/agents", "/api/v1/canned", "/api/v1/canned/{canned_id}", "/api/v1/commands", "/api/v1/commands/{command_id}",
         "/api/v1/departments", "/api/v1/kb/categories", "/api/v1/kb/categories/{category_id}",
         "/api/v1/kb/faqs", "/api/v1/kb/faqs/{faq_id}", "/api/v1/priorities", "/api/v1/search",
         "/api/v1/tasks/", "/api/v1/tasks/{task_id}", "/api/v1/tickets/", "/api/v1/tickets/{ticket_id}", "/api/v1/tickets/{ticket_id}/collaborators",
@@ -82,6 +82,7 @@ POLICY = {
     "POST /api/v1/users/{user_id}/account/confirmation": "perm:user.manage",
     "POST /api/v1/tickets/{ticket_id}/answered": "perm:ticket.markanswered",
     "POST /api/v1/tickets/{ticket_id}/unanswered": "perm:ticket.markanswered",
+    "GET /api/v1/tickets/{ticket_id}/assignees": "perm:ticket.assign",
     "POST /api/v1/tickets/{ticket_id}/assign": "perm:ticket.assign",
     "POST /api/v1/tickets/{ticket_id}/assign-team": "perm:ticket.assign",
     "POST /api/v1/tickets/{ticket_id}/claim": "perm:ticket.assign",
@@ -101,6 +102,7 @@ POLICY = {
     "POST /api/v1/tickets/{ticket_id}/transfer": "perm:ticket.transfer",
 
     # ── tasks ──────────────────────────────────────────────────────────────
+    "GET /api/v1/tasks/{task_id}/assignees": "perm:task.assign",
     "POST /api/v1/tasks/": "perm:task.create", "DELETE /api/v1/tasks/{task_id}": "perm:task.delete",
     "PATCH /api/v1/tasks/{task_id}": "perm:task.edit", "POST /api/v1/tasks/{task_id}/assign": "perm:task.assign",
     "POST /api/v1/tasks/{task_id}/close": "perm:task.close", "POST /api/v1/tasks/{task_id}/reopen": "perm:task.close",

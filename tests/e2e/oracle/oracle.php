@@ -13,6 +13,10 @@
  */
 error_reporting(E_ALL & ~E_DEPRECATED & ~E_STRICT);
 ini_set('display_errors', '0');
+register_shutdown_function(function () {   // a fatal error would otherwise leave no output at all
+    if (($e = error_get_last()) && in_array($e['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR], true))
+        echo 'ORACLE_FATAL (staff ' . ($GLOBALS['current_staff'] ?? '?') . ') ' . $e['message'];
+});
 chdir('/var/www/html/api');
 define('OSTAPI', true);
 require 'api.inc.php';
@@ -33,6 +37,7 @@ $out = [];
 
 foreach ($in['staff_ids'] ?? [] as $sid) {
     global $thisstaff;
+    $GLOBALS['current_staff'] = $sid;
     $staff = Staff::lookup((int) $sid);
     $thisstaff = $staff;                 // Canned::getCannedResponses() reads the global
     $row = [];
@@ -45,6 +50,7 @@ foreach ($in['staff_ids'] ?? [] as $sid) {
     $row['global_perms'] = []; foreach ($perm_keys as $k) if ($staff->hasPerm($k)) $row['global_perms'][] = $k;
     $row['roles'] = [];
     foreach ($staff->getRoles() as $dept => $role) {
+        if (!$role) throw new Exception("staff {$staff->username} has no role in department $dept (primary role_id {$staff->role_id}, dept {$staff->dept_id})");
         $has = []; foreach ($perm_keys as $k) if ($role->hasPerm($k)) $has[] = $k;
         $row['roles'][(string) $dept] = $has;
     }
@@ -107,6 +113,29 @@ foreach ($in['staff_ids'] ?? [] as $sid) {
     }
     $row['canned_manage'] = $ints($managed);
 
+    // (last: getDeptAgents() joins dept_access and leaves partial staff objects in osTicket's ORM cache)
+    // ── agent directory (scp/directory.php: $thisstaff->getDeptAgents()) ───────────────────────────
+    $row['directory'] = [];
+    foreach ($staff->getDeptAgents() as $agent) $row['directory'][] = (int) $agent->getId();
+    $row['directory'] = $ints($row['directory']);
+
+    // ── assign form: may they assign (Ticket::checkStaffPerm), and who is offered (Dept::getAssignees) ──
+    $row['assign_ok'] = [];
+    $row['assignees'] = [];
+    foreach ($ticket_ids as $id) {
+        $t = Ticket::lookup($id);
+        if (!$t || !$t->checkStaffPerm($staff, Ticket::PERM_ASSIGN)) continue;
+        $row['assign_ok'][] = $id;
+        $agents = [];
+        foreach ($t->getDept()->getAssignees(['staff' => $staff]) as $agent) $agents[] = (int) $agent->getId();
+        $row['assignees'][(string) $id] = $ints($agents);
+    }
+    $row['assign_ok'] = $ints($row['assign_ok']);
+    $teams = [];
+    foreach (Team::getActiveTeams() ?: [] as $id => $name) $teams[] = (int) $id;
+    $row['assignable_teams'] = $ints($teams);
+
+    ModelInstanceManager::flushCache();   // drop those partial objects before the next agent is loaded
     $out[(string) $sid] = $row;
 }
 echo "ORACLE_JSON_BEGIN" . json_encode($out) . "ORACLE_JSON_END";

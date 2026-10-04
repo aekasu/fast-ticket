@@ -16,6 +16,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.names import sort_columns
 
 if TYPE_CHECKING:   # the type only; importing it at runtime would be circular
     from app.core.access import AccessContext
@@ -601,6 +602,101 @@ async def get_team_members(session: AsyncSession, team_id: int) -> list[dict]:
     """
     result = await session.execute(_sql(sql), {"team_id": team_id})
     return [dict(r) for r in result.mappings().all()]
+
+
+# ── Agents: the directory and who can be assigned ─────────────────────────────
+
+async def get_agent_name_format(session: AsyncSession) -> str:
+    """The instance's ``agent_name_format`` setting (osTicket's default is ``full``)."""
+    result = await session.execute(_sql("SELECT value FROM ost_config WHERE namespace = 'core' AND `key` = 'agent_name_format'"))
+    row = result.first()
+    return (row[0] if row and row[0] else "full")
+
+
+def _agent_visibility(access: "Scope") -> str:
+    """``Staff::applyDeptVisibility()`` over ``ost_staff s``: without the ``visibility.agents`` permission an agent
+    who has departments sees only agents of those departments (primary or extra access). An agent with no
+    departments at all is not restricted — osTicket's own test is ``&& ($depts = $this->getDepts())``."""
+    if getattr(access, "unrestricted", False) or access.has_global("visibility.agents") or not access.dept_ids:
+        return "1 = 1"
+    depts = _ids(access.dept_ids)
+    return (f"(s.dept_id IN ({depts}) OR EXISTS (SELECT 1 FROM ost_staff_dept_access da "
+            f"WHERE da.staff_id = s.staff_id AND da.dept_id IN ({depts})))")
+
+
+_DIRECTORY_SORTS = {   # scp/directory.php's $sortOptions
+    "email": ["s.email"], "dept": ["d.name"], "phone": ["s.phone"], "mobile": ["s.mobile"],
+    "ext": ["s.phone_ext"], "created": ["s.created"], "login": ["s.lastlogin"],
+}
+
+
+def _like(term: str) -> str:
+    return "%" + term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+
+
+async def list_directory_agents(
+    session: AsyncSession, *, access: "Scope", q: str | None = None, dept_id: int | None = None,
+    sort: str = "name", descending: bool = False, name_format: str = "full", limit: int = 50, offset: int = 0,
+) -> tuple[list, int]:
+    """scp/directory.php: ``Staff::getDeptAgents()`` (agents of the departments the caller may see — inactive ones
+    included, as osTicket lists them), a search over name / email / phone, and a primary-department filter."""
+    where, params = [_agent_visibility(access)], {"limit": limit, "offset": offset}
+    if q:
+        if q.isnumeric():   # PHP's is_numeric() also admits "1.5" and "-3"; digits only here
+            where.append("(s.phone LIKE :like OR s.phone_ext LIKE :like OR s.mobile LIKE :like)")
+        elif "@" in q and re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", q):
+            where.append("s.email = :q")
+            params["q"] = q
+        else:
+            where.append("(s.email LIKE :like OR s.lastname LIKE :like OR s.firstname LIKE :like)")
+        params["like"] = _like(q)
+    if dept_id:
+        where.append("s.dept_id = :dept_id")
+        params["dept_id"] = dept_id
+    columns = _DIRECTORY_SORTS.get(sort) or sort_columns(name_format, "s.")
+    order = ", ".join(f"{c} {'DESC' if descending else 'ASC'}" for c in columns)
+    base = "FROM ost_staff s LEFT JOIN ost_department d ON d.id = s.dept_id WHERE " + " AND ".join(where)
+    total = (await session.execute(_sql("SELECT COUNT(*) " + base), params)).scalar() or 0
+    sql = ("SELECT s.staff_id AS id, s.firstname, s.lastname, s.email, COALESCE(s.phone, '') AS phone, "
+           "COALESCE(s.phone_ext, '') AS phone_ext, COALESCE(s.mobile, '') AS mobile, "
+           "s.dept_id, COALESCE(d.name, '') AS dept_name " + base + f" ORDER BY {order} LIMIT :limit OFFSET :offset")
+    result = await session.execute(_sql(sql), params)
+    return list(result.mappings().all()), int(total)
+
+
+async def list_assignable_agents(session: AsyncSession, *, access: "Scope", dept_id: int, name_format: str = "full") -> list:
+    """The agents offered in an assign form for an object of department ``dept_id``: ``Dept::getAssignees()`` —
+    active agents not on vacation; everyone unless the department limits assignment to its members (primary and
+    extra-access agents and the manager) or to its primary members — narrowed by ``Staff::applyDeptVisibility()``."""
+    dept = await get_department(session, dept_id)
+    if dept is None:
+        return []
+    flags = int(dept["flags"] or 0)
+    where = ["s.isactive = 1", "s.onvacation = 0", _agent_visibility(access)]
+    params: dict = {"dept_id": dept_id, "manager_id": int(dept["manager_id"] or 0)}
+    if flags & 0x0001 or flags & 0x0010:   # FLAG_ASSIGN_MEMBERS_ONLY / FLAG_ASSIGN_PRIMARY_ONLY
+        where.append("(s.dept_id = :dept_id OR (s.staff_id = :manager_id AND :manager_id > 0) OR EXISTS ("
+                     "SELECT 1 FROM ost_staff_dept_access da WHERE da.staff_id = s.staff_id AND da.dept_id = :dept_id))")
+        if flags & 0x0010:
+            where.append("s.dept_id = :dept_id")
+    order = ", ".join(sort_columns(name_format, "s."))
+    sql = f"SELECT s.staff_id AS id, s.firstname, s.lastname FROM ost_staff s WHERE {' AND '.join(where)} ORDER BY {order}"
+    result = await session.execute(_sql(sql), params)
+    return list(result.mappings().all())
+
+
+async def list_assignable_teams(session: AsyncSession, *, access: "Scope") -> list:
+    """``Team::getActiveTeams()``: enabled teams with at least one active member who is not on vacation.
+    osTicket offers the same teams to every agent that may assign."""
+    sql = """
+        SELECT t.team_id AS id, t.name FROM ost_team t
+        WHERE (t.flags & 1) > 0 AND EXISTS (
+            SELECT 1 FROM ost_team_member m JOIN ost_staff s ON s.staff_id = m.staff_id
+            WHERE m.team_id = t.team_id AND s.isactive = 1 AND s.onvacation = 0)
+        ORDER BY t.name ASC
+    """
+    result = await session.execute(_sql(sql))
+    return list(result.mappings().all())
 
 
 # ── Help Topics ───────────────────────────────────────────────────────────────

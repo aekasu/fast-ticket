@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_session
 from app.core.security import require_perm, require_staff
+from app.modules.agents.models import AssigneeOptions
 from app.modules.tasks import service
 from app.modules.tasks.models import (
     TaskAssign,
@@ -63,6 +64,21 @@ async def list_tasks(
         page=page,
         page_size=page_size,
     )
+
+
+@router.get("/{task_id}/assignees", response_model=AssigneeOptions, summary="Agents and teams this task can be assigned to")
+async def task_assignees(
+    task_id: int,
+    current_user: dict = require_perm("task.assign"),
+    session: AsyncSession = Depends(get_session),
+):
+    try:
+        result = await service.task_assignees(session, task_id, access=current_user["access"])
+    except PermissionError:
+        raise HTTPException(status_code=403, detail="Permission denied: task.assign is required in the task's department.")
+    if result is None:
+        raise HTTPException(status_code=404, detail=f"Task {task_id} not found.")
+    return result
 
 
 @router.get("/{task_id}", response_model=TaskDetail, summary="Get a task with its thread")

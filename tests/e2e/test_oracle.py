@@ -51,7 +51,7 @@ def oracle(payload: dict) -> dict:
     assert copied.returncode == 0, copied.stderr
     result = _compose("exec", "-T", "-u", "www-data", "osticket", "php", "/tmp/oracle.php", json.dumps(payload), timeout=120)
     marker = result.stdout.partition("ORACLE_JSON_BEGIN")[2].partition("ORACLE_JSON_END")[0]
-    assert marker, f"oracle printed nothing usable: {result.stdout[-400:]} {result.stderr[-400:]}"
+    assert marker, f"oracle printed nothing usable: {result.stdout[-1200:]} {result.stderr[-400:]}"
     return json.loads(marker)
 
 
@@ -156,6 +156,9 @@ def build(bridge, uniq) -> Scenario:
     bridge._cleanups.append(lambda: sql("DELETE FROM ost_staff_dept_access WHERE staff_id IN ({})".format(
         ",".join(str(i) for i in s.agents.values()) or "0")))
     P, C = s.dept["parent"], s.dept["child"]
+    # assignment rules (Dept::getAssignees): the parent offers only its members, the child only its primary members
+    sql(f"UPDATE ost_department SET flags = flags | 1 WHERE id = {P}")
+    sql(f"UPDATE ost_department SET flags = flags | 16 WHERE id = {C}")
 
     s.agent("own", SUPPORT)
     s.agent("parent", P)                       # a department with a sub-department
@@ -163,6 +166,9 @@ def build(bridge, uniq) -> Scenario:
     s.agent("extra", SUPPORT)                  # plus access to Maintenance with the All Access role (SQL)
     s.agent("manager", SUPPORT)                # manages the parent department (SQL)
     s.agent("dir", SUPPORT)                    # global permissions (SQL)
+    s.agent("assign", SUPPORT, role=ALL_ACCESS)    # may assign in Support; sees only agents of its departments
+    s.agent("assignp", P, role=ALL_ACCESS)         # may assign in the parent department and its child
+    s.agent("seeall", SUPPORT, role=ALL_ACCESS)    # visibility.agents (SQL): sees every agent
     s.agent("canned", SALES, role=ALL_ACCESS)  # canned.manage through its primary role
     s.team = bridge.create("/api/v1/teams", {"name": f"oracle-team-{uniq}", "members": [s.agents["own"]]}, cleanup="/api/v1/teams/{id}")
     s.agent("team", SUPPORT, teams=[s.team])
@@ -170,6 +176,8 @@ def build(bridge, uniq) -> Scenario:
     sql(f"UPDATE ost_staff SET assigned_only = 1 WHERE staff_id = {s.agents['limited']}")
     sql(f"INSERT INTO ost_staff_dept_access (staff_id, dept_id, role_id, flags) VALUES ({s.agents['extra']}, {MAINT}, {ALL_ACCESS}, 1)")
     sql(f"UPDATE ost_department SET manager_id = {s.agents['manager']} WHERE id = {P}")
+    sql(f"INSERT INTO ost_staff_dept_access (staff_id, dept_id, role_id, flags) VALUES ({s.agents['own']}, {P}, {ALL_ACCESS}, 1)")
+    sql(f"UPDATE ost_staff SET permissions = '{{\"visibility.agents\":1}}' WHERE staff_id = {s.agents['seeall']}")
     sql("UPDATE ost_staff SET permissions = '{\"user.dir\":1,\"visibility.departments\":1,\"faq.manage\":1}' "
         f"WHERE staff_id = {s.agents['dir']}")
 
@@ -200,6 +208,8 @@ def build(bridge, uniq) -> Scenario:
     s.task("ofticket", MAINT, ticket="cross")
     s.task("team", MAINT)
     sql(f"UPDATE ost_task SET team_id = {s.team} WHERE id = {s.tasks['team']}")
+
+    sql(f"UPDATE ost_staff SET onvacation = 1 WHERE staff_id = {s.agents['limited']}")      # unavailable: never offered
 
     # canned responses
     s.canned_response("global", 0)
@@ -266,6 +276,12 @@ def test_the_api_shows_every_agent_exactly_what_osticket_shows_them(bridge, uniq
     assert K["ofticket"] in own["tasks_list"] and K["ofticket"] not in own["tasks_page"]  # listed via its ticket; the page rule differs
     assert K["team"] in truth_of("team")["tasks_list"]
     assert set(truth_of("canned")["canned_manage"]) != set(truth_of("own")["canned_picker"])
+    everyone = truth_of("seeall")["assignees"][str(T["own"])]
+    assert A["limited"] not in everyone and A["own"] in everyone and A["assign"] in everyone      # on vacation: never offered
+    assert A["limited"] not in truth_of("assign")["assignees"][str(T["own"])]
+    members = truth_of("assignp")["assignees"][str(T["parent"])]
+    assert A["own"] in members and A["parent"] in members and A["assign"] not in members          # members-only department
+    assert truth_of("assign")["assign_ok"] and truth_of("assignp")["assign_ok"]
     distinct = {tuple(v["tickets_list"]) for v in seen.values()}
     assert len(distinct) >= 5, "every agent sees the same tickets — the scenario is not discriminating"
 
@@ -300,6 +316,21 @@ def test_the_api_shows_every_agent_exactly_what_osticket_shows_them(bridge, uniq
         # search finds tickets by the same rule as the list (none of these agents holds search.all)
         found = _api(headers, "/api/v1/search", q="oracle", limit=50).json()["results"]
         check(agent, "search (tickets)", {r["id"] for r in found if r["type"] == "ticket"} & ticket_ids, set(truth["tickets_list"]))
+
+        # the agent directory, and the assign form (who may open it; who it offers for each ticket)
+        scenario_agents = set(staff_ids.values())
+        check(agent, "agent directory", _ids(headers, "/api/v1/agents", "id") & scenario_agents, set(truth["directory"]) & scenario_agents)
+        offered, teams_seen = set(), set()
+        for t in ticket_ids:
+            resp = _api(headers, f"/api/v1/tickets/{t}/assignees")
+            if resp.status_code == 200:
+                offered.add(t)
+                body = resp.json()
+                check(agent, f"assignable agents of ticket {t}", {a["id"] for a in body["agents"]} & scenario_agents,
+                      set(truth["assignees"][str(t)]) & scenario_agents)
+                teams_seen = {x["id"] for x in body["teams"]}
+                check(agent, f"assignable teams of ticket {t}", teams_seen & {s.team}, set(truth["assignable_teams"]) & {s.team})
+        check(agent, "tickets whose assign form opens", offered, set(truth["assign_ok"]))
 
         # tasks
         check(agent, "task list", _ids(headers, "/api/v1/tasks/", "task_id") & task_ids, set(truth["tasks_list"]))

@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_session
 from app.core.security import require_perm, require_staff
+from app.modules.agents.models import AssigneeOptions
 from app.modules.tickets import service
 from app.modules.tickets.models import (
     CommandResponse,
@@ -106,6 +107,25 @@ async def get_ticket(
     if ticket is None:
         raise HTTPException(status_code=404, detail=f"Ticket {ticket_id} not found.")
     return ticket
+
+
+@router.get(
+    "/{ticket_id}/assignees",
+    response_model=AssigneeOptions,
+    summary="Agents and teams this ticket can be assigned to",
+)
+async def ticket_assignees(
+    ticket_id: int,
+    current_user: dict = require_perm("ticket.assign"),
+    session: AsyncSession = Depends(get_session),
+):
+    try:
+        result = await service.ticket_assignees(session, ticket_id, access=current_user["access"])
+    except PermissionError:
+        raise HTTPException(status_code=403, detail="Permission denied: ticket.assign is required in the ticket's department.")
+    if result is None:
+        raise HTTPException(status_code=404, detail=f"Ticket {ticket_id} not found.")
+    return result
 
 
 @router.get(

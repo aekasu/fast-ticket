@@ -41,8 +41,8 @@ replies, and an admin configures staff, teams, departments, topics, SLAs; change
 Remaining before that is true, in order:
 1. **Finish the depth audit** (below): users / organizations / tasks are now compared and covered; only tickets'
    remaining gaps (referral list/remove) and the help-topic per-field switches are left — both minor.
-2. **Non-admin reference data** (section C): an ordinary agent must be able to list teams and assignable agents to
-   fill an assign/transfer form. Today teams, the agent directory and SLAs are admin-only, which blocks the UI.
+2. ~~Non-admin reference data~~ done (agent directory `GET /agents`; assignable agents/teams per ticket and task;
+   oracle-verified). Teams list/detail and SLAs stay admin-only until a UI screen needs them.
 3. **Attachments** (upload on reply/create, download): a ticket demo without files looks hollow. Needs the user's
    decision (size limits; stream through the API or osTicket) — raise it when step 2 is done.
 4. **Queue ergonomics**: ticket list text search, sorting, and per-status counts for the queue tabs (the list has
@@ -81,8 +81,8 @@ Work in this order; for every item follow the "Adding a scoped read" rule in AGE
 - Staff: ~~permissions, extra-department access, assigned_only, vacation, visibility, phone_ext, notes~~ now on create/PATCH + detail read. Still open: password reset email, per-team alert flags, auth backend, CSV import.
 - Dynamic-form answers as a sub-resource (fill/validate).
 
-**C. Non-admin reference data** (see item 1 "Deferred authorization work" below): teams, agent directory,
-assignable agents/teams, SLAs, forms for an ordinary agent building an assign form.
+**C. Non-admin reference data**: ~~agent directory, assignable agents/teams~~ done. Still admin-only: team list/detail,
+SLAs, forms (see item 1 below) — port when a screen needs them.
 
 **D. Wave 2, one domain at a time (mostly Admin Panel, light on scoping):** filters + rules, custom lists,
 business hours/schedules, roles, API keys, email accounts (config only, not piping), pages, export, logs/audit.
@@ -93,8 +93,8 @@ draft autosave, raw config bulk-write, plugin registration, email piping, cron.
 
 ### 1. Deferred authorization work (KNOWN_LIMITS → "Authorization")
 Pick per need; each needs osTicket's rule read first (class + `scp/*.php` page), never guessed:
-- Teams, agent directory, SLA plans, forms and detail of departments/topics/priorities are admin-only. Non-admin
-  agents cannot build an assign form. Port the agent-directory and assignable agents/teams rules.
+- Team list/detail, SLA plans, forms and detail of departments/topics/priorities are admin-only (the agent directory
+  and assign-form choices are done).
 - Per-department canned-response checks in the bridge handlers (currently "any role").
 - Idempotency-Key reused with a different body should return a mismatch error.
 - Optional HMAC on inbox rows (the inbox is unsigned) and encrypting payload secrets at rest.

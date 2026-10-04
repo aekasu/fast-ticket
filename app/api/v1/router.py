@@ -2,6 +2,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from app.core.auth import authenticate_websocket
 from app.core.ws_manager import manager
+from app.modules.agents.router import router as agents_router
 from app.modules.auth.router import router as auth_router
 from app.modules.banlist.router import router as banlist_router
 from app.modules.commands.router import router as commands_router
@@ -30,6 +31,9 @@ v1_router.include_router(users_router)
 
 # ── Staff, Teams & Departments ───────────────────────────────────────────────
 v1_router.include_router(staff_router)
+
+# ── Agent directory ──────────────────────────────────────────────────────────
+v1_router.include_router(agents_router)
 
 # ── Lookups (Topics, SLAs, Priorities) ───────────────────────────────────────
 v1_router.include_router(lookups_router)

@@ -989,6 +989,38 @@ def test_user_organization_and_task_custom_fields(bridge, uniq):
     assert bridge.read(f"/api/v1/tasks/{parent}")["title"] == f"e2e ma task {uniq}"
 
 
+def test_agent_directory_and_assign_form_choices(bridge, uniq):
+    team = bridge.create("/api/v1/teams", {"name": f"e2e-dir-team-{uniq}", "members": [1]}, cleanup="/api/v1/teams/{id}")
+    me = bridge.read("/api/v1/auth/me")
+    got = bridge.read("/api/v1/agents?page_size=200")
+    assert got["total"] >= 1 and me["staff_id"] in {a["id"] for a in got["items"]}
+    mine = next(a for a in got["items"] if a["id"] == me["staff_id"])
+    assert mine["name"] and mine["email"] and mine["dept_name"]
+
+    first = mine["firstname"][:3]
+    assert me["staff_id"] in {a["id"] for a in bridge.read(f"/api/v1/agents?q={first}")["items"]}
+    assert bridge.read("/api/v1/agents?q=no-such-agent-zzz")["items"] == []
+    assert me["staff_id"] in {a["id"] for a in bridge.read(f"/api/v1/agents?dept_id={mine['dept_id']}")["items"]}
+    assert bridge.get("/api/v1/agents?sort=nonsense").status_code == 422
+    asc = [a["id"] for a in bridge.read("/api/v1/agents?sort=email")["items"]]
+    desc = [a["id"] for a in bridge.read("/api/v1/agents?sort=email&descending=true")["items"]]
+    assert asc == desc[::-1]
+
+    # the assign form for a task and a ticket: agents who can be assigned, and teams with an available member
+    tid = bridge.create("/api/v1/tasks/", {"title": f"e2e assignees {uniq}", "description": "d", "dept_id": 1},
+                        cleanup="/api/v1/tasks/{id}")
+    options = bridge.read(f"/api/v1/tasks/{tid}/assignees")
+    assert me["staff_id"] in {a["id"] for a in options["agents"]} and team in {t["id"] for t in options["teams"]}
+    assert bridge.get("/api/v1/tasks/999999/assignees").status_code == 404
+
+    holder = {}
+    ticket = _new_ticket(bridge, uniq, holder, "dir")
+    options = bridge.read(f"/api/v1/tickets/{ticket}/assignees")
+    assert me["staff_id"] in {a["id"] for a in options["agents"]} and team in {t["id"] for t in options["teams"]}
+    # an assignee the form offers is one the assign command accepts
+    bridge.command("POST", f"/api/v1/tickets/{ticket}/assign", {"staff_id": options["agents"][0]["id"], "note": "offered"})
+
+
 def test_ticket_merge_combines_children_into_the_parent_and_closes_them(bridge, uniq):
     holder = {}
     parent = _new_ticket(bridge, uniq, holder, "p")

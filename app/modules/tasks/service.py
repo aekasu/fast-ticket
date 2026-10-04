@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.custom_fields import BUILT_IN_FIELDS, CustomFieldAnswer
 from app.integration.osticket import read_repository as repo
+from app.modules.agents import service as agents_service
 from app.integration.osticket.commands_service import dispatch_command
 from app.modules.tasks.models import (
     TaskAssign,
@@ -117,6 +118,16 @@ async def list_tasks(
         page=page,
         page_size=page_size,
     )
+
+
+async def task_assignees(session: AsyncSession, task_id: int, *, access):
+    """As ``tickets.service.ticket_assignees``, for a task (``task.assign`` in the task's department)."""
+    row = await repo.get_task(session, task_id, access=access)
+    if row is None:
+        return None
+    if not access.can_role_perm_in("task.assign", int(row["dept_id"] or 0)):
+        raise PermissionError("task.assign")
+    return await agents_service.assignee_options(session, access=access, dept_id=int(row["dept_id"] or 0))
 
 
 async def get_task(session: AsyncSession, task_id: int, *, access) -> TaskDetail | None:

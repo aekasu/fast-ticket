@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.custom_fields import BUILT_IN_FIELDS, CustomFieldAnswer
 from app.integration.osticket import read_repository as repo
+from app.modules.agents import service as agents_service
 from app.integration.osticket.commands_service import dispatch_command
 from app.modules.tickets.models import (
     Collaborator,
@@ -180,6 +181,18 @@ async def get_ticket(session: AsyncSession, ticket_id: int, *, access) -> Ticket
         collaborators=[_row_to_collaborator(dict(r)) for r in collab_rows],
         custom_fields=_custom_answers(custom_rows, "T"),
     )
+
+
+async def ticket_assignees(session: AsyncSession, ticket_id: int, *, access):
+    """The agents and teams the caller may assign the ticket to (osTicket's assign form), or None if the ticket
+    does not exist or may not be opened. Raises PermissionError when the caller's role in the ticket's department
+    lacks ``ticket.assign`` (``Ticket::checkStaffPerm(PERM_ASSIGN)``)."""
+    row = await repo.get_ticket(session, ticket_id, access=access)
+    if row is None:
+        return None
+    if not access.can_role_perm_in("ticket.assign", int(row["dept_id"] or 0)):
+        raise PermissionError("ticket.assign")
+    return await agents_service.assignee_options(session, access=access, dept_id=int(row["dept_id"] or 0))
 
 
 async def list_collaborators(session: AsyncSession, ticket_id: int, *, access) -> CollaboratorList | None:
