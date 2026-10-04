@@ -91,7 +91,6 @@ Pick per need; each needs osTicket's rule read first (class + `scp/*.php` page),
 - Team list/detail, SLA plans, forms and detail of departments/topics/priorities are admin-only (the agent directory
   and assign-form choices are done).
 - Per-department canned-response checks in the bridge handlers (currently "any role").
-- Idempotency-Key reused with a different body should return a mismatch error.
 - Optional HMAC on inbox rows (the inbox is unsigned) and encrypting payload secrets at rest.
 
 ### 2. Extend the oracle (`tests/e2e/oracle/oracle.php`, `tests/e2e/test_oracle.py`)

@@ -28,7 +28,7 @@ from app.core.rate_limit import limiter
 from app.core.request_limits import BodySizeLimitMiddleware
 from app.core.security_headers import SecurityHeadersMiddleware
 from app.core.ws_manager import manager as ws_manager
-from app.integration.osticket.commands_service import InvalidIdempotencyKey
+from app.integration.osticket.commands_service import IdempotencyKeyReused, InvalidIdempotencyKey
 from app.workers.events import poll_and_process_events, purge_old_events
 
 logging.basicConfig(
@@ -148,6 +148,7 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 
 @app.exception_handler(InvalidIdempotencyKey)
+@app.exception_handler(IdempotencyKeyReused)
 async def _invalid_idempotency_key(request, exc):
     return JSONResponse(status_code=422, content={"detail": str(exc)})
 

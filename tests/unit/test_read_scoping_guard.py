@@ -36,6 +36,7 @@ UNSCOPED_BY_DESIGN = {
     "list_topics": "the Admin Panel's full topic list: the service reaches it only for administrators",
     # Reference data osTicket offers every agent, or narrows in Python by osTicket's own procedure.
     "list_topic_rows": "raw rows; lookups/topic_visibility.py applies Staff::getTopicNames",
+    "get_help_topic_sort_mode": "an instance setting (how help topics are ordered), not agent or ticket data",
     "get_agent_name_format": "an instance setting (how agent names are written), not agent or ticket data",
     "list_priorities": "osTicket offers every priority to every agent (Priority::getPriorities)",
     # Knowledge base: osTicket applies no permission to viewing FAQs.

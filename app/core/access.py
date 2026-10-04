@@ -61,6 +61,8 @@ class AccessContext:
     team_ids: frozenset[int] = frozenset()
     #: "limited access" agents see only what is assigned to them or their teams
     assigned_only: bool = False
+    #: when the password last changed (epoch seconds, from ``ost_staff.passwdreset``); a token issued earlier is void
+    password_changed_at: int = 0
 
     # ── permission questions (osTicket's Staff::hasPerm) ─────────────────────
 
@@ -78,6 +80,10 @@ class AccessContext:
 
     def can_role_perm_in(self, perm: str, dept_id: int) -> bool:
         return perm in self.role_perms_for(dept_id)
+
+    def token_is_current(self, issued_at: float) -> bool:
+        """False for a token issued before the password last changed: changing a password ends older sessions."""
+        return int(issued_at or 0) >= self.password_changed_at
 
     # ── visibility ingredients (used by read scoping) ────────────────────────
 
@@ -138,6 +144,7 @@ def build_access_context(rows: dict) -> AccessContext:
         dept_ids=frozenset(int(d) for d in rows["dept_ids"]),
         team_ids=frozenset(int(t) for t in rows["team_ids"]),
         assigned_only=bool(staff["assigned_only"]),
+        password_changed_at=int(staff.get("passwd_changed") or 0),
     )
 
 

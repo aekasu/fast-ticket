@@ -83,7 +83,8 @@ async def websocket_endpoint(ws: WebSocket):
         await ws.close(code=1008)
         return
 
-    client = await manager.connect(ws, access, expires_at=float(claims["exp"]), subprotocol="bearer")
+    client = await manager.connect(ws, access, expires_at=float(claims["exp"]), subprotocol="bearer",
+                                  issued_at=float(claims.get("iat", 0)))
     if client is None:      # this agent already holds the maximum number of connections
         return
     try:

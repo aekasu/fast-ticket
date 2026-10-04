@@ -208,9 +208,10 @@ def _queue_condition(queue: str, access: "Scope") -> str:
     }[queue]
 
 
-_TICKET_SORTS = {   # the columns of osTicket's ticket queue that have a database column
-    "updated": "t.updated", "created": "t.created", "due_date": "t.duedate", "number": "t.number",
-    "subject": "c.subject", "status": "ts.name", "dept": "d.name",
+_TICKET_SORTS = {   # the columns of osTicket's ticket queue; priority sorts by urgency (ascending = most urgent first)
+    "updated": ["t.updated"], "created": ["t.created"], "due_date": ["t.duedate"], "number": ["t.number"],
+    "subject": ["c.subject"], "status": ["ts.name"], "dept": ["d.name"], "priority": ["pr.priority_urgency"],
+    "assignee": ["s.firstname", "s.lastname"], "requester": ["u.name"],
 }
 
 
@@ -262,11 +263,11 @@ async def list_tickets(
     where, params = _ticket_filters(
         access, status_id=status_id, dept_id=dept_id, assignee_staff_id=assignee_staff_id,
         assignee_team_id=assignee_team_id, topic_id=topic_id, sla_id=sla_id, is_answered=is_answered, q=q, queue=queue)
-    column = _TICKET_SORTS.get(sort, "t.updated")
     direction = "DESC" if descending else "ASC"
+    order = ", ".join(f"{column} {direction}" for column in _TICKET_SORTS.get(sort, ["t.updated"]))
     sql = (
         _TICKET_SELECT + " WHERE " + " AND ".join(where)
-        + f" ORDER BY {column} {direction}, t.ticket_id {direction} LIMIT :limit OFFSET :offset"
+        + f" ORDER BY {order}, t.ticket_id {direction} LIMIT :limit OFFSET :offset"
     )
     result = await session.execute(_sql(sql), {**params, "limit": limit, "offset": offset})
     return list(result.mappings().all())
@@ -480,7 +481,8 @@ async def get_staff_row(session: AsyncSession, staff_id: int) -> dict | None:
         await session.execute(
             _sql(
                 "SELECT staff_id, username, firstname, lastname, email, isactive, isadmin, dept_id, "
-                "role_id, assigned_only, permissions FROM ost_staff WHERE staff_id = :sid"
+                "role_id, assigned_only, permissions, COALESCE(UNIX_TIMESTAMP(passwdreset), 0) AS passwd_changed "
+                "FROM ost_staff WHERE staff_id = :sid"
             ),
             {"sid": staff_id},
         )
@@ -833,6 +835,13 @@ async def list_topics(session: AsyncSession, limit: int = 50, offset: int = 0) -
     """
     result = await session.execute(_sql(sql), {"limit": limit, "offset": offset})
     return list(result.mappings().all())
+
+
+async def get_help_topic_sort_mode(session: AsyncSession) -> str:
+    """``help_topic_sort_mode``: ``a`` lists topics alphabetically (osTicket's default), ``m`` in the manual order."""
+    result = await session.execute(_sql("SELECT value FROM ost_config WHERE namespace = 'core' AND `key` = 'help_topic_sort_mode'"))
+    row = result.first()
+    return (row[0] if row and row[0] else "a")
 
 
 async def list_topic_rows(session: AsyncSession) -> list:

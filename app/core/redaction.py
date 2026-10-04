@@ -29,6 +29,16 @@ def redact(value: Any) -> Any:
     return value
 
 
+def without_secrets(value: Any) -> Any:
+    """A copy of ``value`` with every secret-looking key dropped, for comparing two payloads of which one has
+    already been scrubbed by the bridge."""
+    if isinstance(value, dict):
+        return {k: without_secrets(v) for k, v in value.items() if not (isinstance(k, str) and _SECRET.search(k))}
+    if isinstance(value, list):
+        return [without_secrets(v) for v in value]
+    return value
+
+
 def redact_json(text: str | None) -> str | None:
     """``redact`` for a JSON document held as text; anything that is not JSON is withheld rather than shown."""
     if text is None:

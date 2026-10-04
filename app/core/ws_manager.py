@@ -31,6 +31,7 @@ class Client:
     ws: WebSocket
     access: AccessContext
     expires_at: float          # the token's ``exp`` (epoch seconds)
+    issued_at: float = 0       # the token's ``iat``
     connected_at: float = field(default_factory=time.time)
 
     @property
@@ -47,14 +48,15 @@ class ConnectionManager:
     # ── connections ───────────────────────────────────────────────────────────
 
     async def connect(
-        self, ws: WebSocket, access: AccessContext, expires_at: float, subprotocol: str | None = None
+        self, ws: WebSocket, access: AccessContext, expires_at: float, subprotocol: str | None = None,
+        issued_at: float = 0,
     ) -> Client | None:
         """Accept the socket, or refuse it (returns None, socket closed) if this agent has too many open."""
         if sum(1 for c in self._clients if c.staff_id == access.staff_id) >= self.max_per_staff:
             await ws.close(code=CLOSE_TRY_LATER)
             return None
         await ws.accept(subprotocol=subprotocol)
-        client = Client(ws=ws, access=access, expires_at=expires_at)
+        client = Client(ws=ws, access=access, expires_at=expires_at, issued_at=issued_at)
         self._clients.append(client)
         logger.debug("WebSocket connected (staff %s); total=%d", access.staff_id, len(self._clients))
         return client
@@ -117,6 +119,9 @@ class ConnectionManager:
             access = fresh[client.staff_id]
             if access is None or not access.is_active:
                 await self.close(client, CLOSE_POLICY, "account no longer active")
+                summary["deactivated"] += 1
+            elif not access.token_is_current(client.issued_at):
+                await self.close(client, CLOSE_POLICY, "password changed")
                 summary["deactivated"] += 1
             else:
                 client.access = access

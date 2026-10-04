@@ -176,6 +176,12 @@ async def get_current_user(
             detail="This account is no longer active.",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    if not access.token_is_current(claims.get("iat", 0)):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="The password changed after this token was issued; log in again.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     return {
         "staff_id": access.staff_id,
         "username": access.username,
@@ -201,4 +207,6 @@ async def authenticate_websocket(token: str | None) -> tuple[dict[str, Any], Acc
         access = await load_access_context(session, int(claims["staff_id"]))
     if access is None or not access.is_active:
         raise HTTPException(status_code=401, detail="This account is no longer active.")
+    if not access.token_is_current(claims.get("iat", 0)):
+        raise HTTPException(status_code=401, detail="The password changed after this token was issued.")
     return claims, access

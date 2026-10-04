@@ -193,11 +193,24 @@ async def test_departments_are_narrowed_to_the_agents_own_unless_they_see_all():
 async def test_topics_an_admin_sees_every_topic_and_an_agent_sees_the_ticket_form_names():
     admin_list, agent_rows = AsyncMock(return_value=[]), AsyncMock(return_value=[])
     with patch("app.modules.lookups.service.repo.list_topics", new=admin_list), \
+         patch("app.modules.lookups.service.repo.get_help_topic_sort_mode", new=AsyncMock(return_value="a")), \
          patch("app.modules.lookups.service.repo.list_topic_rows", new=agent_rows):
         assert (await _call("GET", "/api/v1/topics", ADMIN_WITH_NOTHING)).status_code == 200
         assert admin_list.await_count == 1 and agent_rows.await_count == 0
         assert (await _call("GET", "/api/v1/topics", make_access(5, []))).status_code == 200
         assert admin_list.await_count == 1 and agent_rows.await_count == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode,expected", [("a", ["Alpha", "Zulu"]), ("m", ["Zulu", "Alpha"])])
+async def test_topics_follow_the_instances_sort_mode(mode, expected):
+    now = "2024-01-01T00:00:00"
+    rows = [{"topic_id": i, "topic_pid": 0, "ispublic": 1, "flags": 2, "topic": name, "dept_id": 0, "created": now, "updated": now}
+            for i, name in ((1, "Zulu"), (2, "Alpha"))]                      # the manual order puts Zulu first
+    with patch("app.modules.lookups.service.repo.get_help_topic_sort_mode", new=AsyncMock(return_value=mode)), \
+         patch("app.modules.lookups.service.repo.list_topic_rows", new=AsyncMock(return_value=rows)):
+        resp = await _call("GET", "/api/v1/topics", make_access(5, []))
+    assert [t["topic"] for t in resp.json()["items"]] == expected
 
 
 # ── search ────────────────────────────────────────────────────────────────────────────────────────

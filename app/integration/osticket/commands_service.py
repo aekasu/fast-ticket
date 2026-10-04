@@ -16,14 +16,20 @@ from datetime import date, datetime
 import logging
 from typing import Any
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from app.integration.osticket.commands import IntegrationInbox
+from app.core.redaction import without_secrets
 
 logger = logging.getLogger(__name__)
 
 MAX_IDEMPOTENCY_KEY_LENGTH = 200   # the column holds 255; the staff prefix takes the rest
+
+
+class IdempotencyKeyReused(ValueError):
+    """The Idempotency-Key was already used for a different request; the API answers 422."""
 
 
 class InvalidIdempotencyKey(ValueError):
@@ -56,6 +62,18 @@ def _json_default(value: Any) -> str:
     raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
 
 
+def _same_request(existing: IntegrationInbox, command_type: str, aggregate_type: str, aggregate_id: str, payload: dict) -> bool:
+    """Is a repeated key a retry of the stored command (same type, resource and body)? Secret fields are left out of
+    the comparison: the bridge overwrites them once the command finishes, so they cannot be compared."""
+    if (existing.command_type, existing.aggregate_type, existing.aggregate_id) != (command_type, aggregate_type, aggregate_id):
+        return False
+    try:
+        stored = json.loads(existing.payload)
+    except (TypeError, ValueError):
+        return False
+    return without_secrets(stored) == without_secrets(json.loads(json.dumps(payload, default=_json_default)))
+
+
 async def dispatch_command(
     *,
     session: AsyncSession,
@@ -69,8 +87,8 @@ async def dispatch_command(
     """Queue a command for PHP-side execution.
 
     Args:
-        session: Active AsyncSession (will be flushed but NOT committed here;
-                 the route's session dependency handles the final commit).
+        session: Active AsyncSession (the command is committed here so that it is visible, and the bridge
+                 can claim it, before the route answers).
         command_type: Dot-namespaced command identifier, e.g. ``"ticket.reply"``.
         aggregate_type: Domain name of the resource, e.g. ``"ticket"``.
         aggregate_id: String representation of the resource's osTicket PK.
@@ -96,6 +114,10 @@ async def dispatch_command(
         )
         existing = result.scalar_one_or_none()
         if existing is not None:
+            if not _same_request(existing, command_type, aggregate_type, aggregate_id, payload):
+                raise IdempotencyKeyReused(
+                    "This Idempotency-Key was already used for a different request; use a new key for a new request."
+                )
             logger.info(
                 "Idempotency hit for key=%s command_id=%s", stored_key, existing.id
             )
@@ -111,7 +133,16 @@ async def dispatch_command(
         requested_by_staff_id=requested_by_staff_id,
     )
     session.add(command)
-    await session.flush()   # populate .id without committing
+    try:
+        # Committed here, before the route answers 202: FastAPI runs the session dependency's own commit after the
+        # response is sent, so a client that polls GET /commands/{id} at once could otherwise not see the row.
+        await session.commit()
+    except IntegrityError:
+        await session.rollback()    # a concurrent request took the same Idempotency-Key: that one is the command
+        winner = (await session.execute(select(IntegrationInbox).where(IntegrationInbox.idempotency_key == stored_key))).scalar_one()
+        if not _same_request(winner, command_type, aggregate_type, aggregate_id, payload):
+            raise IdempotencyKeyReused("This Idempotency-Key was already used for a different request; use a new key for a new request.")
+        return winner
 
     logger.info(
         "Command queued: id=%s type=%s aggregate=%s/%s",

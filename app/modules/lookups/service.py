@@ -58,8 +58,10 @@ async def list_topics(
             staff_dept_ids=access.dept_ids,
             filter_by_department=bool(access.dept_ids) and not access.has_global("visibility.departments"),
         )
-        # osTicket's default (help_topic_sort_mode 'a') lists topics alphabetically by full name
-        visible.sort(key=lambda entry: entry[1].casefold())
+        # help_topic_sort_mode 'a' (osTicket's default) lists topics alphabetically by full name; 'm' keeps the
+        # manual order the rows already come in
+        if await repo.get_help_topic_sort_mode(session) != "m":
+            visible.sort(key=lambda entry: entry[1].casefold())
         return TopicListResponse(
             items=[
                 TopicListItem(

@@ -561,6 +561,45 @@ def test_staff_lifecycle_and_the_password_actually_works(bridge, uniq):
     assert bridge.get(f"/api/v1/staff/{sid}").status_code == 404
 
 
+def test_an_idempotency_key_reused_for_a_different_request_is_refused(bridge, uniq):
+    ticket = _new_ticket(bridge, uniq, {}, "idem")
+    url, key = f"/api/v1/tickets/{ticket}/note", {"Idempotency-Key": f"e2e-idem-{uniq}"}
+    first = bridge.client.post(url, json={"title": "t", "message": "one"}, headers=key)
+    again = bridge.client.post(url, json={"title": "t", "message": "one"}, headers=key)
+    assert first.status_code == again.status_code == 202
+    assert first.json()["command_id"] == again.json()["command_id"]
+    clash = bridge.client.post(url, json={"title": "t", "message": "a different note"}, headers=key)
+    assert clash.status_code == 422 and "different request" in clash.json()["detail"]
+    other_ticket = bridge.client.post(f"/api/v1/tickets/{ticket + 1}/note", json={"title": "t", "message": "one"}, headers=key)
+    assert other_ticket.status_code == 422                      # same body, different resource
+    assert bridge.read(f"/api/v1/commands/{first.json()['command_id']}?wait=25")["status"] == "done"   # let it finish before cleanup
+
+
+def test_changing_a_password_ends_the_sessions_opened_before_it(bridge, uniq):
+    username, old, new = f"e2erev{uniq}", "E2e-Pass-9x!Qz", "E2e-New-7y!Wq"
+    sid = bridge.create(
+        "/api/v1/staff",
+        {"username": username, "firstname": "E2E", "lastname": "Revoke", "email": _email(uniq, "rev"),
+         "dept_id": 1, "role_id": 3, "password": old},
+        cleanup="/api/v1/staff/{id}",
+    )
+    time.sleep(1.2)                                     # a token is dated to the second; osTicket stamps the change likewise
+    token = login_raw(username, old).json()["access_token"]
+    me = lambda t: httpx.get(f"{BASE_URL}/api/v1/auth/me", headers={"Authorization": f"Bearer {t}"}, timeout=30)
+    assert me(token).status_code == 200
+
+    bridge.command("PATCH", f"/api/v1/staff/{sid}", {"firstname": "Renamed"})
+    assert me(token).status_code == 200                 # an unrelated edit leaves the session alone
+
+    time.sleep(1.2)
+    bridge.command("PATCH", f"/api/v1/staff/{sid}", {"password": new})
+    refused = me(token)
+    assert refused.status_code == 401 and "password changed" in refused.json()["detail"]
+    assert login_raw(username, old).status_code == 401
+    fresh = login_raw(username, new)
+    assert fresh.status_code == 200 and me(fresh.json()["access_token"]).status_code == 200
+
+
 def test_staff_access_settings_are_written_read_back_and_take_effect(bridge, uniq):
     username, password = f"e2eacc{uniq}", "E2e-Pass-9x!Qz"
     sid = bridge.create(
@@ -1049,6 +1088,8 @@ def test_ticket_and_task_lists_search_sort_count_and_queues_agree(bridge, uniq):
     asc = [t["ticket_id"] for t in bridge.read(f"/api/v1/tickets/?q={uniq}&sort=number&descending=false")["items"]]
     desc = [t["ticket_id"] for t in bridge.read(f"/api/v1/tickets/?q={uniq}&sort=number")["items"]]
     assert asc == desc[::-1] and set(asc) == {first, second}
+    for column in ("priority", "assignee", "requester", "status", "dept", "subject", "created", "due_date", "updated"):
+        assert bridge.get(f"/api/v1/tickets/?q={uniq}&sort={column}").status_code == 200, column
 
     # tasks: search, sort and the real total
     t1 = bridge.create("/api/v1/tasks/", {"title": f"e2e qtask {uniq} alpha", "description": "d", "dept_id": 1}, cleanup="/api/v1/tasks/{id}")

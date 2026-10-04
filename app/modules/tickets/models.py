@@ -119,7 +119,7 @@ class TicketDetail(TicketListItem):
 
 
 TicketQueue = Literal["open", "unanswered", "answered", "overdue", "mine", "assigned_me", "assigned_teams", "closed"]
-TicketSort = Literal["updated", "created", "due_date", "number", "subject", "status", "dept"]
+TicketSort = Literal["updated", "created", "due_date", "number", "subject", "status", "dept", "priority", "assignee", "requester"]
 
 
 class QueueCount(BaseModel):
