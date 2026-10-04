@@ -1,18 +1,37 @@
 # Next steps — handoff
 
-Written 2026-09-30 at the end of security step S6 (commit `59c8098`) so a fresh session can start cold.
-Branch: `feat/bridge-worker-and-portability` (stay on it; the user does not want more branches).
-Overwrite this file when the direction changes; delete finished items.
+Last updated 2026-10-04. Branch: `feat/bridge-worker-and-portability` (stay on it; the user does not want more
+branches). Overwrite this file when the direction changes; delete finished items. A fresh session starts here
+(see `CLAUDE.md` → "Starting a session").
+
+## Do first — open security findings (from the 2026-10-04 `/security-review`)
+
+Both are mass assignment through `custom_fields`, introduced in `6f2b3f4`; fix both, with e2e coverage, in one change:
+1. **`bridge/handlers/tickets.php` `create`** copies every `custom_fields` entry into the `$vars` array that goes to
+   `Ticket::create()`, which reads control keys from it (`assignId`, `staffId`, `teamId`, `slaId`, `ccs`, `emailId`,
+   `statusId`, `autorespond`). An agent with only `ticket.create` can assign a ticket without `ticket.assign`.
+2. **`bridge/handlers/tasks.php` `create`** does the same into `Task::create($vars)`; without `ticket_id` a custom field
+   named `object_id` / `object_type` links the task to any ticket.
+Fix: accept only names that are real fields of the object's forms (ticket form + the chosen topic's forms; the task
+form) and keep custom values out of the array whose keys control creation (set them on the form entries, as `update`
+does with `FastApiModel::setEntryAnswer`). Add a hard denylist of the control keys as defence in depth. Test: the
+e2e must prove `{"custom_fields": {"assignId": "s1"}}` is refused and assigns nothing.
 
 ## Where things stand
 
-- Done and committed: bridge worker + portability (Phases 0–3), security overhaul S0–S6 (auth, per-request
-  `AccessContext`, scoped reads that mirror osTicket, bridge-side permission checks, WebSocket audiences,
-  authorization matrix, read-scoping guard, hardening headers, oracle differential test).
-- Phase 4 (access cache) done on top of S6; see KNOWN_LIMITS for what it can lag. Still to run by a human: `make test-e2e`. Green at S6:
-  the compose DB user has write access to osTicket tables).
+- Committed and green (`make test` 700, `make test-docker`, `make test-e2e` 56 on a rebuilt stack at `b6102c2`):
+  bridge worker + portability, security overhaul S0–S6, access cache, and — this month — ticket PATCH / claim / release /
+  refer / collaborators / thread-entry edit+resend; the depth pass over staff (permissions, extra-department access),
+  departments, help topics, SLAs, organizations (manager, sharing, contacts), user accounts, tasks (team assign,
+  claim, transfer, reply), dynamic-form field definition and custom-field answers on tickets/users/orgs/tasks.
+- The raw `flags` integer was removed from the department, help-topic and SLA APIs (explicit fields instead).
 - `.claude/settings.json` has an uncommitted user change — never commit it.
 - Read first: `AGENTS.md`, `notes/KNOWN_LIMITS.md`, `notes/SECURITY.md`.
+
+## What needs the user (ask, do not guess)
+
+- **Attachments** (upload/download) and **user CSV import**: need a decision on upload size limits and whether
+  downloads stream through the API or osTicket. Raise it; do not slip one in.
 
 ## Goal reminder
 
