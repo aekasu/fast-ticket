@@ -583,7 +583,8 @@ async def get_team(session: AsyncSession, team_id: int) -> dict | None:
             t.created,
             t.updated,
             IF(t.lead_id > 0, t.lead_id, NULL) AS lead_id,
-            COALESCE(t.notes, '') AS notes
+            COALESCE(t.notes, '') AS notes,
+            (t.flags & 2) > 0 AS no_alerts   -- Team::FLAG_NOALERTS
         FROM ost_team t
         WHERE t.team_id = :team_id
     """
@@ -592,10 +593,14 @@ async def get_team(session: AsyncSession, team_id: int) -> dict | None:
     return dict(row) if row else None
 
 
-async def get_team_members(session: AsyncSession, team_id: int) -> list[int]:
-    sql = "SELECT staff_id FROM ost_team_member WHERE team_id = :team_id"
+async def get_team_members(session: AsyncSession, team_id: int) -> list[dict]:
+    """Members with their assignment-alert preference (TeamMember::FLAG_ALERTS, bit 1)."""
+    sql = """
+        SELECT staff_id, (COALESCE(flags, 0) & 1) > 0 AS alerts
+        FROM ost_team_member WHERE team_id = :team_id ORDER BY staff_id
+    """
     result = await session.execute(_sql(sql), {"team_id": team_id})
-    return [r["staff_id"] for r in result.mappings().all()]
+    return [dict(r) for r in result.mappings().all()]
 
 
 # ── Help Topics ───────────────────────────────────────────────────────────────

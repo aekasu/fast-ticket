@@ -116,3 +116,4 @@ class TaskEdit(BaseModel):
     dept_id: Optional[int] = None
     due_date: Optional[datetime] = None
     custom_fields: Optional[CustomFields] = Field(default=None, description="Answers to custom task-form fields, by variable name.")
+    note: Optional[str] = Field(default=None, min_length=1, max_length=10000, description="Reason for editing; posted as an internal note, as osTicket's edit form does.")

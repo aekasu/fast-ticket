@@ -127,7 +127,10 @@ def test_each_client_hears_only_what_it_may_and_a_disabled_agent_is_disconnected
             assert listeners[name].wait_for(lambda l: "kb.category.created" in l.events()), name
 
         # ── an admin-only object (staff): only the administrator ─────────────────────────────────────
-        assert listeners["admin"].wait_for(lambda l: "staff.created" in l.events("staff"))
+        # (created now, with every listener connected: the agents above were created before they connected)
+        news_id, _ = _agent(bridge, uniq, "en", SUPPORT)
+        assert listeners["admin"].wait_for(lambda l: "staff.created" in l.events("staff", news_id))
+        time.sleep(1)
         assert listeners["support"].events("staff") == [] and listeners["sales"].events("staff") == []
 
         # ── a disabled agent is disconnected (checked every WS_RECHECK_SECONDS) ───────────────────────

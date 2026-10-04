@@ -175,6 +175,14 @@ class FastApiTaskHandler {
             }
         }
 
+        if (!empty($payload['note'])) {
+            $errors = [];
+            if (!$task->postNote(['note' => (string) $payload['note'], 'title' => _S('Task Updated')], $errors, $thisstaff)) {
+                throw new Exception('The edit note could not be posted: ' . json_encode($errors));
+            }
+            $changes['note'] = true;
+        }
+
         if ($changes) {
             $task->updated = SqlFunction::NOW();
             $task->logEvent('edited', ['fields' => $changes]);

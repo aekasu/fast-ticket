@@ -201,7 +201,8 @@ async def get_team(session: AsyncSession, team_id: int) -> TeamDetail | None:
     members = await repo.get_team_members(session, team_id)
     return TeamDetail(
         **row,
-        members=members,
+        members=[m["staff_id"] for m in members],
+        member_alerts={m["staff_id"]: bool(m["alerts"]) for m in members},
     )
 
 async def create_team(

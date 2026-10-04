@@ -58,6 +58,13 @@ class FastApiTeamHandler {
         if (isset($payload['is_enabled'])) {
             $vars['isenabled'] = (int) $payload['is_enabled'];
         }
+        if (isset($payload['no_alerts'])) {
+            if ($payload['no_alerts']) {
+                $vars['noalerts'] = 1;
+            } else {
+                unset($vars['noalerts']);
+            }
+        }
         if (isset($payload['members'])) {
             // Keep the alert preference of members that stay; new members get alerts on.
             $previous = $vars['member_alerts'];
@@ -66,6 +73,13 @@ class FastApiTeamHandler {
             foreach ($vars['members'] as $staff_id) {
                 $vars['member_alerts'][$staff_id] = $previous[$staff_id] ?? 1;
             }
+        }
+        // Per-member alert preference: only for people who are (or are becoming) members.
+        foreach ((array) ($payload['member_alerts'] ?? []) as $staff_id => $on) {
+            if (!in_array((int) $staff_id, $vars['members'], true)) {
+                throw new Exception("Staff {$staff_id} is not a member of the team; add them to 'members' first.");
+            }
+            $vars['member_alerts'][(int) $staff_id] = $on ? 1 : 0;
         }
         return $vars;
     }

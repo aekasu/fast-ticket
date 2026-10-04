@@ -358,6 +358,26 @@ def test_team_lifecycle_keeps_its_members(bridge, uniq):
     assert bridge.get(f"/api/v1/teams/{tid}").status_code == 404
 
 
+def test_team_alert_flags_round_trip_and_survive_other_edits(bridge, uniq):
+    tid = bridge.create("/api/v1/teams", {"name": f"e2e-talert-{uniq}", "members": [1], "no_alerts": True,
+                                          "member_alerts": {"1": False}}, cleanup="/api/v1/teams/{id}")
+    url = f"/api/v1/teams/{tid}"
+    got = bridge.read(url)
+    assert got["no_alerts"] is True and got["member_alerts"] == {"1": False}
+
+    bridge.command("PATCH", url, {"notes": "other edit"})                      # nothing else is reset
+    got = bridge.read(url)
+    assert got["no_alerts"] is True and got["member_alerts"] == {"1": False} and got["notes"] == "other edit"
+
+    bridge.command("PATCH", url, {"no_alerts": False, "member_alerts": {"1": True}})
+    got = bridge.read(url)
+    assert got["no_alerts"] is False and got["member_alerts"] == {"1": True}
+
+    bridge.command("PATCH", url, {"members": []})                                # removing the member drops the entry
+    assert bridge.read(url)["member_alerts"] == {}
+    bridge.refuses("PATCH", url, {"member_alerts": {"1": True}}, because="not a member")
+
+
 # ── organizations, users, staff ───────────────────────────────────────────────
 
 
@@ -654,8 +674,10 @@ def test_task_lifecycle(bridge, uniq):
     assert any("rewritten body" in e["body"] for e in got["thread"])
     assert not any("do the thing" in e["body"] for e in got["thread"])
 
-    bridge.command("PATCH", f"/api/v1/tasks/{tid}", {"title": f"e2e renamed {uniq}"})
-    assert bridge.read(f"/api/v1/tasks/{tid}")["title"] == f"e2e renamed {uniq}"
+    bridge.command("PATCH", f"/api/v1/tasks/{tid}", {"title": f"e2e renamed {uniq}", "note": "why I renamed it"})
+    got = bridge.read(f"/api/v1/tasks/{tid}")
+    assert got["title"] == f"e2e renamed {uniq}"
+    assert any("why I renamed it" in e["body"] for e in got["thread"])      # osTicket's "reason for editing"
 
     bridge.command("POST", f"/api/v1/tasks/{tid}/assign", {"staff_id": 1, "note": "yours"})
     assert bridge.read(f"/api/v1/tasks/{tid}")["assignee_staff_id"] == 1

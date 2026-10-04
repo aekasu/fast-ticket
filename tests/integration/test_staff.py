@@ -35,6 +35,7 @@ MOCK_TEAM = {
     "updated": _NOW,
     "lead_id": 5,
     "notes": "First responders",
+    "no_alerts": True,
 }
 
 MOCK_STAFF = {
@@ -186,7 +187,7 @@ async def test_list_teams_returns_200():
 async def test_get_team_returns_detail():
     with (
         patch("app.modules.staff.service.repo.get_team", new=AsyncMock(return_value=MOCK_TEAM)),
-        patch("app.modules.staff.service.repo.get_team_members", new=AsyncMock(return_value=[5, 6]))
+        patch("app.modules.staff.service.repo.get_team_members", new=AsyncMock(return_value=[{"staff_id": 5, "alerts": True}, {"staff_id": 6, "alerts": False}]))
     ):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             resp = await ac.get("/api/v1/teams/1", headers=_auth(is_admin=True))
@@ -194,6 +195,8 @@ async def test_get_team_returns_detail():
     data = resp.json()
     assert data["name"] == "Level 1 Support"
     assert data["members"] == [5, 6]
+    assert data["no_alerts"] is True
+    assert data["member_alerts"] == {"5": True, "6": False}
 
 
 @pytest.mark.asyncio

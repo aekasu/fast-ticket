@@ -115,21 +115,27 @@ class TeamListResponse(BaseModel):
 class TeamDetail(TeamListItem):
     lead_id: Optional[int] = None
     notes: str = ""
+    no_alerts: bool = False  # osTicket's "Disable assignment alerts" for the whole team
     members: list[int] = []  # List of staff_ids
+    member_alerts: dict[int, bool] = {}  # staff_id -> receives this team's assignment alerts
 
 class TeamCreate(BaseModel):
     name: str = Field(min_length=1, max_length=128)
     is_enabled: bool = True
     lead_id: Optional[int] = None
     notes: str = ""
+    no_alerts: bool = False
     members: list[int] = []
+    member_alerts: dict[int, bool] = Field(default_factory=dict, description="staff_id -> alerts on/off; members not listed get alerts on")
 
 class TeamUpdate(BaseModel):
     name: Optional[str] = Field(default=None, min_length=1, max_length=128)
     is_enabled: Optional[bool] = None
     lead_id: Optional[int] = None
     notes: Optional[str] = None
+    no_alerts: Optional[bool] = None
     members: Optional[list[int]] = None
+    member_alerts: Optional[dict[int, bool]] = Field(default=None, description="staff_id -> alerts on/off; members not listed keep their setting")
 
 
 # ── Staff ─────────────────────────────────────────────────────────────────────

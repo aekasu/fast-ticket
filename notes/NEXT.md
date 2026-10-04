@@ -21,9 +21,6 @@ Pick the next item from "Direction" below, or ask the user about attachments / C
 - `.claude/settings.json` has an uncommitted user change — never commit it.
 - Read first: `AGENTS.md`, `notes/KNOWN_LIMITS.md`, `notes/SECURITY.md`.
 
-- Seen once: `tests/e2e/test_events.py` failed twice right after a rebuild (admin never heard `staff.created`), then
-  passed 3 times on a warm stack and in the full run. Suspected stack warm-up (worker restarting); if it recurs, look
-  at the outbox cursor / listener connect order.
 
 ## What needs the user (ask, do not guess)
 
@@ -35,6 +32,24 @@ Pick the next item from "Direction" below, or ask the user about attachments / C
 Replicate osTicket's interface on FastAPI first (reads scoped exactly as osTicket scopes them), custom features
 after. fast-ticket should work against any osTicket instance out of the box.
 
+## Milestone: "ready for a UI demo" (agreed with the user 2026-10-04)
+
+Goal: stop here and tell the user a UI can now demonstrate osTicket's core agent workflow end to end. Core before
+breadth — no Wave 2 until this is met. The demo story: an agent logs in, works a queue, opens a ticket, replies /
+notes / assigns / transfers / closes it, manages tasks, looks up users and organizations, uses the KB and canned
+replies, and an admin configures staff, teams, departments, topics, SLAs; changes appear live over the WebSocket.
+Remaining before that is true, in order:
+1. **Finish the depth audit** (below): users / organizations / tasks are now compared and covered; only tickets'
+   remaining gaps (referral list/remove) and the help-topic per-field switches are left — both minor.
+2. **Non-admin reference data** (section C): an ordinary agent must be able to list teams and assignable agents to
+   fill an assign/transfer form. Today teams, the agent directory and SLAs are admin-only, which blocks the UI.
+3. **Attachments** (upload on reply/create, download): a ticket demo without files looks hollow. Needs the user's
+   decision (size limits; stream through the API or osTicket) — raise it when step 2 is done.
+4. **Queue ergonomics**: ticket list text search, sorting, and per-status counts for the queue tabs (the list has
+   only id filters today). Task list likewise.
+5. A final full e2e + `/security-review`, review KNOWN_LIMITS, then tell the user the milestone is met.
+Not required for the demo: CSV import, custom lists, filters, schedules, export, logs, Wave 3.
+
 ## Direction, in order
 
 ### Depth audit (started 2026-10-03) — do before more breadth
@@ -44,7 +59,7 @@ Done: tickets (PATCH), staff, departments, help topics, SLAs, organizations, use
 - ~~Help topic~~ done: status, parent, default ticket status, forms (ordered; core ticket form never detached), number format, no-autoresponse, auto-assign. Not yet: switching individual form fields off per topic (`fields[]`) — they are preserved as stored.
 - ~~SLA~~ done: schedule, transient, disable-overdue-alerts (priority escalation flag is preserved, not editable).
 - ~~Dynamic forms cannot define fields~~ done: `POST/PATCH/DELETE /forms/{id}/fields` (type, name, label, mode, hint, order, enabled, typed configuration). **Answering them is done too** (`custom_fields` on create/PATCH and in the detail reads of tickets, users, organizations and tasks).
-- Team: complete except alert flags. User/org/task: not compared yet.
+- ~~Team~~ done (alert flags: team `no_alerts`, per-member `member_alerts`). ~~User / org / task~~ compared 2026-10-04: users and organizations already cover every field of osTicket's pages; tasks gained the "reason for editing" `note` on PATCH.
 
 ### 0. Replicate osTicket — gap audit (2026-09-30)
 Compared `notes/OSTICKET_CAPABILITIES.md` §2 against the routers and `bridge/registry.php` (66 command types).
