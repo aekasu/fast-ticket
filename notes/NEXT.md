@@ -32,25 +32,18 @@ Pick the next item from "Direction" below, or ask the user about attachments / C
 Replicate osTicket's interface on FastAPI first (reads scoped exactly as osTicket scopes them), custom features
 after. fast-ticket should work against any osTicket instance out of the box.
 
-## Milestone: "ready for a UI demo" (agreed with the user 2026-10-04)
+## Milestone: "ready for a UI demo" — MET (2026-10-04)
 
-Goal: stop here and tell the user a UI can now demonstrate osTicket's core agent workflow end to end. Core before
-breadth — no Wave 2 until this is met. The demo story: an agent logs in, works a queue, opens a ticket, replies /
-notes / assigns / transfers / closes it, manages tasks, looks up users and organizations, uses the KB and canned
-replies, and an admin configures staff, teams, departments, topics, SLAs; changes appear live over the WebSocket.
-Remaining before that is true, in order:
-1. **Finish the depth audit** (below): users / organizations / tasks are now compared and covered; only tickets'
-   remaining gaps (referral list/remove) and the help-topic per-field switches are left — both minor.
-2. ~~Non-admin reference data~~ done (agent directory `GET /agents`; assignable agents/teams per ticket and task;
-   oracle-verified). Teams list/detail and SLAs stay admin-only until a UI screen needs them.
-3. ~~Attachments~~ read side done (files listed on thread entries, scoped download; KNOWN_LIMITS → Attachments).
-   **Upload deliberately not built**: the inbox is JSON-only, so it needs a design (shared volume vs size-capped
-   payload) that also decides whether the API can sit on a different host from osTicket. Not needed for the demo;
-   revisit only if the user wants file upload in the UI.
-4. ~~Queue ergonomics~~ done: ticket list `q` / `queue` / `sort` / real `total`, `GET /tickets/queues` counts (default
-   queues checked against osTicket's own by the oracle), task list `q` / `sort` / `total`.
-5. A final full e2e + `/security-review`, review KNOWN_LIMITS, then tell the user the milestone is met.
-Not required for the demo: CSV import, custom lists, filters, schedules, export, logs, Wave 3.
+The API now covers osTicket's core agent workflow end to end: login, scoped ticket and task queues with search, sort,
+counts and totals; ticket and task detail with threads and downloadable attachments; reply, note, assign (with the
+assign-form choices), transfer, claim, release, refer, merge, close; collaborators; tasks; users and organizations
+(with accounts and custom fields); the agent directory; KB and canned replies; and the whole Admin Panel (staff, teams,
+departments, topics, SLAs, priorities, forms and their fields, banlist) — with changes pushed live over the WebSocket.
+All verified by `make test-e2e` (61) and the oracle test against osTicket's own PHP. **Tell the user a UI can start.**
+
+Known holes a UI will meet (all in KNOWN_LIMITS): no file upload, no ticket-export, no custom queues, list search does
+not read message bodies, team/SLA lists are admin-only, 2FA accounts cannot log in. Pick the next work from "Direction"
+below based on what the UI needs.
 
 ## Direction, in order
 

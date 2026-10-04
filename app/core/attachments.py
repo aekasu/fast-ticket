@@ -38,7 +38,7 @@ def file_response(row: dict) -> StreamingResponse:
         raise HTTPException(status_code=501, detail="This file is kept by a storage plugin the API cannot read.")
     name = (row["name"] or "file").replace("\r", "").replace("\n", "")
     ascii_name = re.sub(r'[^A-Za-z0-9._ -]', "_", name) or "file"
-    media_type = row["content_type"] if _MEDIA_TYPE.match(row["content_type"] or "") else "application/octet-stream"
+    media_type = row["content_type"] if _MEDIA_TYPE.fullmatch(row["content_type"] or "") else "application/octet-stream"
     return StreamingResponse(
         _chunks(int(row["file_id"])),
         media_type=media_type,
