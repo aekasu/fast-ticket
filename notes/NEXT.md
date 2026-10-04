@@ -1,29 +1,37 @@
 # Next steps — handoff
 
-Last updated 2026-10-04. Branch: `feat/bridge-worker-and-portability` (stay on it; the user does not want more
-branches). Overwrite this file when the direction changes; delete finished items. A fresh session starts here
+Last updated 2026-10-04 (end of session). Branch: `feat/bridge-worker-and-portability` (stay on it; the user does not
+want more branches). Overwrite this file when the direction changes; delete finished items. A fresh session starts here
 (see `CLAUDE.md` → "Starting a session").
 
 ## Do first
 
-Nothing is open. (The 2026-10-04 `/security-review` findings — mass assignment through `custom_fields` on ticket and
-task create — are fixed: names are checked against the object's real forms and a control-key denylist; e2e proves it.)
-Pick the next item from "Direction" below, or ask the user about attachments / CSV import.
+Nothing is open. **The "ready for a UI demo" milestone is met** (below) and `KNOWN_LIMITS.md` was trimmed and reviewed
+at the end of it. The user said they will tell you what to do about the **frontend** next — wait for that; do not start
+a UI or more API breadth on your own. If the user instead asks for API work, pick from "Direction" below.
 
 ## Where things stand
 
-- Committed and green (`make test` 700, `make test-docker`, `make test-e2e` 56 on a rebuilt stack, after the custom_fields hardening):
-  bridge worker + portability, security overhaul S0–S6, access cache, and — this month — ticket PATCH / claim / release /
-  refer / collaborators / thread-entry edit+resend; the depth pass over staff (permissions, extra-department access),
-  departments, help topics, SLAs, organizations (manager, sharing, contacts), user accounts, tasks (team assign,
-  claim, transfer, reply), dynamic-form field definition and custom-field answers on tickets/users/orgs/tasks.
+- **All committed, tree clean** (except the user's own `.claude/settings.json` — never commit it). Last commit
+  `b3b9d41`. Verified at that commit: `make test` 738, `make test-docker` 738, `make test-e2e` 63 on a rebuilt stack
+  (includes the oracle against osTicket's own PHP), `make doctor` 0 failed (one expected warning: the compose stack
+  uses one all-privileges DB user). Security review of the new code: nothing at high confidence.
+- Built, in order: bridge worker + portability, security overhaul S0–S6, access cache, ticket lifecycle (PATCH, claim,
+  release, refer, collaborators, thread-entry edit/resend), depth pass over staff / departments / topics / SLAs / orgs /
+  users / tasks / teams (alert flags) / dynamic forms and custom-field answers, the `custom_fields` mass-assignment fix,
+  the agent directory and assign-form choices, attachment listing and download, ticket search / default queues with
+  counts / sorting / real totals, session revocation on password change, idempotency-key mismatch, help-topic sort mode.
+- Things worth knowing: the e2e suite takes ~6.5 min (run it from a shell with `.env` sourced); the oracle test needs
+  `MYSQL_PASSWORD` too; `dispatch_command` commits the row itself (FastAPI commits the session only after answering);
+  the oracle flushes osTicket's ORM cache between agents (`getDeptAgents` leaves partial objects in it).
 - The raw `flags` integer was removed from the department, help-topic and SLA APIs (explicit fields instead).
-- `.claude/settings.json` has an uncommitted user change — never commit it.
 - Read first: `AGENTS.md`, `notes/KNOWN_LIMITS.md`, `notes/SECURITY.md`.
 
 
 ## What needs the user (ask, do not guess)
 
+- **The frontend**: the user will say what they want (what to build, where it lives — AGENTS.md currently says "Don't
+  build a frontend" in this repo, so confirm before adding one here).
 - **Attachment upload** and **user CSV import**: both need bytes handed to PHP, so need a design decision (shared
   volume vs size-capped payload). Download is done and streams through the API. Raise it; do not slip one in.
 

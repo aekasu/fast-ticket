@@ -20,6 +20,9 @@ Standing instructions (the user has given these; do not re-ask):
   `make test-e2e`, then commit atomically (`feat(bridge): …` for `bridge/`, `feat(<domain>): …` for the API,
   with the `Co-Authored-By` trailer), then update `NEXT.md` / `KNOWN_LIMITS.md` in the same change.
 - Depth over breadth: finish and verify what exists against osTicket's own pages before adding new operations.
+- **Current state (2026-10-04):** the API is feature-complete for osTicket's core agent workflow (the "UI demo"
+  milestone in `notes/NEXT.md` is met, 738 unit/integration + 63 live e2e tests green). The user directs what comes
+  next (the frontend); don't add API breadth unprompted. Do only what is worth its cost — they asked for that.
 - Before ending a session: make sure everything is committed, `NEXT.md` is current (delete finished items,
   add what you found), and say in the final message whether the user can safely clear the conversation.
 - If `docker compose ps` shows the db container exited (WSL restarts do this), `docker compose up -d db`.
