@@ -7,7 +7,7 @@ Canonical instructions for any AI coding agent working in this repo (Claude Code
 
 **fast-ticket** wraps osTicket's PHP model layer with a clean, security-first FastAPI REST API through a **PHP integration bridge plugin** (installed inside osTicket itself). The goal is to expose osTicket's native capabilities as a well-typed, properly secured API — first mirroring every high-suitability operation the PHP model layer supports, then building custom functionality on top.
 
-This is **not** a re-implementation of osTicket. All writes go through the bridge; reads query osTicket's MySQL tables directly (read-only). There is no frontend — the API itself is the product.
+This is **not** a re-implementation of osTicket. All writes go through the bridge; reads query osTicket's MySQL tables directly (read-only). There is no frontend in this repository — the API itself is the product. Clients (a web UI, a CLI, …) live in their own repositories and consume the HTTP/WebSocket contract described in `notes/CLIENTS.md` and `notes/EVENTS.md`.
 
 ---
 
@@ -172,6 +172,7 @@ Read the relevant section **before** implementing any endpoint.
 - `notes/OSTICKET_CAPABILITIES.md` — inventory of osTicket PHP model operations: suitability ratings, permissions, relationships (summary matrix §2, per-domain from §3, unverified items flagged in §8).
 - `notes/INTEGRATION_CAPABILITIES.md` — API ↔ bridge matrix: required commands (§3), events (§4), read-throughs (§5), open decisions (§6).
 - `notes/fast-ticket-bridge-bringup-and-testing.md` — Docker bring-up order, known footguns, testing each hop in isolation.
+- `notes/CLIENTS.md` / `notes/EVENTS.md` — the contract for anything that consumes the API: auth, the 202 command pattern, idempotency, CORS, and the WebSocket event stream.
 - `notes/KNOWN_LIMITS.md` — what fast-ticket does not do yet or does only partly (see "Known limits" below).
 - `notes/install-on-an-existing-osticket.md` — installing the plugin zip on an existing osTicket, worker/cron, least-privilege DB user, `make doctor`.
 
@@ -288,4 +289,4 @@ list, not a changelog.
 - Don't report a bridge handler as working because it returned without error; prove it stored the right thing (read it back) and that a partial update preserved the other fields.
 - Don't write osTicket SQL from memory or from `notes/OSTICKET_CAPABILITIES.md`; check the schema and the class source.
 - Don't put throwaway scripts anywhere but `notes/.scratch/` (gitignored).
-- Don't build a frontend — the API and its test suite are the deliverable.
+- Don't build a frontend in this repo — the API and its test suite are the deliverable. A frontend lives in a separate repository and talks to the API only through its published contract; this repo carries only what such a client needs from the backend (stable response shapes, CORS, `notes/CLIENTS.md`, `notes/EVENTS.md`). Changing a response shape or an event is a contract change: update those notes with it.

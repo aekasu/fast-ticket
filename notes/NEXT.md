@@ -30,8 +30,12 @@ a UI or more API breadth on your own. If the user instead asks for API work, pic
 
 ## What needs the user (ask, do not guess)
 
-- **The frontend**: the user will say what they want (what to build, where it lives — AGENTS.md currently says "Don't
-  build a frontend" in this repo, so confirm before adding one here).
+- **The frontend**: decided 2026-10-04 — it lives in its **own repository**, nothing of it here. The backend side is
+  done: `notes/CLIENTS.md` (auth, 202 pattern, idempotency, CORS, deployment), `notes/EVENTS.md` (WebSocket), AGENTS.md
+  reworded, and CORS now exposes `X-Login-Error` / `Retry-After` / `Content-Disposition` to browsers. The user will
+  come back to **frontend planning** (stack, token storage, where the OpenAPI schema is taken from) — wait for that.
+  Open question for it: production turns `API_DOCS_ENABLED` off, so the frontend needs its schema from a dev instance
+  or a copy published with a release.
 - **Attachment upload** and **user CSV import**: both need bytes handed to PHP, so need a design decision (shared
   volume vs size-capped payload). Download is done and streams through the API. Raise it; do not slip one in.
 

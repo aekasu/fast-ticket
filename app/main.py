@@ -163,6 +163,8 @@ app.add_middleware(
     allow_credentials=False,
     allow_methods=["GET", "POST", "PATCH", "DELETE"],
     allow_headers=["Authorization", "Content-Type", "Idempotency-Key"],
+    # response headers a browser client on another origin needs to read (otherwise they are hidden from it)
+    expose_headers=["X-Login-Error", "Retry-After", "Content-Disposition"],
 )
 
 # Outermost, so even a 413 or 429 from the middlewares inside it carries the headers.

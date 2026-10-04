@@ -146,6 +146,15 @@ async def test_a_foreign_origin_is_not_granted_cross_origin_access():
 
 
 @pytest.mark.asyncio
+async def test_cors_exposes_the_headers_a_browser_client_needs():
+    # the test settings allow no origin, so look at how the middleware is configured instead of a response
+    cors = next(m for m in app.user_middleware if m.cls.__name__ == "CORSMiddleware")
+    exposed = {h.lower() for h in cors.kwargs["expose_headers"]}
+    assert {"x-login-error", "retry-after", "content-disposition"} <= exposed
+    assert cors.kwargs["allow_credentials"] is False
+
+
+@pytest.mark.asyncio
 async def test_a_preflight_from_a_foreign_origin_is_not_approved():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as client:
         resp = await client.options(
