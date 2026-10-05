@@ -13,7 +13,7 @@ a UI or more API breadth on your own. If the user instead asks for API work, pic
 ## Where things stand
 
 - **All committed, tree clean** (except the user's own `.claude/settings.json` — never commit it). Last commit
-  `b3b9d41`. Verified at that commit: `make test` 784, `make test-docker` 784, `make test-e2e` 66 on a rebuilt stack
+  `b3b9d41`. Verified at that commit: `make test` 786, `make test-docker` 786, `make test-e2e` 66 on a rebuilt stack
   (includes the oracle against osTicket's own PHP), `make doctor` 0 failed (one expected warning: the compose stack
   uses one all-privileges DB user). Security review of the new code: nothing at high confidence.
 - Built, in order: bridge worker + portability, security overhaul S0–S6, access cache, ticket lifecycle (PATCH, claim,
@@ -36,8 +36,8 @@ a UI or more API breadth on your own. If the user instead asks for API work, pic
   come back to **frontend planning** (stack, token storage, where the OpenAPI schema is taken from) — wait for that.
   Open question for it: production turns `API_DOCS_ENABLED` off, so the frontend needs its schema from a dev instance
   or a copy published with a release.
-- **Attachment upload** and **user CSV import**: both need bytes handed to PHP, so need a design decision (shared
-  volume vs size-capped payload). Download is done and streams through the API. Raise it; do not slip one in.
+- ~~Attachment upload and user CSV import~~ decided 2026-10-05: size-capped payload (files as base64 in the command payload,
+  CSV as text). Done for replies/notes and `POST /users/import`; see KNOWN_LIMITS "Attachments" for what is not covered.
 
 ## Goal reminder
 

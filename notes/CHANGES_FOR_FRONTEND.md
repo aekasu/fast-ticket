@@ -6,6 +6,19 @@ After a backend change run `npm run api:pull && npm run api:types`, read the sna
 list below and remove the met entries from `BACKEND_REQUESTS.md`. This file is the backend's side of that handshake;
 delete an entry once the frontend has adopted it.
 
+## 2026-10-05 — user CSV import: `POST /users/import`
+
+**New.** `POST /users/import` with `{csv, pasted?}` (needs `user.create`, like osTicket's Import dialog) queues osTicket's own
+import. `csv` is CSV text up to `CSV_IMPORT_MAX_BYTES` (1 MB): a header row naming user-form fields (`name`, `email`,
+`phone`, ...), or, with `pasted: true`, one `name, email` per line with no header (the dialog's "paste" box). The finished
+command's `result.imported` is the number of users. It is **all-or-nothing**: the first bad row (no valid email, no name,
+an unknown column) refuses the whole file, nothing is imported, and `error_message` carries osTicket's reason
+("Both `name` and `email` fields are required"). Existing emails are matched, not duplicated (osTicket's behaviour).
+
+**Frontend to do.** An Import button on the User Directory (visible with `user.create`): a file picker (read it as text)
+and a paste box, a result line "Imported N users", the refusal text on failure; refetch the list (a `user.created`-style
+event may arrive per user).
+
 ## 2026-10-05 — attachment upload on replies and notes (size-capped base64)
 
 **New.** `POST /tickets/{id}/reply`, `POST /tickets/{id}/note`, `POST /tasks/{id}/reply` and `POST /tasks/{id}/note` accept

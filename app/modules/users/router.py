@@ -3,7 +3,7 @@
 Permissions (global permissions on the staff member — ``Staff::hasPerm($key)``):
   reads          user.dir      the user/organization directory (osTicket does not gate organization
                                pages by URL; the API uses the directory permission as the nearest gate)
-  users          user.create   user.edit   user.delete
+  users          user.create (also CSV import)   user.edit   user.delete
   accounts       user.manage   (register, change/lock/unlock, password-reset and activation emails — osTicket's
                                "Manage Account" pop-ups)
   organizations  org.create    org.edit    org.delete
@@ -25,6 +25,7 @@ from app.modules.users.models import (
     UserAccountRegister,
     UserAccountUpdate,
     UserCreate,
+    UserImport,
     UserUpdate,
     UserDetail,
     UserListResponse,
@@ -119,6 +120,18 @@ async def get_user(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     return user
+
+
+@router.post("/users/import", response_model=CommandResponse, status_code=202, summary="Import users from CSV")
+async def import_users(
+    body: UserImport,
+    current_user: dict = require_perm("user.create"),   # users.php "import-users" needs User::PERM_CREATE
+    session: AsyncSession = Depends(get_session),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    """osTicket's own import: ``result.imported`` on the finished command is the number of users; a bad row refuses
+    the whole file (nothing is imported) with osTicket's reason in ``error_message``."""
+    return await service.import_users(session, body, current_user["staff_id"], idempotency_key)
 
 
 @router.post("/users", response_model=CommandResponse, status_code=202, summary="Create user")

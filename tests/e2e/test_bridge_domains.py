@@ -1423,3 +1423,34 @@ def test_forms_for_shows_agents_the_fields_osticket_shows_them(bridge, uniq):
     assert bridge.get("/api/v1/forms/for/widget").status_code == 422
     assert bridge.get(f"/api/v1/forms/for/user?topic_id={topic}").status_code == 200       # a topic only matters for tickets
     assert [f["type"] for f in bridge.read(f"/api/v1/forms/for/user?topic_id={topic}")["forms"]] == ["U"]
+
+
+def test_user_csv_import_is_osticket_import_all_or_nothing(bridge, uniq):
+    def user_by(email):
+        found = bridge.read(f"/api/v1/users?q={email}")["items"]
+        return found[0]["id"] if found else None
+
+    emails = [_email(uniq, f"imp{i}") for i in range(3)]
+    header = "name,email,phone\n" + "".join(f"E2E Import {i},{e},555010{i}\n" for i, e in enumerate(emails))
+    done = bridge.command("POST", "/api/v1/users/import", {"csv": header})
+    assert done["result"]["imported"] == 3
+    ids = [user_by(e) for e in emails]
+    assert all(ids)
+    for uid in ids:
+        bridge._cleanups.append(("DELETE", f"/api/v1/users/{uid}"))
+    got = bridge.read(f"/api/v1/users/{ids[1]}")
+    assert (got["name"], got["email"], got["phone"]) == ("E2E Import 1", emails[1], "5550101")   # phone stored as digits
+
+    # the pasted box: "name, email" per line, no header
+    pasted_email = _email(uniq, "pasted")
+    done = bridge.command("POST", "/api/v1/users/import", {"csv": f"E2E Pasted, {pasted_email}", "pasted": True})
+    assert done["result"]["imported"] == 1 and user_by(pasted_email)
+    bridge._cleanups.append(("DELETE", f"/api/v1/users/{user_by(pasted_email)}"))
+
+    # a bad row refuses the whole file: nothing is imported, in osTicket's words
+    good = _email(uniq, "good")
+    bridge.refuses("POST", "/api/v1/users/import", {"csv": f"name,email\nE2E Good,{good}\nE2E Bad,not-an-email\n"},
+                   because="Both `name` and `email` fields are required")
+    assert user_by(good) is None
+    bridge.refuses("POST", "/api/v1/users/import", {"csv": "name,email\nE2E X\n"}, because="import")
+    bridge.refuses("POST", "/api/v1/users/import", {"csv": "bogus_header,other\n1,2\n"}, because="header")

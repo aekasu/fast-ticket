@@ -61,6 +61,7 @@ return [
     'task.edit'               => ['tasks', 'FastApiTaskHandler', 'edit', 'task.edited', 'role:task.edit'],
 
     'user.create'             => ['users', 'FastApiUserHandler', 'create', 'user.created', 'global:user.create'],
+    'user.import'             => ['users', 'FastApiUserHandler', 'import', 'user.imported', 'global:user.create'],
     'user.update'             => ['users', 'FastApiUserHandler', 'update', 'user.updated', 'global:user.edit'],
     'user.delete'             => ['users', 'FastApiUserHandler', 'delete', 'user.deleted', 'global:user.delete'],
     'user.account.register'   => ['users', 'FastApiUserHandler', 'registerAccount', 'user.account_registered', 'global:user.manage'],

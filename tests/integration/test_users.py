@@ -288,3 +288,22 @@ async def test_all_endpoints_require_auth():
             kwargs = {} if method in ("GET", "DELETE") else {"json": {}}
             resp = await func(path, **kwargs)
             assert resp.status_code == 401, f"{method} {path} → {resp.status_code}"
+
+
+@pytest.mark.asyncio
+async def test_user_import_is_queued_validated_and_needs_user_create(monkeypatch):
+    from app.core.config import settings
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        ok = await ac.post("/api/v1/users/import", json={"csv": "name,email\nAda,ada@example.com\n"}, headers=_auth(["user.create"]))
+        pasted = await ac.post("/api/v1/users/import", json={"csv": "Ada, ada@example.com", "pasted": True}, headers=_auth(["user.create"]))
+        empty = await ac.post("/api/v1/users/import", json={"csv": ""}, headers=_auth(["user.create"]))
+        denied = await ac.post("/api/v1/users/import", json={"csv": "a,b"}, headers=_auth(["user.edit"]))
+        anon = await ac.post("/api/v1/users/import", json={"csv": "a,b"})
+        monkeypatch.setattr(settings, "CSV_IMPORT_MAX_BYTES", 1000)
+        big = await ac.post("/api/v1/users/import", json={"csv": "x" * 1001}, headers=_auth(["user.create"]))
+    assert (ok.status_code, pasted.status_code, empty.status_code, denied.status_code, anon.status_code, big.status_code) == (
+        202, 202, 422, 403, 401, 422)
+    rows = await _inbox_rows()
+    assert [r.command_type for r in rows] == ["user.import", "user.import"]
+    assert json.loads(rows[0].payload) == {"csv": "name,email\nAda,ada@example.com\n", "pasted": False}
+    assert json.loads(rows[1].payload)["pasted"] is True

@@ -4,6 +4,7 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from app.core.config import settings
 from app.core.timezone import Instant
 from app.core.custom_fields import CustomFieldAnswer, CustomFields
 
@@ -94,6 +95,21 @@ class OrganizationDetail(OrganizationListItem):
 
 
 # ── Users ──────────────────────────────────────────────────────────────────────
+
+class UserImport(BaseModel):
+    """Import users from CSV text (osTicket's Import dialog). All-or-nothing: the first bad row refuses the lot."""
+
+    csv: str = Field(min_length=1, description="CSV text: a header row naming user-form fields (name, email, ...), "
+                                               "or, with ``pasted``, one ``name, email`` per line")
+    pasted: bool = Field(default=False, description="Lines of ``name, email`` with no header row (the dialog's pasted box)")
+
+    @field_validator("csv")
+    @classmethod
+    def _within_the_cap(cls, value: str) -> str:
+        if len(value.encode()) > settings.CSV_IMPORT_MAX_BYTES:
+            raise ValueError(f"CSV is larger than {settings.CSV_IMPORT_MAX_BYTES} bytes")
+        return value
+
 
 class UserListItem(BaseModel):
     id: int

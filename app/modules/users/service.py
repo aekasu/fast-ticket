@@ -16,6 +16,7 @@ from app.modules.users.models import (
     OrganizationDetail,
     OrganizationListResponse,
     UserCreate,
+    UserImport,
     UserUpdate,
     UserListItem,
     UserDetail,
@@ -207,6 +208,21 @@ async def get_user(session: AsyncSession, user_id: int) -> UserDetail | None:
         )
     return UserDetail(**row_dict, is_primary_contact=bool(int(row_dict.get("status") or 0) & 0x1), account=info,
                       custom_fields=_custom_answers(await repo.get_user_custom_fields(session, user_id), "U"))
+
+async def import_users(
+    session: AsyncSession, body: UserImport, staff_id: int, idempotency_key: str | None
+) -> CommandResponse:
+    cmd = await dispatch_command(
+        session=session,
+        command_type="user.import",
+        aggregate_type="user",
+        aggregate_id="",
+        payload=body.model_dump(),
+        requested_by_staff_id=staff_id,
+        idempotency_key=idempotency_key,
+    )
+    return CommandResponse(command_id=cmd.id, status=cmd.status, idempotency_key=idempotency_key)
+
 
 async def register_account(session, user_id, body, staff_id, idempotency_key):
     cmd = await dispatch_command(

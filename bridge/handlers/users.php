@@ -72,6 +72,31 @@ class FastApiUserHandler {
         FastApiModel::applyCustomFields($user, (array) ($payload['custom_fields'] ?? []), 'U');
     }
 
+    /**
+     * Import users from CSV: scp/users.php "import-users" -> User::importFromPost() — the same code behind osTicket's
+     * "Import" dialog. All-or-nothing: osTicket imports inside a transaction and rolls back on the first bad row, and
+     * the reason is its own message. 'pasted' = lines of "name, email" with no header row (the dialog's pasted box);
+     * otherwise the CSV has a header row naming the user form's fields (name, email, phone, ...).
+     * Payload: csv, pasted. Result: imported (how many rows).
+     */
+    public static function import($payload, $staff_id) {
+        $csv = (string) ($payload['csv'] ?? '');
+        if (trim($csv) === '') {
+            throw new Exception("A 'csv' to import is required.");
+        }
+        try {
+            $status = !empty($payload['pasted']) ? User::importFromPost($csv) : User::importCsv($csv);
+        } finally {
+            // User::importCsv() switches autocommit off and, when it refuses a row, rolls back without switching it
+            // on again: left off, the plugin's "mark this command failed" update would never be committed.
+            db_autocommit(true);
+        }
+        if (!is_numeric($status)) {
+            throw new Exception('Import refused: ' . (is_string($status) ? $status : json_encode($status)));
+        }
+        return ['imported' => (int) $status];
+    }
+
     public static function create($payload, $staff_id) {
         $email = self::requireEmail($payload['email'] ?? '');
         $name  = trim((string) ($payload['name'] ?? ''));
