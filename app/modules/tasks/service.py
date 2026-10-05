@@ -24,7 +24,16 @@ from app.modules.tasks.models import (
     TaskTransfer,
     TaskStatusSchema,
 )
-from app.modules.tickets.models import Attachment, CommandResponse, ThreadEntry, TicketEntryEdit, TicketEntryResend
+from app.modules.tickets.models import (
+    Attachment,
+    Collaborator,
+    CollaboratorList,
+    CommandResponse,
+    ThreadEntry,
+    TicketCollaboratorAdd,
+    TicketEntryEdit,
+    TicketEntryResend,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +78,17 @@ def _row_to_thread_entry(row: dict, attachments: list[dict] | None = None) -> Th
         ip_address=row.get("ip_address"),
         created=row["created"],
         is_edited=bool(row.get("is_edited", False)),
+    )
+
+
+def _row_to_collaborator(row: dict) -> Collaborator:
+    return Collaborator(
+        id=row["id"],
+        user_id=row["user_id"],
+        name=row.get("name") or "",
+        email=row.get("email") or "",
+        is_active=bool(row.get("is_active", True)),
+        is_cc=bool(row.get("is_cc", True)),
     )
 
 
@@ -138,12 +158,22 @@ async def get_task(session: AsyncSession, task_id: int, *, access) -> TaskDetail
     thread_rows = await repo.get_task_thread(session, task_id, access=access)
     files = group_by_entry(await repo.get_task_attachments(session, task_id, access=access))
     custom_rows = await repo.get_task_custom_fields(session, task_id, access=access)
+    collab_rows = await repo.get_task_collaborators(session, task_id, access=access)
     item = _row_to_list_item(row)
     return TaskDetail(
         **item.model_dump(),
         thread=[_row_to_thread_entry(dict(r), files.get(int(r['id']))) for r in thread_rows],
+        collaborators=[_row_to_collaborator(dict(r)) for r in collab_rows],
         custom_fields=_custom_answers(custom_rows, "A"),
     )
+
+
+async def list_collaborators(session: AsyncSession, task_id: int, *, access) -> CollaboratorList | None:
+    """The task's collaborators, or None if the task does not exist or ``access`` may not open it."""
+    if await repo.get_task(session, task_id, access=access) is None:
+        return None
+    rows = await repo.get_task_collaborators(session, task_id, access=access)
+    return CollaboratorList(collaborators=[_row_to_collaborator(dict(r)) for r in rows])
 
 
 # ── Writes ─────────────────────────────────────────────────────────────────────
@@ -215,6 +245,25 @@ async def transfer_task(
     cmd = await dispatch_command(
         session=session,
         command_type="task.transfer",
+        aggregate_type="task",
+        aggregate_id=str(task_id),
+        payload={"task_id": task_id, **body.model_dump()},
+        requested_by_staff_id=staff_id,
+        idempotency_key=idempotency_key,
+    )
+    return _cmd_resp(cmd, idempotency_key)
+
+
+async def add_collaborator(
+    session: AsyncSession,
+    task_id: int,
+    body: TicketCollaboratorAdd,
+    staff_id: int,
+    idempotency_key: str | None,
+) -> CommandResponse:
+    cmd = await dispatch_command(
+        session=session,
+        command_type="task.collaborator.add",
         aggregate_type="task",
         aggregate_id=str(task_id),
         payload={"task_id": task_id, **body.model_dump()},

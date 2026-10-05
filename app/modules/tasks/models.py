@@ -7,7 +7,15 @@ from pydantic import BaseModel, Field, model_validator
 
 from app.core.custom_fields import CustomFieldAnswer, CustomFields
 
-from app.modules.tickets.models import CommandResponse, ThreadEntry, TicketEntryEdit, TicketEntryResend  # reuse shared types
+from app.modules.tickets.models import (
+    Collaborator,
+    CollaboratorList,
+    CommandResponse,
+    ThreadEntry,
+    TicketCollaboratorAdd,
+    TicketEntryEdit,
+    TicketEntryResend,
+)  # reuse shared types
 
 __all__ = ["CommandResponse", "ThreadEntry"]  # re-export for convenience
 
@@ -44,6 +52,7 @@ class TaskListItem(BaseModel):
 
 class TaskDetail(TaskListItem):
     thread: list[ThreadEntry] = []
+    collaborators: list[Collaborator] = []
     custom_fields: list[CustomFieldAnswer] = []
 
 

@@ -10,6 +10,7 @@ Writes — permission map (role permissions):
   task.transfer — transfer to another department
   task.delete  — delete tasks
   task.edit    — edit task metadata
+  ticket.edit  — add a collaborator (osTicket's task page checks the ticket permission)
   task.reply   — add notes and post updates; edit and resend thread entries (the bridge applies osTicket's exact edit rule)
 """
 
@@ -35,7 +36,7 @@ from app.modules.tasks.models import (
     TaskReply,
     TaskTransfer,
 )
-from app.modules.tickets.models import CommandResponse, TicketEntryEdit, TicketEntryResend
+from app.modules.tickets.models import CollaboratorList, CommandResponse, TicketCollaboratorAdd, TicketEntryEdit, TicketEntryResend
 
 router = APIRouter(tags=["tasks"])
 
@@ -116,6 +117,18 @@ async def get_task(
     if task is None:
         raise HTTPException(status_code=404, detail=f"Task {task_id} not found.")
     return task
+
+
+@router.get("/{task_id}/collaborators", response_model=CollaboratorList, summary="List a task's collaborators")
+async def list_collaborators(
+    task_id: int,
+    current_user: dict = require_staff(),
+    session: AsyncSession = Depends(get_session),
+):
+    result = await service.list_collaborators(session, task_id, access=current_user["access"])
+    if result is None:
+        raise HTTPException(status_code=404, detail=f"Task {task_id} not found.")
+    return result
 
 
 # ── Writes ─────────────────────────────────────────────────────────────────────
@@ -220,6 +233,25 @@ async def reply_to_task(
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
     return await service.reply_to_task(
+        session, task_id, body, current_user["staff_id"], idempotency_key
+    )
+
+
+@router.post(
+    "/{task_id}/collaborators",
+    response_model=CommandResponse,
+    status_code=202,
+    summary="Add a collaborator to a task",
+)
+async def add_collaborator(
+    task_id: int,
+    body: TicketCollaboratorAdd,
+    # osTicket's task page (scp/tasks.php "addcc") checks the *ticket* edit permission in the department role
+    current_user: dict = require_perm("ticket.edit"),
+    session: AsyncSession = Depends(get_session),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    return await service.add_collaborator(
         session, task_id, body, current_user["staff_id"], idempotency_key
     )
 

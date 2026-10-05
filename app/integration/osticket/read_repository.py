@@ -1584,6 +1584,28 @@ async def get_organization_custom_fields(session: AsyncSession, org_id: int) -> 
     return list(result.mappings().all())
 
 
+async def get_task_collaborators(session: AsyncSession, task_id: int, *, access: "Scope") -> list:
+    """Collaborators of a task (nothing if the agent may not open it)."""
+    sql = """
+        SELECT
+            c.id,
+            c.user_id,
+            u.name,
+            COALESCE(ue.address, '') AS email,
+            (c.flags & 1) > 0 AS is_active,
+            (c.flags & 2) > 0 AS is_cc
+        FROM ost_thread_collaborator c
+        JOIN ost_thread th ON th.id = c.thread_id AND th.object_type = 'A'
+        JOIN ost_user u ON c.user_id = u.id
+        LEFT JOIN ost_user_email ue ON ue.id = u.default_email_id
+        WHERE th.object_id = :task_id
+        {visible}
+        ORDER BY c.id ASC
+    """.replace("{visible}", _visible_task(access))
+    result = await session.execute(_sql(sql), {"task_id": task_id})
+    return list(result.mappings().all())
+
+
 async def get_task_thread(session: AsyncSession, task_id: int, *, access: "Scope") -> list:
     """Return thread entries for a task ordered by creation time (nothing if the agent may not open it)."""
     sql = """

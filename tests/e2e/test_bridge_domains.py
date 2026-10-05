@@ -728,6 +728,12 @@ def test_task_lifecycle(bridge, uniq):
     assert any("an update for collaborators" in e["body"] for e in bridge.read(f"/api/v1/tasks/{tid}")["thread"])
 
     turl = f"/api/v1/tasks/{tid}"
+    collab = bridge.create("/api/v1/users", {"name": "E2E TaskCollab", "email": _email(uniq, "tcollab")}, cleanup="/api/v1/users/{id}")
+    bridge.command("POST", f"{turl}/collaborators", {"user_id": collab})
+    listed = bridge.read(f"{turl}/collaborators")["collaborators"]
+    assert [(c["user_id"], c["is_cc"]) for c in listed] == [(collab, True)]
+    assert [c["user_id"] for c in bridge.read(turl)["collaborators"]] == [collab]
+    bridge.refuses("POST", f"{turl}/collaborators", {"user_id": 999999}, because="Unknown user")
     update = next(e for e in bridge.read(turl)["thread"] if "an update for collaborators" in e["body"])
     done = bridge.command("PATCH", f"{turl}/thread/{update['id']}", {"body": "an edited update"})
     assert done["result"]["changed"] is True and done["result"]["new_entry_id"] != update["id"]

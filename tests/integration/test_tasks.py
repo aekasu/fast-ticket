@@ -157,6 +157,8 @@ async def test_get_task_returns_detail():
         patch("app.modules.tasks.service.repo.get_task", new=AsyncMock(return_value=MOCK_TASK)),
         patch("app.modules.tasks.service.repo.get_task_thread", new=AsyncMock(return_value=[MOCK_THREAD])),
         patch("app.modules.tasks.service.repo.get_task_attachments", new=AsyncMock(return_value=[])),
+        patch("app.modules.tasks.service.repo.get_task_collaborators", new=AsyncMock(return_value=[
+            {"id": 1, "user_id": 7, "name": "U", "email": "u@example.com", "is_active": 1, "is_cc": 1}])),
         patch("app.modules.tasks.service.repo.get_task_custom_fields", new=AsyncMock(return_value=[
             {"name": "site", "label": "Site", "type": "text", "value": "HQ", "value_id": None},
             {"name": "title", "label": "Title", "type": "text", "value": "dup", "value_id": None}])),
@@ -169,6 +171,7 @@ async def test_get_task_returns_detail():
     assert len(data["thread"]) == 1
     assert data["thread"][0]["body"] == "Started investigating the switch logs."
     assert [c["name"] for c in data["custom_fields"]] == ["site"]
+    assert [c["user_id"] for c in data["collaborators"]] == [7]
 
 
 @pytest.mark.asyncio
@@ -455,3 +458,26 @@ async def test_task_entry_edit_and_resend_queue_commands_and_check_permission():
     assert json.loads(rows[0].payload) == {"task_id": 5, "entry_id": 8, "body": "new text", "resend": True,
                                            "signature": "none"}
     assert json.loads(rows[1].payload) == {"task_id": 5, "entry_id": 8, "signature": "mine"}
+
+
+@pytest.mark.asyncio
+async def test_task_collaborators_are_listed_scoped_and_added_by_command():
+    collab = AsyncMock(return_value=[{"id": 1, "user_id": 7, "name": "U", "email": "u@example.com",
+                                      "is_active": 0, "is_cc": 1}])
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        with patch("app.modules.tasks.service.repo.get_task", new=AsyncMock(return_value=None)):
+            missing = await ac.get(TASKS_URL + "/9/collaborators", headers=_auth([]))
+        with patch("app.modules.tasks.service.repo.get_task", new=AsyncMock(return_value=MOCK_TASK)), \
+             patch("app.modules.tasks.service.repo.get_task_collaborators", new=collab):
+            ok = await ac.get(TASKS_URL + "/9/collaborators", headers=_auth([]))
+        add = await ac.post(TASKS_URL + "/5/collaborators", json={"user_id": 7}, headers=_auth(["ticket.edit"]))
+        bad = await ac.post(TASKS_URL + "/5/collaborators", json={"user_id": 0}, headers=_auth(["ticket.edit"]))
+        denied = await ac.post(TASKS_URL + "/5/collaborators", json={"user_id": 7}, headers=_auth(["task.edit"]))
+        anon = await ac.post(TASKS_URL + "/5/collaborators", json={"user_id": 7})
+    assert missing.status_code == 404
+    assert ok.json()["collaborators"][0]["is_active"] is False
+    assert collab.await_args.kwargs["access"].staff_id == 5
+    assert (add.status_code, bad.status_code, denied.status_code, anon.status_code) == (202, 422, 403, 401)
+    rows = await _inbox_rows()
+    assert [r.command_type for r in rows] == ["task.collaborator.add"]
+    assert json.loads(rows[0].payload) == {"task_id": 5, "user_id": 7}
