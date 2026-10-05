@@ -12,7 +12,7 @@ from datetime import timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.custom_fields import BUILT_IN_FIELDS, CustomFieldAnswer
+from app.core.custom_fields import BUILT_IN_FIELDS, CustomFieldAnswer, answer_from_row
 from app.core.attachments import group_by_entry
 from app.integration.osticket import read_repository as repo
 from app.modules.agents import service as agents_service
@@ -113,7 +113,7 @@ def _row_to_thread_entry(row: dict, attachments: list[dict] | None = None) -> Th
 def _custom_answers(rows, object_type: str) -> list[CustomFieldAnswer]:
     skip = BUILT_IN_FIELDS[object_type]
     return [
-        CustomFieldAnswer(name=r["name"], label=r["label"], type=r["type"], value=r["value"], value_id=r["value_id"])
+        answer_from_row(r)
         for r in map(dict, rows)
         if r["name"] not in skip
     ]

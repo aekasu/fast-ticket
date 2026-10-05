@@ -6,6 +6,17 @@ After a backend change run `npm run api:pull && npm run api:types`, read the sna
 list below and remove the met entries from `BACKEND_REQUESTS.md`. This file is the backend's side of that handshake;
 delete an entry once the frontend has adopted it.
 
+## 2026-10-05 — custom answers are typed (additive)
+
+Every `custom_fields[]` answer (tickets, tasks, users, organizations) now has `kind` and the decoded value beside the
+stored `value` / `value_id`: `kind: "text"` (use `value`), `kind: "bool"` with `bool_value`, `kind: "choices"` with
+`choices: [{key, label}]` (empty when nothing is selected) for choice fields and custom-list fields (`list-<id>`; the
+key is the item id). Nothing was removed.
+
+**Frontend to do.** Replace the JSON decoding in `src/lib/custom-fields.ts` with these fields (keep sending answers
+as before: a choice key or list of keys, a boolean, text). Datetime and number answers stay text. Writing a custom-list
+answer is still unsupported.
+
 ## 2026-10-05 — form definitions for every agent: `GET /forms/for/{kind}`
 
 New, open to any agent (`GET /forms` and `GET /forms/{id}` stay admin-only). `kind` is `ticket`, `user`,

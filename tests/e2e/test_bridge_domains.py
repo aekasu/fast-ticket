@@ -985,12 +985,17 @@ def test_ticket_custom_fields_from_a_help_topic_form(bridge, uniq):
     assert got["asset"]["value"] == "A-100" and got["memo"]["value"] == "long text"
     assert "Alpha" in got["kind"]["value"]
     assert got["urgent"]["value"] in ("1", "true", "True")
+    # typed: the client does not decode osTicket's JSON
+    assert (got["kind"]["kind"], [(c["key"], c["label"]) for c in got["kind"]["choices"]]) == ("choices", [("a", "Alpha")])
+    assert (got["urgent"]["kind"], got["urgent"]["bool_value"]) == ("bool", True)
+    assert (got["asset"]["kind"], got["asset"]["choices"], got["asset"]["bool_value"]) == ("text", None, None)
 
     url = f"/api/v1/tickets/{tk}"
     bridge.command("PATCH", url, {"custom_fields": {"asset": "A-200", "kind": "b", "urgent": False, "memo": ""}})
     got = _answers(bridge.read(url))
     assert got["asset"]["value"] == "A-200" and "Beta" in got["kind"]["value"]
     assert got["urgent"]["value"] in (None, "", "0", "false", "False") and not got["memo"]["value"]
+    assert got["kind"]["choices"][0]["key"] == "b" and got["urgent"]["bool_value"] is False
 
     bridge.command("PATCH", url, {"custom_fields": {"memo": "again"}, "source": "Phone"})   # others untouched
     got = _answers(bridge.read(url))

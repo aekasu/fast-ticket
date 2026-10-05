@@ -442,7 +442,7 @@ async def iter_file_chunks(session: AsyncSession, file_id: int):
 
 
 _CUSTOM_FIELDS_SQL = """
-    SELECT ff.name, ff.label, ff.type, ev.value, ev.value_id
+    SELECT ff.name, ff.label, ff.type, ev.value, ev.value_id, ff.configuration
     FROM ost_form_entry fe
     JOIN ost_form_entry_values ev ON ev.entry_id = fe.id
     JOIN ost_form_field ff ON ff.id = ev.field_id

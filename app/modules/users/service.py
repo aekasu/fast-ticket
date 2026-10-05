@@ -3,7 +3,7 @@
 import logging
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.custom_fields import BUILT_IN_FIELDS, CustomFieldAnswer
+from app.core.custom_fields import BUILT_IN_FIELDS, CustomFieldAnswer, answer_from_row
 from app.integration.osticket import read_repository as repo
 from app.integration.osticket.commands_service import dispatch_command
 from app.modules.users.models import (
@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 def _custom_answers(rows, object_type: str) -> list[CustomFieldAnswer]:
     skip = BUILT_IN_FIELDS[object_type]
     return [
-        CustomFieldAnswer(name=r["name"], label=r["label"], type=r["type"], value=r["value"], value_id=r["value_id"])
+        answer_from_row(r)
         for r in map(dict, rows)
         if r["name"] not in skip
     ]
