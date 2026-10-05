@@ -1,10 +1,10 @@
 """Knowledgebase and Canned Responses domain Pydantic models."""
 
-from datetime import datetime
 from typing import Optional
 
 from pydantic import BaseModel, Field
 
+from app.core.timezone import Instant
 from app.modules.tickets.models import CommandResponse
 
 __all__ = ["CommandResponse"]
@@ -16,8 +16,8 @@ class CategoryListItem(BaseModel):
     name: str
     description: str
     is_public: bool
-    created: datetime
-    updated: datetime
+    created: Instant
+    updated: Instant
 
 class CategoryListResponse(BaseModel):
     items: list[CategoryListItem]
@@ -48,8 +48,8 @@ class FAQListItem(BaseModel):
     category_id: int
     question: str
     is_published: bool
-    created: datetime
-    updated: datetime
+    created: Instant
+    updated: Instant
 
 class FAQListResponse(BaseModel):
     items: list[FAQListItem]
@@ -86,8 +86,8 @@ class CannedListItem(BaseModel):
     title: str
     is_enabled: bool
     dept_id: int = 0
-    created: datetime
-    updated: datetime
+    created: Instant
+    updated: Instant
 
 class CannedListResponse(BaseModel):
     items: list[CannedListItem]

@@ -6,11 +6,11 @@ Three tiers:
   - Read responses  (TicketListItem, TicketDetail, ThreadEntry, etc.)
 """
 
-from datetime import datetime
 from typing import Literal, Optional
 
 from pydantic import BaseModel, Field, model_validator
 
+from app.core.timezone import Instant, UtcInput
 from app.core.custom_fields import CustomFieldAnswer, CustomFields
 
 
@@ -68,14 +68,14 @@ class TicketListItem(BaseModel):
     priority_name: Optional[str] = None
     source: str = ""
     is_answered: bool = False
-    created: datetime
-    updated: datetime
-    closed: Optional[datetime] = None
-    due_date: Optional[datetime] = None
-    est_due_date: Optional[datetime] = Field(
+    created: Instant
+    updated: Instant
+    closed: Optional[Instant] = None
+    due_date: Optional[Instant] = None
+    est_due_date: Optional[Instant] = Field(
         default=None, description="osTicket's due date: the manual one, else the SLA's estimate (what its pages show)")
     is_overdue: bool = Field(default=False, description="osTicket's overdue flag (what the Overdue queue lists)")
-    last_activity: Optional[datetime] = Field(
+    last_activity: Optional[Instant] = Field(
         default=None, description="osTicket's 'Last Updated' (lastupdate): moves on a message or a response")
 
 
@@ -98,7 +98,7 @@ class ThreadEntry(BaseModel):
     user_id: Optional[int] = None
     poster: Optional[str] = None
     ip_address: Optional[str] = None
-    created: datetime
+    created: Instant
     is_edited: bool = False
     attachments: list[Attachment] = []
 
@@ -121,7 +121,7 @@ class Referral(BaseModel):
     referee_type: Literal["agent", "team", "department"]
     referee_id: int
     name: str
-    created: datetime
+    created: Instant
 
 
 class ReferralList(BaseModel):
@@ -228,7 +228,7 @@ class TicketUpdate(BaseModel):
     topic_id: Optional[int] = Field(default=None, gt=0)
     sla_id: Optional[int] = Field(default=None, ge=0, description="0 = no SLA plan.")
     source: Optional[str] = Field(default=None, min_length=1, max_length=32)
-    due_date: Optional[datetime] = Field(default=None, description="Must be in the future; null clears it.")
+    due_date: Optional[UtcInput] = Field(default=None, description="UTC (an offset is converted); must be in the future; null clears it.")
     note: Optional[str] = Field(default=None, max_length=10000, description="Logged as an internal note.")
     custom_fields: Optional[CustomFields] = Field(default=None, description="Answers to custom form fields, by variable name.")
 

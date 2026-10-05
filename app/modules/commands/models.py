@@ -1,9 +1,10 @@
 """Commands domain Pydantic models."""
 
-from datetime import datetime
 from typing import Optional
 
 from pydantic import BaseModel
+
+from app.core.timezone import Instant, UtcInstant
 
 
 class CommandListItem(BaseModel):
@@ -13,8 +14,8 @@ class CommandListItem(BaseModel):
     aggregate_id: str
     status: str
     requested_by_staff_id: Optional[int] = None
-    created_at: datetime
-    processed_at: Optional[datetime] = None
+    created_at: UtcInstant
+    processed_at: Optional[Instant] = None
 
 class CommandListResponse(BaseModel):
     items: list[CommandListItem]

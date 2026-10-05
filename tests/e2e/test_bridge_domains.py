@@ -1194,12 +1194,29 @@ def test_every_read_endpoint_answers_200(bridge):
     details = [p for p in getters if re.search(r"\{[^}/]+\}$", p)]
 
     failures, first_ids = [], {}
+    stamps = {"naive": [], "utc": 0}
+
+    def scan(path, node):
+        """Every timestamp leaves the API as an instant (UTC, Z), never as a bare osTicket datetime."""
+        if isinstance(node, dict):
+            for value in node.values():
+                scan(path, value)
+        elif isinstance(node, list):
+            for value in node:
+                scan(path, value)
+        elif isinstance(node, str) and re.match(r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(\.\d+)?", node):
+            if node.endswith("Z"):
+                stamps["utc"] += 1
+            else:
+                stamps["naive"].append(f"{path}: {node}")
+
     for path in sorted(lists):
         resp = bridge.get(path)
         if resp.status_code != 200:
             failures.append(f"{path} -> {resp.status_code}")
             continue
         body = resp.json()
+        scan(path, body)
         rows = body.get("items") or next((v for v in body.values() if isinstance(v, list)), [])
         if rows:
             first_ids[path.rstrip("/")] = next(
@@ -1212,8 +1229,12 @@ def test_every_read_endpoint_answers_200(bridge):
         resp = bridge.get(re.sub(r"\{[^}]+\}$", str(first_ids[base]), path))
         if resp.status_code != 200:
             failures.append(f"{path} [{first_ids[base]}] -> {resp.status_code}")
+        else:
+            scan(path, resp.json())
 
     assert not failures, failures
+    assert not stamps["naive"], stamps["naive"][:10]
+    assert stamps["utc"] > 50      # the walk really saw timestamps
     assert bridge.get("/api/v1/search?q=e2e").status_code == 200
 
 

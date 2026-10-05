@@ -28,6 +28,14 @@ class Settings(BaseSettings):
         ),
     )
 
+    DB_TIMEZONE: str = Field(
+        default="",
+        description=(
+            "Timezone osTicket's DATETIME columns are written in (an IANA name such as Europe/Berlin or an "
+            "offset such as +02:00). Empty = read it from osTicket's db_timezone setting / the server."
+        ),
+    )
+
     OSTICKET_TABLE_PREFIX: str = Field(
         default="ost_",
         description="Table prefix chosen when osTicket was installed (TABLE_PREFIX in ost-config.php).",

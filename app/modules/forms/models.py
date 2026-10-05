@@ -1,10 +1,10 @@
 """Forms domain Pydantic models."""
 
-from datetime import datetime
 from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.core.timezone import Instant
 from app.modules.tickets.models import CommandResponse
 
 __all__ = ["CommandResponse"]
@@ -16,8 +16,8 @@ class FormListItem(BaseModel):
     title: str
     type: str  # e.g. "T" for Ticket, "U" for User, "O" for Organization, "C" for Custom
     is_deletable: bool
-    created: datetime
-    updated: datetime
+    created: Instant
+    updated: Instant
 
 class FormListResponse(BaseModel):
     items: list[FormListItem]

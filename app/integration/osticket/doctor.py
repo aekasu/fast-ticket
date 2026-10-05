@@ -285,6 +285,19 @@ async def check_connections(session: AsyncSession) -> Check:
     return Check(name, verdict, detail)
 
 
+async def check_timezone(session: AsyncSession) -> Check:
+    """Which timezone the API reads osTicket's naive timestamps in (it answers every timestamp as UTC with a Z)."""
+    from app.core import timezone as tzmod
+    name = "timestamp timezone"
+    try:
+        source = await tzmod.load_database_timezone(session, settings.DB_TIMEZONE)
+    except Exception as exc:
+        return Check(name, WARN, f"could not read it: {str(exc).splitlines()[0][:120]}")
+    if source.startswith("UTC (could not"):
+        return Check(name, WARN, source)
+    return Check(name, OK, source)
+
+
 async def check_queue(session: AsyncSession) -> list[Check]:
     checks = []
     try:
@@ -311,5 +324,6 @@ async def run_checks(session: AsyncSession, fetch=None) -> list[Check]:
     checks += await check_handshake(fetch)
     checks.append(await check_privileges(session))
     checks.append(await check_connections(session))
+    checks.append(await check_timezone(session))
     checks += await check_queue(session)
     return checks

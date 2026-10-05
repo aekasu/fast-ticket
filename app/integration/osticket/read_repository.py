@@ -970,6 +970,17 @@ async def get_sla(session: AsyncSession, sla_id: int) -> dict | None:
 
 # ── Priorities ────────────────────────────────────────────────────────────────
 
+async def get_database_timezone(session: AsyncSession) -> dict:
+    """The timezone naive osTicket timestamps are in: osTicket's persisted ``db_timezone`` setting and the server's
+    ``time_zone`` / ``system_time_zone`` (osTicket's own ``db_timezone()`` reads the same two)."""
+    server = (await session.execute(_sql("SELECT @@global.time_zone AS server, @@global.system_time_zone AS system"))
+              ).mappings().one()
+    persisted = (await session.execute(
+        _sql("SELECT value FROM ost_config WHERE namespace = 'core' AND `key` = 'db_timezone' LIMIT 1")
+    )).scalar_one_or_none()
+    return {"server": server["server"], "system": server["system"], "persisted": persisted}
+
+
 async def list_roles(session: AsyncSession, limit: int = 50, offset: int = 0) -> list:
     sql = """
         SELECT

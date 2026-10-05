@@ -1,10 +1,10 @@
 """Task domain Pydantic models."""
 
-from datetime import datetime
 from typing import Literal, Optional
 
 from pydantic import BaseModel, Field, model_validator
 
+from app.core.timezone import Instant, UtcInput
 from app.core.custom_fields import CustomFieldAnswer, CustomFields
 
 from app.modules.tickets.models import (
@@ -44,10 +44,10 @@ class TaskListItem(BaseModel):
     team_id: Optional[int] = None
     team_name: Optional[str] = None
     ticket_id: Optional[int] = None  # parent ticket, if linked
-    created: datetime
-    updated: datetime
-    closed: Optional[datetime] = None
-    due_date: Optional[datetime] = None
+    created: Instant
+    updated: Instant
+    closed: Optional[Instant] = None
+    due_date: Optional[Instant] = None
 
 
 class TaskDetail(TaskListItem):
@@ -76,7 +76,7 @@ class TaskCreate(BaseModel):
         default=None,
         description="Link this task to a ticket. Omit for a standalone task.",
     )
-    due_date: Optional[datetime] = None
+    due_date: Optional[UtcInput] = None
     custom_fields: Optional[CustomFields] = Field(default=None, description="Answers to custom task-form fields, by variable name.")
 
 
@@ -126,6 +126,6 @@ class TaskEdit(BaseModel):
     title: Optional[str] = Field(default=None, min_length=1, max_length=255)
     description: Optional[str] = None
     dept_id: Optional[int] = None
-    due_date: Optional[datetime] = None
+    due_date: Optional[UtcInput] = None
     custom_fields: Optional[CustomFields] = Field(default=None, description="Answers to custom task-form fields, by variable name.")
     note: Optional[str] = Field(default=None, min_length=1, max_length=10000, description="Reason for editing; posted as an internal note, as osTicket's edit form does.")

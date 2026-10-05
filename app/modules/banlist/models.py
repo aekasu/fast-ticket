@@ -1,10 +1,10 @@
 """Banlist domain Pydantic models."""
 
-from datetime import datetime
 from typing import Optional
 
 from pydantic import BaseModel, Field
 
+from app.core.timezone import Instant
 from app.modules.tickets.models import CommandResponse
 
 __all__ = ["CommandResponse"]
@@ -13,8 +13,8 @@ class BanlistListItem(BaseModel):
     id: int
     val: str  # The email or domain
     is_active: bool
-    created: datetime
-    updated: datetime
+    created: Instant
+    updated: Instant
 
 class BanlistListResponse(BaseModel):
     items: list[BanlistListItem]

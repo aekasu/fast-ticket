@@ -1,10 +1,10 @@
 """User and Organization domain Pydantic models."""
 
-from datetime import datetime
 from typing import Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from app.core.timezone import Instant
 from app.core.custom_fields import CustomFieldAnswer, CustomFields
 
 from app.modules.tickets.models import CommandResponse
@@ -16,8 +16,8 @@ __all__ = ["CommandResponse"]
 class OrganizationListItem(BaseModel):
     id: int
     name: str
-    created: datetime
-    updated: datetime
+    created: Instant
+    updated: Instant
 
 class OrganizationListResponse(BaseModel):
     items: list[OrganizationListItem]
@@ -97,8 +97,8 @@ class UserListItem(BaseModel):
     org_id: Optional[int] = None
     org_name: Optional[str] = None
     status: int = 0
-    created: datetime
-    updated: datetime
+    created: Instant
+    updated: Instant
 
 class UserListResponse(BaseModel):
     items: list[UserListItem]
@@ -116,7 +116,7 @@ class UserAccountInfo(BaseModel):
     is_locked: bool
     require_password_reset: bool
     forbid_password_reset: bool
-    registered: Optional[datetime] = None
+    registered: Optional[Instant] = None
 
 
 class UserDetail(UserListItem):

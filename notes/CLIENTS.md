@@ -33,6 +33,11 @@ Where to keep the token is the client's decision (the API sets no cookies). Memo
 
 ## Reads
 
+- **Timestamps are instants.** Every timestamp the API returns (`created`, `updated`, `closed`, `due_date`,
+  `est_due_date`, `last_activity`, `registered`, `created_at`, ...) is ISO 8601 in UTC with a `Z`:
+  `"2026-10-03T18:18:02Z"`. Parse it as an instant and show it in the viewer's timezone (or osTicket's configured
+  one). A datetime you *send* (`due_date`) may carry an offset (converted) or none (taken as UTC); prefer `Z`.
+
 - A resource the agent may not open is a **404, never a 403**. A client must treat 404 as "gone or not yours".
 - Lists are paginated and capped; the page-size limit is in the schema. List responses use a top-level key named for
   the resource (`{"tickets": [...]}`) — check the schema, since a few (commands) use `items`.

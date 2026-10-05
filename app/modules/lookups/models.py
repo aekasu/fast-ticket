@@ -1,10 +1,10 @@
 """Lookups (Topics, SLAs, Priorities) domain Pydantic models."""
 
-from datetime import datetime
 from typing import Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from app.core.timezone import Instant
 from app.modules.tickets.models import CommandResponse
 
 __all__ = ["CommandResponse"]
@@ -19,8 +19,8 @@ class TopicListItem(BaseModel):
     topic: str
     is_active: bool
     is_public: bool
-    created: datetime
-    updated: datetime
+    created: Instant
+    updated: Instant
 
 class TopicListResponse(BaseModel):
     items: list[TopicListItem]
@@ -96,8 +96,8 @@ class SLAListItem(BaseModel):
     name: str
     grace_period: int  # Hours
     is_active: bool
-    created: datetime
-    updated: datetime
+    created: Instant
+    updated: Instant
 
 class SLAListResponse(BaseModel):
     items: list[SLAListItem]

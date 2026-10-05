@@ -1,10 +1,10 @@
 """Staff, Teams, and Departments domain Pydantic models."""
 
-from datetime import datetime
 from typing import Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.core.timezone import Instant
 from app.core.permissions import GLOBAL_PERMISSIONS
 
 from app.modules.tickets.models import CommandResponse
@@ -21,8 +21,8 @@ class DepartmentListItem(BaseModel):
     id: int
     name: str
     is_public: bool
-    created: datetime
-    updated: datetime
+    created: Instant
+    updated: Instant
 
 class DepartmentListResponse(BaseModel):
     items: list[DepartmentListItem]
@@ -103,8 +103,8 @@ class TeamListItem(BaseModel):
     id: int
     name: str
     is_enabled: bool
-    created: datetime
-    updated: datetime
+    created: Instant
+    updated: Instant
 
 class TeamListResponse(BaseModel):
     items: list[TeamListItem]
@@ -150,8 +150,8 @@ class StaffListItem(BaseModel):
     is_admin: bool
     dept_id: int
     role_id: int
-    created: datetime
-    updated: datetime
+    created: Instant
+    updated: Instant
 
 class StaffListResponse(BaseModel):
     items: list[StaffListItem]

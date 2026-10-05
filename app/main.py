@@ -26,6 +26,7 @@ from app.core.db import AsyncSessionLocal, create_db_and_tables
 from app.core.rate_limit import limiter, rate_limit_exceeded_handler
 from app.core.request_limits import BodySizeLimitMiddleware
 from app.core.security_headers import SecurityHeadersMiddleware
+from app.core.timezone import load_database_timezone
 from app.core.ws_manager import manager as ws_manager
 from app.integration.osticket.commands_service import IdempotencyKeyReused, InvalidIdempotencyKey
 from app.workers.events import poll_and_process_events, purge_old_events
@@ -110,6 +111,12 @@ async def lifespan(app: FastAPI):
     if settings.AUTO_CREATE_SCHEMA:
         logger.info("AUTO_CREATE_SCHEMA=true — ensuring integration tables exist.")
         await create_db_and_tables()
+
+    try:   # osTicket's timestamps are naive in the database's timezone; the API answers them as UTC
+        async with AsyncSessionLocal() as session:
+            await load_database_timezone(session, settings.DB_TIMEZONE)
+    except Exception:
+        logger.exception("Could not read the database timezone; timestamps are read as UTC (set DB_TIMEZONE).")
 
     worker_task = asyncio.create_task(_outbox_worker(), name="osticket-outbox-worker")
     purge_task = asyncio.create_task(_purge_worker(), name="osticket-purge-worker")
