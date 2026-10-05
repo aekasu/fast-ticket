@@ -151,6 +151,7 @@ async def list_tickets(
     assignee_team_id: int | None = None,
     topic_id: int | None = None,
     sla_id: int | None = None,
+    user_id: int | None = None,
     is_answered: bool | None = None,
     q: str | None = None,
     queue: str | None = None,
@@ -163,7 +164,7 @@ async def list_tickets(
     offset = (page - 1) * page_size
     filters = dict(
         status_id=status_id, dept_id=dept_id, assignee_staff_id=assignee_staff_id,
-        assignee_team_id=assignee_team_id, topic_id=topic_id, sla_id=sla_id, is_answered=is_answered, q=q, queue=queue,
+        assignee_team_id=assignee_team_id, topic_id=topic_id, sla_id=sla_id, is_answered=is_answered, q=q, queue=queue, user_id=user_id,
     )
     rows = await repo.list_tickets(session, access=access, **filters, sort=sort, descending=descending, limit=page_size, offset=offset)
     total = await repo.count_tickets(session, access=access, **filters)

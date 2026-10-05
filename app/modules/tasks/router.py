@@ -31,6 +31,8 @@ from app.modules.tasks.models import (
     TaskDetail,
     TaskEdit,
     TaskListResponse,
+    TaskQueue,
+    TaskQueueCounts,
     TaskNote,
     TaskReopen,
     TaskReply,
@@ -51,6 +53,7 @@ async def list_tasks(
     assignee_staff_id: int | None = Query(default=None, description="Filter by assigned staff"),
     ticket_id: int | None = Query(default=None, description="Filter to tasks linked to a ticket"),
     q: str | None = Query(default=None, max_length=100, description="Task number or title (contains)"),
+    queue: TaskQueue | None = Query(default=None, description="One of osTicket's task queues (see GET /tasks/queues)"),
     sort: TaskSort = Query(default="updated"),
     descending: bool = Query(default=True),
     page: int = Query(default=1, ge=1),
@@ -68,6 +71,7 @@ async def list_tasks(
         assignee_staff_id=assignee_staff_id,
         ticket_id=ticket_id,
         q=q,
+        queue=queue,
         sort=sort,
         descending=descending,
         page=page,
@@ -105,6 +109,16 @@ async def task_assignees(
     if result is None:
         raise HTTPException(status_code=404, detail=f"Task {task_id} not found.")
     return result
+
+
+@router.get("/queues", response_model=TaskQueueCounts, summary="Task counts for osTicket's queues")
+async def task_queues(
+    current_user: dict = require_staff(),
+    session: AsyncSession = Depends(get_session),
+):
+    """Open, Overdue, My Tasks (open and assigned to the agent) and Completed — each counted among the tasks the
+    agent's own list shows."""
+    return await service.queue_counts(session, access=current_user["access"])
 
 
 @router.get("/{task_id}", response_model=TaskDetail, summary="Get a task with its thread")

@@ -18,6 +18,8 @@ from app.modules.tasks.models import (
     TaskEdit,
     TaskListItem,
     TaskListResponse,
+    TaskQueueCount,
+    TaskQueueCounts,
     TaskNote,
     TaskReopen,
     TaskReply,
@@ -58,6 +60,8 @@ def _row_to_list_item(row: dict) -> TaskListItem:
         team_id=row.get("team_id"),
         team_name=row.get("team_name"),
         ticket_id=row.get("ticket_id"),
+        ticket_number=row.get("ticket_number"),
+        is_overdue=bool(row.get("is_overdue", 0)) and (row.get("status_state") or "open") == "open",
         created=row["created"],
         updated=row["updated"],
         closed=row.get("closed"),
@@ -122,6 +126,7 @@ async def list_tasks(
     assignee_staff_id: int | None = None,
     ticket_id: int | None = None,
     q: str | None = None,
+    queue: str | None = None,
     sort: str = "updated",
     descending: bool = True,
     page: int = 1,
@@ -130,7 +135,7 @@ async def list_tasks(
     page_size = min(page_size, 200)
     offset = (page - 1) * page_size
     filters = dict(status_id=status_id, dept_id=dept_id, assignee_staff_id=assignee_staff_id,
-                   ticket_id=ticket_id, q=q)
+                   ticket_id=ticket_id, q=q, queue=queue)
     rows = await repo.list_tasks(session, access=access, **filters, sort=sort, descending=descending, limit=page_size, offset=offset)
     total = await repo.count_tasks(session, access=access, **filters)
     return TaskListResponse(
@@ -139,6 +144,14 @@ async def list_tasks(
         page=page,
         page_size=page_size,
     )
+
+
+_QUEUE_TITLES = (("open", "Open"), ("overdue", "Overdue"), ("assigned", "My Tasks"), ("closed", "Completed"))   # osTicket's words
+
+
+async def queue_counts(session: AsyncSession, *, access) -> TaskQueueCounts:
+    counts = await repo.count_task_queues(session, access=access)
+    return TaskQueueCounts(queues=[TaskQueueCount(key=key, title=title, count=counts[key]) for key, title in _QUEUE_TITLES])
 
 
 async def task_assignees(session: AsyncSession, task_id: int, *, access):

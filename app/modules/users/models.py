@@ -13,9 +13,14 @@ __all__ = ["CommandResponse"]
 
 # ── Organizations ──────────────────────────────────────────────────────────────
 
+OrgSort = Literal["name", "users", "created", "updated"]
+UserSort = Literal["name", "email", "status", "created", "updated"]
+
+
 class OrganizationListItem(BaseModel):
     id: int
     name: str
+    user_count: int = Field(default=0, description="Members (osTicket's Users column)")
     created: Instant
     updated: Instant
 
@@ -97,6 +102,10 @@ class UserListItem(BaseModel):
     org_id: Optional[int] = None
     org_name: Optional[str] = None
     status: int = 0
+    account_status: Literal["guest", "active", "pending", "locked"] = Field(
+        default="guest", description="osTicket's directory Status: no account (Guest), Active (Registered), "
+        "Locked (Pending Activation) or Locked (Administrative)")
+    ticket_count: int = Field(default=0, description="All of the user's tickets, as osTicket's directory counts them")
     created: Instant
     updated: Instant
 

@@ -87,7 +87,8 @@ async def test_an_admin_needs_no_extra_permission_for_the_admin_panel():
 
 @pytest.mark.asyncio
 async def test_the_user_directory_needs_user_dir_not_user_create():
-    with patch("app.modules.users.service.repo.list_users", new=AsyncMock(return_value=[])):
+    with patch("app.modules.users.service.repo.list_users", new=AsyncMock(return_value=[])), \
+         patch("app.modules.users.service.repo.count_users", new=AsyncMock(return_value=0)):
         assert (await _call("GET", "/api/v1/users", make_access(5, ["user.create"]))).status_code == 403
         assert (await _call("GET", "/api/v1/users", make_access(5, ["user.dir"]))).status_code == 200
 
@@ -109,7 +110,8 @@ async def test_a_user_write_passes_the_gate_with_the_matching_permission():
 
 @pytest.mark.asyncio
 async def test_organizations_follow_the_directory_and_their_own_write_permissions():
-    with patch("app.modules.users.service.repo.list_organizations", new=AsyncMock(return_value=[])):
+    with patch("app.modules.users.service.repo.list_organizations", new=AsyncMock(return_value=[])), \
+         patch("app.modules.users.service.repo.count_organizations", new=AsyncMock(return_value=0)):
         assert (await _call("GET", "/api/v1/orgs", make_access(5, ["org.create"]))).status_code == 403
         assert (await _call("GET", "/api/v1/orgs", make_access(5, ["user.dir"]))).status_code == 200
     assert (await _call("POST", "/api/v1/orgs", make_access(5, ["user.dir"]), json={})).status_code == 403
@@ -121,9 +123,11 @@ async def test_organizations_follow_the_directory_and_their_own_write_permission
 
 @pytest.mark.asyncio
 async def test_any_agent_may_read_the_knowledge_base():
-    with patch("app.modules.kb.service.repo.list_faqs", new=AsyncMock(return_value=[])):
+    with patch("app.modules.kb.service.repo.list_faqs", new=AsyncMock(return_value=[])), \
+         patch("app.modules.kb.service.repo.count_faqs", new=AsyncMock(return_value=0)):
         assert (await _call("GET", "/api/v1/kb/faqs", make_access(5, []))).status_code == 200
-    with patch("app.modules.kb.service.repo.list_categories", new=AsyncMock(return_value=[])):
+    with patch("app.modules.kb.service.repo.list_categories", new=AsyncMock(return_value=[])), \
+         patch("app.modules.kb.service.repo.count_categories", new=AsyncMock(return_value=0)):
         assert (await _call("GET", "/api/v1/kb/categories", make_access(5, []))).status_code == 200
 
 
@@ -253,7 +257,8 @@ async def test_a_permission_change_takes_effect_on_the_next_request_with_the_sam
     states = [make_access(5, ["user.dir"]), make_access(5, []), make_access(5, ["user.dir"])]
     seen = []
     with patch("app.core.auth.load_access_context", new=AsyncMock(side_effect=states)):
-        with patch("app.modules.users.service.repo.list_users", new=AsyncMock(return_value=[])):
+        with patch("app.modules.users.service.repo.list_users", new=AsyncMock(return_value=[])), \
+         patch("app.modules.users.service.repo.count_users", new=AsyncMock(return_value=0)):
             async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as client:
                 for _ in states:
                     seen.append((await client.get("/api/v1/users", headers=headers)).status_code)

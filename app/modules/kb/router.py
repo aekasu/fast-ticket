@@ -87,12 +87,13 @@ async def delete_category(
 @router.get("/kb/faqs", response_model=FAQListResponse, summary="List FAQs")
 async def list_faqs(
     category_id: int | None = Query(default=None, description="Filter by category ID"),
+    q: str | None = Query(default=None, max_length=100, description="Question, answer, keywords or category name/description contains (as kb.php's search)"),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200),
     current_user: dict = require_staff(),
     session: AsyncSession = Depends(get_session),
 ):
-    return await service.list_faqs(session, category_id=category_id, page=page, page_size=page_size)
+    return await service.list_faqs(session, category_id=category_id, page=page, page_size=page_size, q=q)
 
 @router.get("/kb/faqs/{faq_id}", response_model=FAQDetail, summary="Get FAQ")
 async def get_faq(

@@ -6,6 +6,25 @@ After a backend change run `npm run api:pull && npm run api:types`, read the sna
 list below and remove the met entries from `BACKEND_REQUESTS.md`. This file is the backend's side of that handshake;
 delete an entry once the frontend has adopted it.
 
+## 2026-10-05 — lists: search, sort, totals, counts (users, organizations, KB, tasks, tickets)
+
+All additive; nothing existing changes shape except a fix to the user list (below). Pull the schema and adopt:
+
+| Endpoint | New | Frontend to do |
+|---|---|---|
+| `GET /users` | `q` (name, **any** email address, organization name or phone contains), `sort` (`name` \| `email` \| `status` \| `created` \| `updated`) + `descending`, a real `total`; each item has `account_status` (`guest` \| `active` \| `pending` \| `locked`, osTicket's directory Status: Guest / Active (Registered) / Locked (Pending Activation) / Locked (Administrative)) and `ticket_count` | Add the search box, sortable headers, the Status column and the "(n)" ticket count beside the name; page with `total`. **Fix:** a user with several email addresses used to appear once per address; now once. The old `status` integer stays (it is a primary-contact flag, not the account state). |
+| `GET /orgs` | `q` (name contains, as osTicket), `sort` (`name` \| `users` \| `created` \| `updated`) + `descending`, `total`; each item has `user_count` | Add search, sort and the Users column. |
+| `GET /tickets/` | `user_id` filter (the requester) | A user's Tickets table: `?user_id=<id>` instead of searching by email and filtering client-side. |
+| `GET /kb/faqs` | `q` (question, answer, keywords, category name or description contains, as kb.php), `total` | Add the FAQ search box; stop counting on the client. |
+| `GET /kb/categories` | each item has `faq_count` (own FAQs plus its sub-categories', as osTicket) and `parent_id`; `total` | Show "Category (n)"; nest by `parent_id`; the 200-item client counting can go. |
+| `GET /tasks/` | `queue` (`open` \| `overdue` \| `assigned` \| `closed`); each item has `ticket_number` (the linked ticket's number) and `is_overdue`; `sort=ticket` and `sort=closed` | Ticket column from `ticket_number` (drop the per-ticket lookups); red rows from `is_overdue`; use `queue=` for the tabs. |
+| `GET /tasks/queues` | **new**: `{queues:[{key,title,count}]}` in osTicket's order (Open, Overdue, My Tasks, Completed) | One call for the tab counts instead of three filtered lists. A queue's count equals that queue's list `total`. |
+
+Notes. "My Tasks" is open tasks assigned to the *agent* only: osTicket's own task page does the same (its list filters
+`staff_id`), so tasks assigned to the agent's team are in Open, not My Tasks; the request's point (3) is osTicket's
+behaviour, not a gap. `ticket_count` counts all of the user's tickets, as osTicket's directory does, not only the ones
+the agent can open. KB search is a plain "contains", as osTicket's.
+
 ## 2026-10-05 — timestamps carry a timezone (BREAKING for any code that parses them)
 
 **Changed.** Every timestamp in every response is now ISO 8601 **in UTC with a `Z`** (`"2026-10-03T18:18:02Z"`),

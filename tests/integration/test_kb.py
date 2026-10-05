@@ -70,13 +70,16 @@ async def _inbox_rows() -> list[IntegrationInbox]:
 
 @pytest.mark.asyncio
 async def test_list_categories_returns_200():
-    with patch("app.modules.kb.service.repo.list_categories", new=AsyncMock(return_value=[MOCK_CAT])):
+    cat = dict(MOCK_CAT, parent_id=None, faq_count=6)
+    with patch("app.modules.kb.service.repo.list_categories", new=AsyncMock(return_value=[cat])), \
+         patch("app.modules.kb.service.repo.count_categories", new=AsyncMock(return_value=3)):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             resp = await ac.get("/api/v1/kb/categories", headers=_auth())
     assert resp.status_code == 200
     data = resp.json()
     assert len(data["items"]) == 1
     assert data["items"][0]["name"] == "General Settings"
+    assert (data["items"][0]["faq_count"], data["items"][0]["parent_id"], data["total"]) == (6, None, 3)
 
 
 @pytest.mark.asyncio
@@ -133,13 +136,17 @@ async def test_delete_category_queues_command():
 
 @pytest.mark.asyncio
 async def test_list_faqs_returns_200():
-    with patch("app.modules.kb.service.repo.list_faqs", new=AsyncMock(return_value=[MOCK_FAQ])):
+    listed = AsyncMock(return_value=[MOCK_FAQ])
+    with patch("app.modules.kb.service.repo.list_faqs", new=listed), \
+         patch("app.modules.kb.service.repo.count_faqs", new=AsyncMock(return_value=12)):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-            resp = await ac.get("/api/v1/kb/faqs", headers=_auth())
+            resp = await ac.get("/api/v1/kb/faqs", params={"q": "reset", "category_id": 2}, headers=_auth())
     assert resp.status_code == 200
     data = resp.json()
     assert len(data["items"]) == 1
     assert data["items"][0]["question"] == "How to reset password?"
+    assert data["total"] == 12
+    assert (listed.await_args.kwargs["q"], listed.await_args.kwargs["category_id"]) == ("reset", 2)
 
 
 @pytest.mark.asyncio

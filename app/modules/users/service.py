@@ -48,23 +48,23 @@ async def list_organizations(
     session: AsyncSession,
     page: int = 1,
     page_size: int = 50,
+    q: str | None = None,
+    sort: str = "name",
+    descending: bool = False,
 ) -> OrganizationListResponse:
     page_size = min(page_size, 200)
     offset = (page - 1) * page_size
-    rows = await repo.list_organizations(session, limit=page_size, offset=offset)
-    
-    items = [
-        OrganizationListItem(
-            id=row["id"],
-            name=row["name"],
-            created=row["created"],
-            updated=row["updated"],
-        )
-        for row in rows
-    ]
-    
+    rows = await repo.list_organizations(
+        session, q=q, sort=sort, descending=descending, limit=page_size, offset=offset)
     return OrganizationListResponse(
-        items=items,
+        items=[
+            OrganizationListItem(
+                id=row["id"], name=row["name"], user_count=int(row.get("user_count") or 0),
+                created=row["created"], updated=row["updated"],
+            )
+            for row in rows
+        ],
+        total=await repo.count_organizations(session, q=q),
         page=page,
         page_size=page_size,
     )
@@ -144,32 +144,44 @@ async def delete_organization(
 
 # ── Users ─────────────────────────────────────────────────────────────────────
 
+def _account_status(account_id, flags) -> str:
+    """osTicket's directory Status: Guest without an account, else UserAccountStatus (locked, pending, active)."""
+    if not account_id:
+        return "guest"
+    flags = int(flags or 0)
+    return "locked" if flags & 0x2 else ("active" if flags & 0x1 else "pending")
+
+
 async def list_users(
     session: AsyncSession,
     org_id: int | None = None,
     page: int = 1,
     page_size: int = 50,
+    q: str | None = None,
+    sort: str = "name",
+    descending: bool = False,
 ) -> UserListResponse:
     page_size = min(page_size, 200)
     offset = (page - 1) * page_size
-    rows = await repo.list_users(session, org_id=org_id, limit=page_size, offset=offset)
-    
-    items = [
-        UserListItem(
-            id=row["id"],
-            name=row["name"],
-            email=row["email"] or "",
-            org_id=row["org_id"],
-            org_name=row["org_name"],
-            status=row["status"],
-            created=row["created"],
-            updated=row["updated"],
-        )
-        for row in rows
-    ]
-    
+    rows = await repo.list_users(
+        session, org_id=org_id, q=q, sort=sort, descending=descending, limit=page_size, offset=offset)
     return UserListResponse(
-        items=items,
+        items=[
+            UserListItem(
+                id=row["id"],
+                name=row["name"],
+                email=row["email"] or "",
+                org_id=row["org_id"],
+                org_name=row["org_name"],
+                status=row["status"],
+                account_status=_account_status(row.get("account_id"), row.get("account_flags")),
+                ticket_count=int(row.get("ticket_count") or 0),
+                created=row["created"],
+                updated=row["updated"],
+            )
+            for row in rows
+        ],
+        total=await repo.count_users(session, org_id=org_id, q=q),
         page=page,
         page_size=page_size,
     )

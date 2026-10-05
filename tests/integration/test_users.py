@@ -62,14 +62,21 @@ async def _inbox_rows() -> list[IntegrationInbox]:
 # ── Organizations ─────────────────────────────────────────────────────────────
 
 @pytest.mark.asyncio
-async def test_list_orgs_returns_200():
-    with patch("app.modules.users.service.repo.list_organizations", new=AsyncMock(return_value=[MOCK_ORG])):
+async def test_list_orgs_returns_200_with_total_member_count_search_and_sort():
+    listed = AsyncMock(return_value=[dict(MOCK_ORG, user_count=3)])
+    with patch("app.modules.users.service.repo.list_organizations", new=listed), \
+         patch("app.modules.users.service.repo.count_organizations", new=AsyncMock(return_value=7)):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-            resp = await ac.get("/api/v1/orgs", headers=_auth(["user.dir"]))
-    assert resp.status_code == 200
+            resp = await ac.get("/api/v1/orgs", params={"q": "acme", "sort": "users", "descending": "true"},
+                                headers=_auth(["user.dir"]))
+            bad = await ac.get("/api/v1/orgs", params={"sort": "nonsense"}, headers=_auth(["user.dir"]))
+    assert resp.status_code == 200 and bad.status_code == 422
     data = resp.json()
     assert len(data["items"]) == 1
-    assert data["items"][0]["name"] == "Acme Corp"
+    assert data["items"][0]["name"] == "Acme Corp" and data["items"][0]["user_count"] == 3
+    assert data["total"] == 7
+    assert (listed.await_args.kwargs["q"], listed.await_args.kwargs["sort"], listed.await_args.kwargs["descending"]) == (
+        "acme", "users", True)
 
 
 @pytest.mark.asyncio
@@ -150,14 +157,25 @@ async def test_delete_org_queues_command():
 # ── Users ─────────────────────────────────────────────────────────────────────
 
 @pytest.mark.asyncio
-async def test_list_users_returns_200():
-    with patch("app.modules.users.service.repo.list_users", new=AsyncMock(return_value=[MOCK_USER])):
+async def test_list_users_returns_200_with_total_status_ticket_count_search_and_sort():
+    rows = [dict(MOCK_USER, ticket_count=4, account_id=9, account_flags=0x1),
+            dict(MOCK_USER, id=2, account_id=None, account_flags=None),
+            dict(MOCK_USER, id=3, account_id=5, account_flags=0x1 | 0x2),
+            dict(MOCK_USER, id=4, account_id=6, account_flags=0)]
+    listed = AsyncMock(return_value=rows)
+    with patch("app.modules.users.service.repo.list_users", new=listed), \
+         patch("app.modules.users.service.repo.count_users", new=AsyncMock(return_value=40)):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-            resp = await ac.get("/api/v1/users", headers=_auth(["user.dir"]))
-    assert resp.status_code == 200
+            resp = await ac.get("/api/v1/users", params={"q": "coyote", "sort": "status", "org_id": 1},
+                                headers=_auth(["user.dir"]))
+            bad = await ac.get("/api/v1/users", params={"sort": "nonsense"}, headers=_auth(["user.dir"]))
+    assert resp.status_code == 200 and bad.status_code == 422
     data = resp.json()
-    assert len(data["items"]) == 1
-    assert data["items"][0]["name"] == "Wile E. Coyote"
+    assert data["items"][0]["name"] == "Wile E. Coyote" and data["total"] == 40
+    assert [i["account_status"] for i in data["items"]] == ["active", "guest", "locked", "pending"]
+    assert data["items"][0]["ticket_count"] == 4 and data["items"][1]["ticket_count"] == 0
+    kwargs = listed.await_args.kwargs
+    assert (kwargs["q"], kwargs["sort"], kwargs["org_id"], kwargs["descending"]) == ("coyote", "status", 1, False)
 
 
 @pytest.mark.asyncio

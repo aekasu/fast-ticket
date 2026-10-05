@@ -1259,3 +1259,65 @@ def test_commands_queued_together_do_not_share_state(bridge, uniq):
         bridge._cleanups.append(("DELETE", f"/api/v1/tasks/{task_id}"))
         got = bridge.read(f"/api/v1/tasks/{task_id}")
         assert got["title"] == titles[ids.index(command_id)]
+
+
+def test_directory_lists_search_sort_count_and_total(bridge, uniq):
+    """Users, organizations, the knowledge base and tasks: osTicket's search, sort, counts and totals."""
+    holder = {}
+    tk = _new_ticket(bridge, uniq, holder)
+    uid = holder["user_id"]
+
+    # users: search by name, by any email, total, ticket count, account status (a guest until registered)
+    found = bridge.read(f"/api/v1/users?q=cust.{uniq}")
+    assert found["total"] == 1 and found["items"][0]["id"] == uid
+    assert found["items"][0]["ticket_count"] == 1 and found["items"][0]["account_status"] == "guest"
+    assert bridge.read("/api/v1/users?q=zz-no-such-user-zz")["total"] == 0
+    assert bridge.read("/api/v1/users?q=100%25_")["total"] == 0                          # wildcards are literal
+    assert len({u["id"] for u in bridge.read("/api/v1/users?page_size=200")["items"]}) == len(
+        bridge.read("/api/v1/users?page_size=200")["items"])                              # one row per user, whatever its emails
+    for column in ("name", "email", "status", "created", "updated"):
+        assert bridge.get(f"/api/v1/users?sort={column}&descending=true").status_code == 200, column
+    assert bridge.get("/api/v1/users?sort=nonsense").status_code == 422
+    names = [u["name"] for u in bridge.read("/api/v1/users?page_size=200")["items"]]
+    assert names == sorted(names, key=str.lower) or len(names) < 2                       # default: by name, ascending
+    bridge.command("POST", f"/api/v1/users/{uid}/account", {"username": f"e2edir{uniq}", "password": "Tmp-Pass-9x!Qz"})
+    assert bridge.read(f"/api/v1/users?q=cust.{uniq}")["items"][0]["account_status"] == "active"
+    bridge.command("PATCH", f"/api/v1/users/{uid}/account", {"is_locked": True})
+    assert bridge.read(f"/api/v1/users?q=cust.{uniq}")["items"][0]["account_status"] == "locked"
+    mine = bridge.read(f"/api/v1/tickets/?user_id={uid}")
+    assert [t["ticket_id"] for t in mine["items"]] == [tk] and mine["total"] == 1       # the user's own tickets
+
+    # organizations: member count, search, sort, total
+    org = bridge.create("/api/v1/orgs", {"name": f"e2e-dir-org-{uniq}"}, cleanup="/api/v1/orgs/{id}")
+    bridge.command("PATCH", f"/api/v1/users/{uid}", {"org_id": org})
+    got = bridge.read(f"/api/v1/orgs?q=e2e-dir-org-{uniq}")
+    assert got["total"] == 1 and got["items"][0]["id"] == org and got["items"][0]["user_count"] == 1
+    assert bridge.read(f"/api/v1/users?org_id={org}")["total"] == 1
+    assert bridge.read(f"/api/v1/users?q=e2e-dir-org-{uniq}")["total"] == 1             # a user is found by their organization
+    for column in ("name", "users", "created", "updated"):
+        assert bridge.get(f"/api/v1/orgs?sort={column}&descending=true").status_code == 200, column
+    assert bridge.get("/api/v1/orgs?sort=nonsense").status_code == 422
+
+    # knowledge base: FAQ search, category counts and parent, totals
+    cat = bridge.create("/api/v1/kb/categories", {"name": f"e2e-kb-cat-{uniq}", "description": f"desc {uniq}"}, cleanup="/api/v1/kb/categories/{id}")
+    faq = bridge.create("/api/v1/kb/faqs", {"category_id": cat, "question": f"How do I e2e-faq-{uniq}?", "answer": f"zebra-{uniq} answer"}, cleanup="/api/v1/kb/faqs/{id}")
+    assert [f["id"] for f in bridge.read(f"/api/v1/kb/faqs?q=e2e-faq-{uniq}")["items"]] == [faq]
+    assert bridge.read(f"/api/v1/kb/faqs?q=zebra-{uniq}")["total"] == 1                  # the answer is searched too
+    assert bridge.read(f"/api/v1/kb/faqs?q=e2e-kb-cat-{uniq}")["total"] == 1             # and the category's name
+    assert bridge.read("/api/v1/kb/faqs?q=zz-no-such-faq-zz")["total"] == 0
+    assert bridge.read(f"/api/v1/kb/faqs?category_id={cat}")["total"] == 1
+    cats = {c["id"]: c for c in bridge.read("/api/v1/kb/categories?page_size=200")["items"]}
+    assert cats[cat]["faq_count"] == 1 and cats[cat]["parent_id"] is None
+    assert bridge.read("/api/v1/kb/categories")["total"] >= 1
+
+    # tasks: queues with counts, the linked ticket's number, the overdue flag
+    task = bridge.create("/api/v1/tasks/", {"title": f"e2e dir task {uniq}", "description": "d", "dept_id": 1, "ticket_id": tk}, cleanup="/api/v1/tasks/{id}")
+    queues = {q["key"]: q for q in bridge.read("/api/v1/tasks/queues")["queues"]}
+    assert list(queues) == ["open", "overdue", "assigned", "closed"] and queues["closed"]["title"] == "Completed"
+    for key in queues:
+        listed = bridge.read(f"/api/v1/tasks/?queue={key}&page_size=1")
+        assert listed["total"] == queues[key]["count"], key                              # a queue's count is its list's total
+    item = next(t for t in bridge.read(f"/api/v1/tasks/?q=e2e dir task {uniq}")["items"] if t["task_id"] == task)
+    ticket_number = bridge.read(f"/api/v1/tickets/{tk}")["number"]
+    assert item["ticket_number"] == ticket_number and item["is_overdue"] is False
+    assert bridge.get("/api/v1/tasks/?sort=ticket").status_code == 200 and bridge.get("/api/v1/tasks/?queue=nonsense").status_code == 422

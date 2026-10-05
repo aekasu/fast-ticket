@@ -222,14 +222,14 @@ _TICKET_SORTS = {   # the columns of osTicket's ticket queue; priority sorts by 
 
 
 def _ticket_filters(
-    access: "Scope", *, status_id, dept_id, assignee_staff_id, assignee_team_id, topic_id, sla_id, is_answered, q, queue,
+    access: "Scope", *, status_id, dept_id, assignee_staff_id, assignee_team_id, topic_id, sla_id, is_answered, q, queue, user_id=None,
 ) -> tuple[list[str], dict]:
     where = [ticket_visibility(access, detail=False)]
     params: dict = {}
     for column, name, value in (
         ("t.status_id", "status_id", status_id), ("t.dept_id", "dept_id", dept_id),
         ("t.staff_id", "assignee_staff_id", assignee_staff_id), ("t.team_id", "assignee_team_id", assignee_team_id),
-        ("t.topic_id", "topic_id", topic_id), ("t.sla_id", "sla_id", sla_id),
+        ("t.topic_id", "topic_id", topic_id), ("t.sla_id", "sla_id", sla_id), ("t.user_id", "user_id", user_id),
     ):
         if value is not None:
             where.append(f"{column} = :{name}")
@@ -257,6 +257,7 @@ async def list_tickets(
     assignee_team_id: int | None = None,
     topic_id: int | None = None,
     sla_id: int | None = None,
+    user_id: int | None = None,
     is_answered: bool | None = None,
     q: str | None = None,
     queue: str | None = None,
@@ -268,7 +269,8 @@ async def list_tickets(
     """A filtered, sorted, paginated list of ticket rows the agent's list shows."""
     where, params = _ticket_filters(
         access, status_id=status_id, dept_id=dept_id, assignee_staff_id=assignee_staff_id,
-        assignee_team_id=assignee_team_id, topic_id=topic_id, sla_id=sla_id, is_answered=is_answered, q=q, queue=queue)
+        assignee_team_id=assignee_team_id, topic_id=topic_id, sla_id=sla_id, is_answered=is_answered, q=q, queue=queue,
+        user_id=user_id)
     direction = "DESC" if descending else "ASC"
     order = ", ".join(
         column if column.endswith((" ASC", " DESC")) else f"{column} {direction}"   # a fixed tie-break keeps its own direction
@@ -291,6 +293,7 @@ async def count_tickets(
     assignee_team_id: int | None = None,
     topic_id: int | None = None,
     sla_id: int | None = None,
+    user_id: int | None = None,
     is_answered: bool | None = None,
     q: str | None = None,
     queue: str | None = None,
@@ -298,7 +301,8 @@ async def count_tickets(
     """How many tickets ``list_tickets`` would return across all pages."""
     where, params = _ticket_filters(
         access, status_id=status_id, dept_id=dept_id, assignee_staff_id=assignee_staff_id,
-        assignee_team_id=assignee_team_id, topic_id=topic_id, sla_id=sla_id, is_answered=is_answered, q=q, queue=queue)
+        assignee_team_id=assignee_team_id, topic_id=topic_id, sla_id=sla_id, is_answered=is_answered, q=q, queue=queue,
+        user_id=user_id)
     sql = ("SELECT COUNT(*) FROM ost_ticket t LEFT JOIN ost_ticket_status ts ON t.status_id = ts.id "
            "LEFT JOIN ost_ticket__cdata c ON c.ticket_id = t.ticket_id LEFT JOIN ost_user u ON t.user_id = u.id "
            "WHERE " + " AND ".join(where))
@@ -1036,6 +1040,12 @@ async def list_categories(session: AsyncSession, limit: int = 50, offset: int = 
             c.name,
             COALESCE(c.description, '') AS description,
             (c.ispublic > 0) AS is_public,   -- 2 = featured
+            IF(c.category_pid > 0, c.category_pid, NULL) AS parent_id,
+            -- Category::getNumFAQs(): its own FAQs plus its sub-categories'
+            (SELECT COUNT(*) FROM ost_faq f
+              WHERE f.category_id = c.category_id
+                 OR f.category_id IN (SELECT k.category_id FROM ost_faq_category k WHERE k.category_pid = c.category_id)
+            ) AS faq_count,
             c.created,
             c.updated
         FROM ost_faq_category c
@@ -1064,18 +1074,27 @@ async def get_category(session: AsyncSession, category_id: int) -> dict | None:
 
 # ── FAQs ──────────────────────────────────────────────────────────────────────
 
+def _faq_filters(category_id: int | None, q: str | None) -> tuple[str, dict]:
+    where, params = [], {}
+    if category_id:
+        where.append("f.category_id = :category_id")
+        params["category_id"] = category_id
+    if q:   # kb.php search: question, answer, keywords, the category's name and description
+        where.append("(f.question LIKE :like OR f.answer LIKE :like OR f.keywords LIKE :like "
+                     "OR c.name LIKE :like OR c.description LIKE :like)")
+        params["like"] = _like(q)
+    return (" WHERE " + " AND ".join(where)) if where else "", params
+
+
 async def list_faqs(
     session: AsyncSession,
     *,
     category_id: int | None = None,
+    q: str | None = None,
     limit: int = 50,
     offset: int = 0
 ) -> list:
-    where_clause = " WHERE f.category_id = :category_id" if category_id else ""
-    params = {"limit": limit, "offset": offset}
-    if category_id:
-        params["category_id"] = category_id
-
+    where, params = _faq_filters(category_id, q)
     sql = f"""
         SELECT
             f.faq_id AS id,
@@ -1085,11 +1104,23 @@ async def list_faqs(
             f.created,
             f.updated
         FROM ost_faq f
-        {where_clause}
+        LEFT JOIN ost_faq_category c ON c.category_id = f.category_id
+        {where}
         ORDER BY f.question ASC LIMIT :limit OFFSET :offset
     """
-    result = await session.execute(_sql(sql), params)
+    result = await session.execute(_sql(sql), {**params, "limit": limit, "offset": offset})
     return list(result.mappings().all())
+
+
+async def count_faqs(session: AsyncSession, *, category_id: int | None = None, q: str | None = None) -> int:
+    where, params = _faq_filters(category_id, q)
+    sql = f"SELECT COUNT(*) FROM ost_faq f LEFT JOIN ost_faq_category c ON c.category_id = f.category_id {where}"
+    return int((await session.execute(_sql(sql), params)).scalar() or 0)
+
+
+async def count_categories(session: AsyncSession) -> int:
+    return int((await session.execute(_sql("SELECT COUNT(*) FROM ost_faq_category"))).scalar() or 0)
+
 
 async def get_faq(session: AsyncSession, faq_id: int) -> dict | None:
     sql = """
@@ -1372,16 +1403,38 @@ _ORG_SELECT = """
         o.id,
         o.name,
         o.created,
-        COALESCE(o.updated, o.created) AS updated
+        COALESCE(o.updated, o.created) AS updated,
+        (SELECT COUNT(*) FROM ost_user m WHERE m.org_id = o.id) AS user_count
     FROM ost_organization o
 """
 
+_ORG_SORTS = {"name": "o.name", "users": "user_count", "created": "o.created", "updated": "o.updated"}
+
+
+def _org_filters(q: str | None) -> tuple[str, dict]:
+    if not q:   # osTicket's Organizations page searches the name only
+        return "", {}
+    return " WHERE o.name LIKE :like", {"like": _like(q)}
+
+
 async def list_organizations(
-    session: AsyncSession, limit: int = 50, offset: int = 0
+    session: AsyncSession, *, q: str | None = None, sort: str = "name", descending: bool = False,
+    limit: int = 50, offset: int = 0,
 ) -> list:
-    sql = _ORG_SELECT + " ORDER BY o.name ASC LIMIT :limit OFFSET :offset"
-    result = await session.execute(_sql(sql), {"limit": limit, "offset": offset})
+    where, params = _org_filters(q)
+    direction = "DESC" if descending else "ASC"
+    sql = (
+        _ORG_SELECT + where
+        + f" ORDER BY {_ORG_SORTS.get(sort, 'o.name')} {direction}, o.id {direction} LIMIT :limit OFFSET :offset"
+    )
+    result = await session.execute(_sql(sql), {**params, "limit": limit, "offset": offset})
     return list(result.mappings().all())
+
+
+async def count_organizations(session: AsyncSession, *, q: str | None = None) -> int:
+    where, params = _org_filters(q)
+    return int((await session.execute(_sql("SELECT COUNT(*) FROM ost_organization o" + where), params)).scalar() or 0)
+
 
 async def get_organization(session: AsyncSession, org_id: int) -> dict | None:
     # address / phone / website / notes are answers of the organization dynamic form;
@@ -1427,27 +1480,59 @@ _USER_SELECT = """
         u.status,
         u.created,
         u.updated,
-        ue.address AS email
+        COALESCE(ue.address, '') AS email,
+        (SELECT COUNT(*) FROM ost_ticket t WHERE t.user_id = u.id) AS ticket_count,
+        acc.id AS account_id,
+        acc.status AS account_flags
     FROM ost_user u
-    LEFT JOIN ost_user_email ue ON ue.user_id = u.id
+    LEFT JOIN ost_user_email ue ON ue.id = u.default_email_id
     LEFT JOIN ost_organization o ON o.id = u.org_id
+    LEFT JOIN ost_user_account acc ON acc.user_id = u.id
 """
+
+# osTicket's User Directory sorts: name, email, status (the account's flags), created, updated
+_USER_SORTS = {"name": "u.name", "email": "ue.address", "status": "acc.status", "created": "u.created", "updated": "u.updated"}
+
+
+def _user_filters(org_id: int | None, q: str | None) -> tuple[str, dict]:
+    where, params = [], {}
+    if org_id is not None:
+        where.append("u.org_id = :org_id")
+        params["org_id"] = org_id
+    if q:   # as users.inc.php: any email address, the name, the organization's name, the phone answer
+        where.append(
+            "(u.name LIKE :like OR o.name LIKE :like OR EXISTS (SELECT 1 FROM ost_user_email e "
+            "WHERE e.user_id = u.id AND e.address LIKE :like) OR EXISTS (SELECT 1 FROM ost_user__cdata c "
+            "WHERE c.user_id = u.id AND c.phone LIKE :like))")
+        params["like"] = _like(q)
+    return (" WHERE " + " AND ".join(where)) if where else "", params
+
 
 async def list_users(
     session: AsyncSession,
     *,
     org_id: int | None = None,
+    q: str | None = None,
+    sort: str = "name",
+    descending: bool = False,
     limit: int = 50,
-    offset: int = 0
+    offset: int = 0,
 ) -> list:
-    where_clause = " WHERE u.org_id = :org_id" if org_id is not None else ""
-    params = {"limit": limit, "offset": offset}
-    if org_id is not None:
-        params["org_id"] = org_id
-        
-    sql = _USER_SELECT + where_clause + " ORDER BY u.name ASC LIMIT :limit OFFSET :offset"
-    result = await session.execute(_sql(sql), params)
+    where, params = _user_filters(org_id, q)
+    direction = "DESC" if descending else "ASC"
+    sql = (
+        _USER_SELECT + where
+        + f" ORDER BY {_USER_SORTS.get(sort, 'u.name')} {direction}, u.id {direction} LIMIT :limit OFFSET :offset"
+    )
+    result = await session.execute(_sql(sql), {**params, "limit": limit, "offset": offset})
     return list(result.mappings().all())
+
+
+async def count_users(session: AsyncSession, *, org_id: int | None = None, q: str | None = None) -> int:
+    where, params = _user_filters(org_id, q)
+    sql = ("SELECT COUNT(*) FROM ost_user u LEFT JOIN ost_organization o ON o.id = u.org_id" + where)
+    return int((await session.execute(_sql(sql), params)).scalar() or 0)
+
 
 async def get_user_account(session: AsyncSession, user_id: int) -> dict | None:
     """The end user's login account, or None before they register. Never selects the password hash."""
@@ -1513,11 +1598,14 @@ _TASK_SELECT = """
         IF(t.team_id > 0, tm.name, NULL)     AS team_name,
         -- a task linked to a ticket carries the ticket as its parent object
         IF(t.object_type = 'T', t.object_id, NULL) AS ticket_id,
+        tk.number                        AS ticket_number,
+        (t.flags & 2) > 0                AS is_overdue,   -- TaskModel::ISOVERDUE
         t.created,
         t.updated,
         t.closed,
         t.duedate                        AS due_date
     FROM ost_task t
+    LEFT JOIN ost_ticket tk       ON t.object_type = 'T' AND tk.ticket_id = t.object_id
     LEFT JOIN ost_task__cdata c   ON c.task_id     = t.id
     LEFT JOIN ost_department d    ON t.dept_id     = d.id
     LEFT JOIN ost_staff s         ON t.staff_id    = s.staff_id AND t.staff_id > 0
@@ -1526,10 +1614,24 @@ _TASK_SELECT = """
 
 
 _TASK_SORTS = {"updated": "t.updated", "created": "t.created", "due_date": "t.duedate", "number": "t.number",
-               "title": "c.title", "dept": "d.name"}
+               "title": "c.title", "dept": "d.name", "ticket": "tk.number", "closed": "t.closed"}
+
+TASK_QUEUE_KEYS = ("open", "overdue", "assigned", "closed")
 
 
-def _task_filters(access: "Scope", *, status_id, dept_id, assignee_staff_id, ticket_id, q) -> tuple[list[str], dict]:
+def _task_queue_condition(queue: str, access: "Scope") -> str:
+    """osTicket's task queues (tasks.inc.php): open, overdue (open and flagged), My Tasks (open, assigned to the
+    agent) and completed."""
+    me = int(access.staff_id)
+    return {
+        "open": "(t.flags & 1) = 1",
+        "overdue": "(t.flags & 1) = 1 AND (t.flags & 2) = 2",
+        "assigned": f"(t.flags & 1) = 1 AND t.staff_id = {me}",
+        "closed": "(t.flags & 1) = 0",
+    }[queue]
+
+
+def _task_filters(access: "Scope", *, status_id, dept_id, assignee_staff_id, ticket_id, q, queue=None) -> tuple[list[str], dict]:
     where = [task_visibility(access, detail=False)]
     params: dict = {}
     if status_id is not None:  # synthetic: 1 = open, anything else = closed
@@ -1547,6 +1649,8 @@ def _task_filters(access: "Scope", *, status_id, dept_id, assignee_staff_id, tic
     if q:
         where.append("(t.number LIKE :like OR c.title LIKE :like)")
         params["like"] = _like(q)
+    if queue:
+        where.append("(" + _task_queue_condition(queue, access) + ")")
     return where, params
 
 
@@ -1559,13 +1663,14 @@ async def list_tasks(
     assignee_staff_id: int | None = None,
     ticket_id: int | None = None,
     q: str | None = None,
+    queue: str | None = None,
     sort: str = "updated",
     descending: bool = True,
     limit: int = 50,
     offset: int = 0,
 ) -> list:
     where, params = _task_filters(access, status_id=status_id, dept_id=dept_id, assignee_staff_id=assignee_staff_id,
-                                  ticket_id=ticket_id, q=q)
+                                  ticket_id=ticket_id, q=q, queue=queue)
     direction = "DESC" if descending else "ASC"
     sql = (_TASK_SELECT + " WHERE " + " AND ".join(where)
            + f" ORDER BY {_TASK_SORTS.get(sort, 't.updated')} {direction}, t.id {direction} LIMIT :limit OFFSET :offset")
@@ -1582,12 +1687,23 @@ async def count_tasks(
     assignee_staff_id: int | None = None,
     ticket_id: int | None = None,
     q: str | None = None,
+    queue: str | None = None,
 ) -> int:
     """How many tasks ``list_tasks`` would return across all pages."""
     where, params = _task_filters(access, status_id=status_id, dept_id=dept_id, assignee_staff_id=assignee_staff_id,
-                                  ticket_id=ticket_id, q=q)
+                                  ticket_id=ticket_id, q=q, queue=queue)
     sql = "SELECT COUNT(*) FROM ost_task t LEFT JOIN ost_task__cdata c ON c.task_id = t.id WHERE " + " AND ".join(where)
     return int((await session.execute(_sql(sql), params)).scalar() or 0)
+
+
+async def count_task_queues(session: AsyncSession, *, access: "Scope") -> dict[str, int]:
+    """Tasks in each default queue, among those the agent's list shows."""
+    cells = ", ".join(
+        f"COALESCE(SUM(CASE WHEN {_task_queue_condition(key, access)} THEN 1 ELSE 0 END), 0) AS {key}"
+        for key in TASK_QUEUE_KEYS)
+    sql = "SELECT " + cells + " FROM ost_task t WHERE " + task_visibility(access, detail=False)
+    row = (await session.execute(_sql(sql))).mappings().one()
+    return {key: int(row[key]) for key in TASK_QUEUE_KEYS}
 
 
 async def get_task(session: AsyncSession, task_id: int, *, access: "Scope") -> dict | None:

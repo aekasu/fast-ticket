@@ -42,11 +42,11 @@ UNSCOPED_BY_DESIGN = {
     "get_agent_name_format": "an instance setting (how agent names are written), not agent or ticket data",
     "list_priorities": "osTicket offers every priority to every agent (Priority::getPriorities)",
     # Knowledge base: osTicket applies no permission to viewing FAQs.
-    "get_category": "knowledge base (no read permission in osTicket)", "list_categories": "knowledge base",
+    "get_category": "knowledge base (no read permission in osTicket)", "list_categories": "knowledge base", "count_categories": "knowledge base", "count_faqs": "knowledge base",
     "get_faq": "knowledge base", "list_faqs": "knowledge base",
     # The directory: the routes need user.dir, and osTicket narrows it no further.
-    "get_user": "directory (route needs user.dir)", "list_users": "directory (route needs user.dir)",
-    "get_organization": "directory (route needs user.dir)", "list_organizations": "directory (route needs user.dir)",
+    "get_user": "directory (route needs user.dir)", "list_users": "directory (route needs user.dir)", "count_users": "directory (route needs user.dir)",
+    "get_organization": "directory (route needs user.dir)", "list_organizations": "directory (route needs user.dir)", "count_organizations": "directory (route needs user.dir)",
     # It is what builds the AccessContext everything else is scoped by.
     "get_staff_row": "loads the caller's own access",
     "get_staff_grants": "loads the caller's own access",

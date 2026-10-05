@@ -21,12 +21,14 @@ from app.modules.users.models import (
     OrganizationUpdate,
     OrganizationDetail,
     OrganizationListResponse,
+    OrgSort,
     UserAccountRegister,
     UserAccountUpdate,
     UserCreate,
     UserUpdate,
     UserDetail,
     UserListResponse,
+    UserSort,
 )
 
 router = APIRouter(tags=["users"])
@@ -35,12 +37,16 @@ router = APIRouter(tags=["users"])
 
 @router.get("/orgs", response_model=OrganizationListResponse, summary="List organizations")
 async def list_organizations(
+    q: str | None = Query(default=None, max_length=100, description="Name contains (as osTicket's Organizations page)"),
+    sort: OrgSort = Query(default="name"),
+    descending: bool = Query(default=False),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200),
     current_user: dict = require_perm("user.dir"), # any org perm is fine
     session: AsyncSession = Depends(get_session),
 ):
-    return await service.list_organizations(session, page=page, page_size=page_size)
+    return await service.list_organizations(
+        session, page=page, page_size=page_size, q=q, sort=sort, descending=descending)
 
 
 @router.get("/orgs/{org_id}", response_model=OrganizationDetail, summary="Get organization")
@@ -91,12 +97,16 @@ async def delete_organization(
 @router.get("/users", response_model=UserListResponse, summary="List users")
 async def list_users(
     org_id: int | None = Query(default=None, description="Filter by organization ID"),
+    q: str | None = Query(default=None, max_length=100, description="Name, any email address, organization name or phone contains"),
+    sort: UserSort = Query(default="name"),
+    descending: bool = Query(default=False),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200),
     current_user: dict = require_perm("user.dir"), # any user perm is fine
     session: AsyncSession = Depends(get_session),
 ):
-    return await service.list_users(session, org_id=org_id, page=page, page_size=page_size)
+    return await service.list_users(
+        session, org_id=org_id, page=page, page_size=page_size, q=q, sort=sort, descending=descending)
 
 
 @router.get("/users/{user_id}", response_model=UserDetail, summary="Get user")

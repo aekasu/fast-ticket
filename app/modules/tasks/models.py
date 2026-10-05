@@ -29,7 +29,8 @@ class TaskStatusSchema(BaseModel):
     state: str  # open | closed
 
 
-TaskSort = Literal["updated", "created", "due_date", "number", "title", "dept"]
+TaskSort = Literal["updated", "created", "due_date", "number", "title", "dept", "ticket", "closed"]
+TaskQueue = Literal["open", "overdue", "assigned", "closed"]
 
 
 class TaskListItem(BaseModel):
@@ -44,6 +45,8 @@ class TaskListItem(BaseModel):
     team_id: Optional[int] = None
     team_name: Optional[str] = None
     ticket_id: Optional[int] = None  # parent ticket, if linked
+    ticket_number: Optional[str] = Field(default=None, description="The linked ticket's number (osTicket's Ticket column)")
+    is_overdue: bool = Field(default=False, description="osTicket's overdue flag on an open task")
     created: Instant
     updated: Instant
     closed: Optional[Instant] = None
@@ -54,6 +57,18 @@ class TaskDetail(TaskListItem):
     thread: list[ThreadEntry] = []
     collaborators: list[Collaborator] = []
     custom_fields: list[CustomFieldAnswer] = []
+
+
+class TaskQueueCount(BaseModel):
+    key: TaskQueue
+    title: str
+    count: int
+
+
+class TaskQueueCounts(BaseModel):
+    """osTicket's task queues in its own order, counted over the agent's task list."""
+
+    queues: list[TaskQueueCount]
 
 
 class TaskListResponse(BaseModel):

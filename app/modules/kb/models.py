@@ -16,6 +16,8 @@ class CategoryListItem(BaseModel):
     name: str
     description: str
     is_public: bool
+    parent_id: Optional[int] = Field(default=None, description="The parent category, if this is a sub-category")
+    faq_count: int = Field(default=0, description="FAQs in this category and its sub-categories (osTicket's count)")
     created: Instant
     updated: Instant
 

@@ -52,6 +52,8 @@ async def list_categories(
             name=row["name"],
             description=row["description"],
             is_public=bool(row["is_public"]),
+            parent_id=row.get("parent_id"),
+            faq_count=int(row.get("faq_count") or 0),
             created=row["created"],
             updated=row["updated"],
         )
@@ -60,6 +62,7 @@ async def list_categories(
     
     return CategoryListResponse(
         items=items,
+        total=await repo.count_categories(session),
         page=page,
         page_size=page_size,
     )
@@ -131,10 +134,11 @@ async def list_faqs(
     category_id: int | None = None,
     page: int = 1,
     page_size: int = 50,
+    q: str | None = None,
 ) -> FAQListResponse:
     page_size = min(page_size, 200)
     offset = (page - 1) * page_size
-    rows = await repo.list_faqs(session, category_id=category_id, limit=page_size, offset=offset)
+    rows = await repo.list_faqs(session, category_id=category_id, q=q, limit=page_size, offset=offset)
     
     items = [
         FAQListItem(
@@ -150,6 +154,7 @@ async def list_faqs(
     
     return FAQListResponse(
         items=items,
+        total=await repo.count_faqs(session, category_id=category_id, q=q),
         page=page,
         page_size=page_size,
     )
