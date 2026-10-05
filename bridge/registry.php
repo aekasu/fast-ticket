@@ -51,6 +51,7 @@ return [
     'task.claim'              => ['tasks', 'FastApiTaskHandler', 'claim', 'task.claimed', 'role:task.assign'],
     'task.transfer'           => ['tasks', 'FastApiTaskHandler', 'transfer', 'task.transferred', 'role:task.transfer'],
     'task.reply'              => ['tasks', 'FastApiTaskHandler', 'reply', 'task.replied', 'role:task.reply'],
+    'task.collaborator.add'   => ['tasks', 'FastApiTaskHandler', 'addCollaborator', 'task.collaborator_added', 'role:ticket.edit'],
     'task.entry.edit'         => ['tasks', 'FastApiTaskHandler', 'editEntry', 'task.entry_edited', 'role:task.reply'],
     'task.entry.resend'       => ['tasks', 'FastApiTaskHandler', 'resendEntry', 'task.entry_resent', 'role:task.reply'],
     'task.close'              => ['tasks', 'FastApiTaskHandler', 'close', 'task.closed', 'role:task.close'],

@@ -281,6 +281,33 @@ class FastApiTaskHandler {
         return ['task_id' => $task->getId(), 'entry_id' => (int) $entry->getId()];
     }
 
+    /**
+     * Add a collaborator: scp/tasks.php "addcc". That page checks the *ticket* edit permission
+     * (Ticket::PERM_EDIT) in the agent's role for the task's department — an osTicket quirk kept
+     * as is — and flags the new collaborator CC. osTicket's task page has no way to change or
+     * remove one, so neither does the API.
+     */
+    public static function addCollaborator($payload, $staff_id) {
+        global $thisstaff;
+        $task = self::requireTask($payload['task_id'] ?? 0);
+        $role = $thisstaff ? $thisstaff->getRole($task->getDept()) : null;
+        if (!$thisstaff || !$task->checkStaffPerm($thisstaff) || !$role || !$role->hasPerm(Ticket::PERM_EDIT)) {
+            throw new Exception('Permission denied: the requesting staff member may not add collaborators to this task.');
+        }
+        $user = User::lookup((int) ($payload['user_id'] ?? 0));
+        if (!$user) {
+            throw new Exception('Unknown user: ' . (int) ($payload['user_id'] ?? 0));
+        }
+        $errors = [];
+        $collab = $task->addCollaborator($user, [], $errors);
+        if (!$collab || $errors) {
+            throw new Exception('Collaborator was not added: ' . json_encode($errors ?: 'add failed'));
+        }
+        $collab->setFlag(Collaborator::FLAG_CC, true);
+        $collab->save();
+        return ['task_id' => $task->getId(), 'collaborator_user_id' => (int) $user->getId()];
+    }
+
     /** The entry, checked to belong to this task's thread and the task to be open to the acting staff member. */
     private static function requireEntry(Task $task, $entry_id) {
         global $thisstaff;
