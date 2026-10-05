@@ -460,6 +460,26 @@ class FastApiTicketHandler {
         return ['ticket_id' => $ticket->getId(), 'referee' => $source['target'], 'referee_id' => $source[$source['target']]];
     }
 
+    /**
+     * Remove a referral: ajax.tickets.php refer() action 'manage' — needs ticket.assign; deletes the
+     * thread's referral rows by id (only ones on this ticket's own thread).
+     */
+    public static function removeReferral($payload, $staff_id) {
+        $ticket = self::requireTicket($payload['ticket_id'] ?? 0);
+        self::requirePerm($ticket, Ticket::PERM_ASSIGN, 'refer');
+        $id = (int) ($payload['referral_id'] ?? 0);
+        $referral = $ticket->getThread()->referrals->filter(['id' => $id])->first();
+        if (!$referral) {
+            throw new Exception("Referral not found on this ticket: {$id}");
+        }
+        $type = $referral->object_type;
+        $object_id = (int) $referral->object_id;
+        if (!$ticket->getThread()->referrals->filter(['id__in' => [$id]])->delete()) {
+            throw new Exception('Referral was not removed.');
+        }
+        return ['ticket_id' => $ticket->getId(), 'referral_id' => $id, 'referee_type' => $type, 'referee_id' => $object_id];
+    }
+
     public static function addCollaborator($payload, $staff_id) {
         $ticket = self::requireTicket($payload['ticket_id'] ?? 0);
         self::requirePerm($ticket, Ticket::PERM_EDIT, 'edit');

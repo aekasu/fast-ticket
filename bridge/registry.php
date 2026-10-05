@@ -39,6 +39,7 @@ return [
     'ticket.merge'            => ['tickets', 'FastApiTicketHandler', 'merge', 'ticket.merged', 'role:ticket.merge'],
     'ticket.answered'         => ['tickets', 'FastApiTicketHandler', 'answered', 'ticket.answered', 'role:ticket.markanswered'],
     'ticket.unanswered'       => ['tickets', 'FastApiTicketHandler', 'unanswered', 'ticket.unanswered', 'role:ticket.markanswered'],
+    'ticket.referral.remove'  => ['tickets', 'FastApiTicketHandler', 'removeReferral', 'ticket.referral_removed', 'role:ticket.assign'],
     'ticket.collaborator.add' => ['tickets', 'FastApiTicketHandler', 'addCollaborator', 'ticket.collaborator_added', 'role:ticket.edit'],
     'ticket.collaborator.update' => ['tickets', 'FastApiTicketHandler', 'updateCollaborator', 'ticket.collaborator_updated', 'role:ticket.edit'],
     'ticket.collaborator.remove' => ['tickets', 'FastApiTicketHandler', 'removeCollaborator', 'ticket.collaborator_removed', 'role:ticket.edit'],
