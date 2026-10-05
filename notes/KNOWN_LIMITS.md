@@ -4,7 +4,7 @@ Things fast-ticket does not do yet, or does only partly, that someone relying on
 This is a **live list, not a changelog**: when a limit is fixed its entry is *deleted* (git history keeps
 it) and the commit that fixes it says so. Rules for keeping it honest are in `AGENTS.md` → "Known limits".
 
-Last reviewed: 2026-10-04 (trimmed again the same day: password-change token revocation, idempotency-key mismatch and help-topic sort mode solved and removed; end of the UI-demo milestone: custom fields, teams' alert flags, agent directory and assign choices, attachments, queues and search; `make test-e2e` 61 passed and the security review found nothing). Every entry was checked against the code: the ticket-PATCH entry about custom fields was solved and removed (a due-date note remains), the oracle entry was widened, and three sections were added (Attachments, Lists and queues, and the narrowed teams/directory entry).
+Last reviewed: 2026-10-05 (not a full review: this session removed the referral entry, narrowed the thread-entry, any-role, forms, custom-answer and compatibility entries it touched, and added the timestamp-timezone, directory and teams/forms entries; the rest were last checked on 2026-10-04 and not re-run). Verified at the end: `make test-e2e` 66 passed.
 
 Each entry: what is true today · what it means for you · what will resolve it (a phase from the plan, or
 "by design" if it is a deliberate trade-off).
