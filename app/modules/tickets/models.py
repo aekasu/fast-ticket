@@ -177,7 +177,10 @@ class TicketCreate(BaseModel):
 
 class TicketReply(BaseModel):
     message: str = Field(min_length=1)
-    signature: str = ""
+    signature: Literal["none", "mine", "dept"] = Field(
+        default="none",
+        description="Signature appended to the outgoing email (osTicket's reply form): none, the agent's own, or the "
+                    "department's. It does not change the stored thread, only the email.")
 
 
 class TicketNote(BaseModel):

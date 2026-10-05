@@ -1267,6 +1267,11 @@ def test_directory_lists_search_sort_count_and_total(bridge, uniq):
     tk = _new_ticket(bridge, uniq, holder)
     uid = holder["user_id"]
 
+    # global search finds a ticket by its requester (name or email), as the ticket list's own search does
+    hits = bridge.read(f"/api/v1/search?q=cust.{uniq}")
+    assert any(h["type"] == "ticket" and h["id"] == tk for h in hits["results"]), hits
+    assert not bridge.read("/api/v1/search?q=100%25_")["results"]                       # wildcards are literal
+
     # users: search by name, by any email, total, ticket count, account status (a guest until registered)
     found = bridge.read(f"/api/v1/users?q=cust.{uniq}")
     assert found["total"] == 1 and found["items"][0]["id"] == uid

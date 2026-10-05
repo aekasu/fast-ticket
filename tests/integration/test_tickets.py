@@ -784,3 +784,14 @@ async def test_custom_fields_are_accepted_typed_and_queued():
     rows = await _inbox_rows()
     assert json.loads(rows[0].payload)["custom_fields"] == body["custom_fields"]
     assert json.loads(rows[1].payload)["custom_fields"] == body["custom_fields"]
+
+
+@pytest.mark.asyncio
+async def test_reply_signature_is_one_of_osticket_choices():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        ok = await ac.post(TICKETS_URL + "/5/reply", json={"message": "hi", "signature": "dept"}, headers=_auth(["ticket.reply"]))
+        default = await ac.post(TICKETS_URL + "/5/reply", json={"message": "hi"}, headers=_auth(["ticket.reply"]))
+        bogus = await ac.post(TICKETS_URL + "/5/reply", json={"message": "hi", "signature": "bogus"}, headers=_auth(["ticket.reply"]))
+    assert (ok.status_code, default.status_code, bogus.status_code) == (202, 202, 422)
+    rows = await _inbox_rows()
+    assert [json.loads(r.payload)["signature"] for r in rows] == ["dept", "none"]

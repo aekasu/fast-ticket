@@ -1365,7 +1365,11 @@ async def search_all(
         JOIN ost_ticket_status ts ON ts.id = t.status_id
         -- the subject is an answer of the ticket form, mirrored in ost_ticket__cdata
         LEFT JOIN ost_ticket__cdata c ON c.ticket_id = t.ticket_id
-        WHERE (t.number LIKE :q OR c.subject LIKE :q) AND {ticket_visibility}
+        LEFT JOIN ost_user rq ON rq.id = t.user_id
+        -- number, subject, or the requester's name or any of their email addresses (as the ticket list's own search)
+        WHERE (t.number LIKE :q OR c.subject LIKE :q OR rq.name LIKE :q OR EXISTS (
+                SELECT 1 FROM ost_user_email rqe WHERE rqe.user_id = t.user_id AND rqe.address LIKE :q))
+          AND {ticket_visibility}
     """.replace("{ticket_visibility}", ticket_visibility(access, detail=False))
     if include_directory:
         sql += """
@@ -1391,7 +1395,7 @@ async def search_all(
         WHERE name LIKE :q
         """
     sql += "\n        LIMIT :limit\n"
-    result = await session.execute(_sql(sql), {"q": f"%{query}%", "limit": limit})
+    result = await session.execute(_sql(sql), {"q": _like(query), "limit": limit})
     return list(result.mappings().all())
 
 

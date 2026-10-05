@@ -6,6 +6,13 @@ After a backend change run `npm run api:pull && npm run api:types`, read the sna
 list below and remove the met entries from `BACKEND_REQUESTS.md`. This file is the backend's side of that handshake;
 delete an entry once the frontend has adopted it.
 
+## 2026-10-05 — global search finds tickets by requester; reply `signature` is an enum
+
+| Change | Frontend to do |
+|---|---|
+| `GET /search?q=` now matches a ticket's requester (name or any email address), as the ticket list's own search does; wildcards (`%`, `_`) in `q` are literal | Search page: take tickets from `/search` too and drop the second request to `GET /tickets/?q=`. Results stay limited to what the agent may open. |
+| `POST /tickets/{id}/reply` `signature` is `none` \| `mine` \| `dept` (default `none`); anything else, including `""`, is a 422 | Optionally add osTicket's signature selector (None / My Signature / Department Signature). It changes the outgoing email only, not the stored thread; send `none` or omit it. |
+
 ## 2026-10-05 — lists: search, sort, totals, counts (users, organizations, KB, tasks, tickets)
 
 All additive; nothing existing changes shape except a fix to the user list (below). Pull the schema and adopt:
