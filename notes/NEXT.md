@@ -13,7 +13,7 @@ a UI or more API breadth on your own. If the user instead asks for API work, pic
 ## Where things stand
 
 - **All committed, tree clean** (except the user's own `.claude/settings.json` — never commit it). Last commit
-  `b3b9d41`. Verified at that commit: `make test` 748, `make test-docker` 748, `make test-e2e` 63 on a rebuilt stack
+  `b3b9d41`. Verified at that commit: `make test` 752, `make test-docker` 752, `make test-e2e` 63 on a rebuilt stack
   (includes the oracle against osTicket's own PHP), `make doctor` 0 failed (one expected warning: the compose stack
   uses one all-privileges DB user). Security review of the new code: nothing at high confidence.
 - Built, in order: bridge worker + portability, security overhaul S0–S6, access cache, ticket lifecycle (PATCH, claim,
@@ -56,6 +56,16 @@ All verified by `make test-e2e` (61) and the oracle test against osTicket's own 
 Known holes a UI will meet (all in KNOWN_LIMITS): no file upload, no ticket-export, no custom queues, list search does
 not read message bodies, team/SLA lists are admin-only, 2FA accounts cannot log in. Pick the next work from "Direction"
 below based on what the UI needs.
+
+## Frontend requests (from `../fast-ticket-frontend/notes/BACKEND_REQUESTS.md`)
+
+The frontend keeps a list of what its screens need. Met so far (2026-10-05): typed `/auth/me` and login schemas, 429 with
+`Retry-After` and `detail`, priority-sort tie-break (most recently updated first), `format` on thread entries,
+`est_due_date` / `is_overdue` / `last_activity` on tickets (sort `last_activity`), `GET /roles`, `GET /permissions`,
+referral list/remove, task collaborators, task thread-entry edit/resend. Still open, by value: timestamps without a
+timezone, search/sort/totals/counts on the user, organization, KB and task lists, task list extras (ticket number,
+overdue, team in "mine"), global search matching a ticket's requester, form definitions readable by non-admins, typed
+custom answers, `signature` enum on reply, ticket-create fields (source, SLA, due date, assign), canned expansion.
 
 ## Direction, in order
 

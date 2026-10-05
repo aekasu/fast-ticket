@@ -87,6 +87,9 @@ def _row_to_list_item(row: dict) -> TicketListItem:
         updated=row["updated"],
         closed=row.get("closed"),
         due_date=row.get("due_date"),
+        est_due_date=row.get("est_due_date"),
+        is_overdue=bool(row.get("is_overdue", 0)),
+        last_activity=row.get("last_activity"),
     )
 
 
@@ -102,6 +105,7 @@ def _row_to_thread_entry(row: dict, attachments: list[dict] | None = None) -> Th
         poster=row.get("poster"),
         ip_address=row.get("ip_address"),
         created=row["created"],
+        format="html" if (row.get("format") or "text") == "html" else "text",
         is_edited=bool(row.get("is_edited", False)),
     )
 

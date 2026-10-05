@@ -1117,6 +1117,32 @@ def test_ticket_and_task_lists_search_sort_count_and_queues_agree(bridge, uniq):
     assert asc == desc[::-1] and set(asc) == {first, second}
     for column in ("priority", "assignee", "requester", "status", "dept", "subject", "created", "due_date", "updated"):
         assert bridge.get(f"/api/v1/tickets/?q={uniq}&sort={column}").status_code == 200, column
+    # priority ties break by most recently updated first (osTicket's "Priority + Most Recently Updated"), either direction
+    for direction in ("false", "true"):
+        rows = bridge.read(f"/api/v1/tickets/?sort=priority&descending={direction}&page_size=100")["items"]
+        for prev, nxt in zip(rows, rows[1:]):
+            if prev["priority_id"] == nxt["priority_id"]:
+                assert prev["updated"] >= nxt["updated"], (prev["ticket_id"], nxt["ticket_id"])
+
+    # osTicket's own due date / overdue / last-updated, and the body format of a thread entry
+    item = bridge.read(f"/api/v1/tickets/{first}")
+    assert {"est_due_date", "is_overdue", "last_activity"} <= set(item) and item["last_activity"] is not None
+    assert item["is_overdue"] is False
+    assert all(e["format"] in ("text", "html") for e in item["thread"])
+    by_activity = bridge.read("/api/v1/tickets/?sort=last_activity&page_size=100")["items"]
+    stamps = [t["last_activity"] for t in by_activity if t["last_activity"]]
+    assert stamps == sorted(stamps, reverse=True)
+
+    # roles (Admin Panel) and the permission keys
+    roles = {r["name"]: r for r in bridge.read("/api/v1/roles")["items"]}
+    assert "ticket.edit" in roles["All Access"]["permissions"] and roles["All Access"]["enabled"] is True
+    kinds = {p["key"]: p["kind"] for p in bridge.read("/api/v1/permissions")["permissions"]}
+    assert kinds["user.dir"] == "global" and kinds["task.reply"] == "role"
+
+    # login and /auth/me are typed in the schema (clients generate their types from it)
+    schema = bridge.read("/openapi.json") if bridge.get("/openapi.json").status_code == 200 else None
+    if schema:
+        assert "global_permissions" in schema["components"]["schemas"]["Me"]["properties"]
 
     # tasks: search, sort and the real total
     t1 = bridge.create("/api/v1/tasks/", {"title": f"e2e qtask {uniq} alpha", "description": "d", "dept_id": 1}, cleanup="/api/v1/tasks/{id}")

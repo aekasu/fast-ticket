@@ -77,6 +77,7 @@ def _row_to_thread_entry(row: dict, attachments: list[dict] | None = None) -> Th
         poster=row.get("poster"),
         ip_address=row.get("ip_address"),
         created=row["created"],
+        format="html" if (row.get("format") or "text") == "html" else "text",
         is_edited=bool(row.get("is_edited", False)),
     )
 

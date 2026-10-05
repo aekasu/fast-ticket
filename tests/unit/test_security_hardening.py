@@ -83,12 +83,10 @@ def test_fewer_hops_than_proxies_falls_back_to_the_socket_peer(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_the_default_limit_returns_429_through_the_middleware():
-    from slowapi import _rate_limit_exceeded_handler
-
     small = Limiter(key_func=rate_limit.client_ip, default_limits=["3/minute"])
     app = FastAPI()
     app.state.limiter = small
-    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+    app.add_exception_handler(RateLimitExceeded, rate_limit.rate_limit_exceeded_handler)
     app.add_middleware(SlowAPIMiddleware)
 
     @app.get("/ping")
@@ -96,8 +94,11 @@ async def test_the_default_limit_returns_429_through_the_middleware():
         return {"ok": True}
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as client:
-        codes = [(await client.get("/ping")).status_code for _ in range(5)]
-    assert codes == [200, 200, 200, 429, 429]
+        responses = [await client.get("/ping") for _ in range(5)]
+    assert [r.status_code for r in responses] == [200, 200, 200, 429, 429]
+    limited = responses[-1]
+    assert 1 <= int(limited.headers["Retry-After"]) <= 60     # seconds until a slot frees
+    assert "Rate limit exceeded" in limited.json()["detail"]   # the API's own error shape
 
 
 def test_the_real_app_installs_both_middlewares():

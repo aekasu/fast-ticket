@@ -72,6 +72,11 @@ class TicketListItem(BaseModel):
     updated: datetime
     closed: Optional[datetime] = None
     due_date: Optional[datetime] = None
+    est_due_date: Optional[datetime] = Field(
+        default=None, description="osTicket's due date: the manual one, else the SLA's estimate (what its pages show)")
+    is_overdue: bool = Field(default=False, description="osTicket's overdue flag (what the Overdue queue lists)")
+    last_activity: Optional[datetime] = Field(
+        default=None, description="osTicket's 'Last Updated' (lastupdate): moves on a message or a response")
 
 
 class Attachment(BaseModel):
@@ -88,6 +93,7 @@ class ThreadEntry(BaseModel):
     type: str = Field(description="Entry type: M=message, R=reply, N=note, E=event")
     title: Optional[str] = None
     body: str
+    format: Literal["text", "html"] = Field(default="text", description="How osTicket stores the body")
     staff_id: Optional[int] = None
     user_id: Optional[int] = None
     poster: Optional[str] = None
@@ -131,7 +137,7 @@ class TicketDetail(TicketListItem):
 
 
 TicketQueue = Literal["open", "unanswered", "answered", "overdue", "mine", "assigned_me", "assigned_teams", "closed"]
-TicketSort = Literal["updated", "created", "due_date", "number", "subject", "status", "dept", "priority", "assignee", "requester"]
+TicketSort = Literal["updated", "last_activity", "created", "due_date", "number", "subject", "status", "dept", "priority", "assignee", "requester"]
 
 
 class QueueCount(BaseModel):

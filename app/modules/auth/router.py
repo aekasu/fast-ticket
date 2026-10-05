@@ -20,13 +20,14 @@ from app.core.auth import (
 from app.core.config import settings
 from app.core.login_throttle import LoginThrottle
 from app.core.rate_limit import client_ip, limiter
+from app.modules.auth.models import Me, TokenResponse
 
 router = APIRouter(tags=["auth"])
 
 login_throttle = LoginThrottle(settings.LOGIN_MAX_ATTEMPTS, settings.LOGIN_LOCKOUT_SECONDS)
 
 
-@router.post("/login", summary="Authenticate with osTicket credentials")
+@router.post("/login", response_model=TokenResponse, summary="Authenticate with osTicket credentials")
 @limiter.limit("10/minute")
 async def login(
     request: Request,  # required by slowapi for rate-limit key extraction
@@ -73,7 +74,7 @@ async def login(
     }
 
 
-@router.get("/me", summary="Who you are and what osTicket currently lets you do")
+@router.get("/me", response_model=Me, summary="Who you are and what osTicket currently lets you do")
 async def me(current_user: dict = Depends(get_current_user)):
     """The authenticated agent's identity and current access, read from osTicket just now.
 

@@ -173,7 +173,12 @@ _TICKET_SELECT = """
         t.created,
         t.updated,
         t.closed,
-        t.duedate                    AS due_date
+        t.duedate                    AS due_date,
+        -- osTicket's Ticket::getEstDueDate(): the manual due date, else the SLA's estimate
+        COALESCE(t.duedate, t.est_duedate) AS est_due_date,
+        t.isoverdue                  AS is_overdue,
+        -- osTicket's "Last Updated" (lastupdate): moves on a message or a response, not on a note or an edit
+        NULLIF(t.lastupdate, '0000-00-00 00:00:00') AS last_activity
     FROM ost_ticket t
     LEFT JOIN ost_ticket_status ts ON t.status_id = ts.id
     -- the subject is an answer of the ticket form, mirrored in ost_ticket__cdata
@@ -210,7 +215,8 @@ def _queue_condition(queue: str, access: "Scope") -> str:
 
 _TICKET_SORTS = {   # the columns of osTicket's ticket queue; priority sorts by urgency (ascending = most urgent first)
     "updated": ["t.updated"], "created": ["t.created"], "due_date": ["t.duedate"], "number": ["t.number"],
-    "subject": ["c.subject"], "status": ["ts.name"], "dept": ["d.name"], "priority": ["pr.priority_urgency"],
+    "last_activity": ["t.lastupdate"],
+    "subject": ["c.subject"], "status": ["ts.name"], "dept": ["d.name"], "priority": ["pr.priority_urgency", "t.updated DESC"],   # ties: most recently updated first, as osTicket's default queue
     "assignee": ["s.firstname", "s.lastname"], "requester": ["u.name"],
 }
 
@@ -264,7 +270,9 @@ async def list_tickets(
         access, status_id=status_id, dept_id=dept_id, assignee_staff_id=assignee_staff_id,
         assignee_team_id=assignee_team_id, topic_id=topic_id, sla_id=sla_id, is_answered=is_answered, q=q, queue=queue)
     direction = "DESC" if descending else "ASC"
-    order = ", ".join(f"{column} {direction}" for column in _TICKET_SORTS.get(sort, ["t.updated"]))
+    order = ", ".join(
+        column if column.endswith((" ASC", " DESC")) else f"{column} {direction}"   # a fixed tie-break keeps its own direction
+        for column in _TICKET_SORTS.get(sort, ["t.updated"]))
     sql = (
         _TICKET_SELECT + " WHERE " + " AND ".join(where)
         + f" ORDER BY {order}, t.ticket_id {direction} LIMIT :limit OFFSET :offset"
@@ -361,6 +369,7 @@ async def get_ticket_thread(session: AsyncSession, ticket_id: int, *, access: "S
             te.ip_address,
             te.created,
             (te.flags & 2) > 0 AS is_edited,
+            COALESCE(NULLIF(te.format, ''), 'text') AS format,
             CASE
                 WHEN te.staff_id > 0 THEN CONCAT(s.firstname, ' ', s.lastname)
                 WHEN te.user_id  > 0 THEN u.name
@@ -960,6 +969,21 @@ async def get_sla(session: AsyncSession, sla_id: int) -> dict | None:
 
 
 # ── Priorities ────────────────────────────────────────────────────────────────
+
+async def list_roles(session: AsyncSession, limit: int = 50, offset: int = 0) -> list:
+    sql = """
+        SELECT
+            r.id,
+            COALESCE(r.name, '') AS name,
+            COALESCE(r.notes, '') AS notes,
+            (r.flags & 1) > 0 AS enabled,
+            r.permissions
+        FROM ost_role r
+        ORDER BY r.name ASC, r.id ASC LIMIT :limit OFFSET :offset
+    """
+    result = await session.execute(_sql(sql), {"limit": limit, "offset": offset})
+    return list(result.mappings().all())
+
 
 async def list_priorities(session: AsyncSession, limit: int = 50, offset: int = 0) -> list:
     sql = """
@@ -1619,6 +1643,7 @@ async def get_task_thread(session: AsyncSession, task_id: int, *, access: "Scope
             te.ip_address,
             te.created,
             (te.flags & 2) > 0 AS is_edited,
+            COALESCE(NULLIF(te.format, ''), 'text') AS format,
             CASE
                 WHEN te.staff_id > 0 THEN CONCAT(s.firstname, ' ', s.lastname)
                 WHEN te.user_id  > 0 THEN u.name

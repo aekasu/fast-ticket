@@ -18,8 +18,13 @@ The default limit (``RATE_LIMIT_DEFAULT``) applies to every HTTP route through
 middleware is installed.
 """
 
+import math
+import time
+
 from slowapi import Limiter
+from slowapi.errors import RateLimitExceeded
 from starlette.requests import Request
+from starlette.responses import JSONResponse
 
 from app.core.config import settings
 
@@ -46,3 +51,25 @@ limiter = Limiter(
     default_limits=[settings.RATE_LIMIT_DEFAULT],
     storage_uri=settings.RATE_LIMIT_STORAGE_URI,
 )
+
+
+def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded) -> JSONResponse:
+    """429 in the API's own error shape (``detail``) with ``Retry-After``: the seconds until the window frees a slot.
+
+    slowapi's stock handler answers ``{"error": ...}`` and sends ``Retry-After`` only when its header
+    injection is enabled (which also adds ``X-RateLimit-*`` to every response); this one sets just what a
+    client needs.
+    """
+    retry_after = 60
+    try:
+        item, args = request.state.view_rate_limit
+        retry_after = item.get_expiry()   # the whole window, if the exact reset cannot be read
+        reset_at = request.app.state.limiter.limiter.get_window_stats(item, *args)[0]
+        retry_after = max(1, math.ceil(reset_at - time.time()))
+    except Exception:   # never let the 429 itself fail
+        pass
+    return JSONResponse(
+        {"detail": f"Rate limit exceeded: {exc.detail}"},
+        status_code=429,
+        headers={"Retry-After": str(retry_after)},
+    )

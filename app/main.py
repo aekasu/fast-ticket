@@ -16,7 +16,6 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
@@ -24,7 +23,7 @@ from app.api.router import api_router
 from app.core.config import settings
 from app.core.access import load_access_context
 from app.core.db import AsyncSessionLocal, create_db_and_tables
-from app.core.rate_limit import limiter
+from app.core.rate_limit import limiter, rate_limit_exceeded_handler
 from app.core.request_limits import BodySizeLimitMiddleware
 from app.core.security_headers import SecurityHeadersMiddleware
 from app.core.ws_manager import manager as ws_manager
@@ -144,7 +143,7 @@ app = FastAPI(
 # Rate limiter — SlowAPIMiddleware is what enforces the default limit on every route; without it
 # only routes carrying an explicit @limiter.limit decorator (login) would be limited.
 app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
 
 
 @app.exception_handler(InvalidIdempotencyKey)

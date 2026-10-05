@@ -18,6 +18,7 @@ UNSCOPED_BY_DESIGN = {
     "get_banlist_entry": "Admin Panel (banlist)", "list_banlist": "Admin Panel (banlist)",
     "get_form": "Admin Panel (dynamic forms)", "get_form_fields": "Admin Panel (dynamic forms)",
     "list_forms": "Admin Panel (dynamic forms)",
+    "list_roles": "Admin Panel (roles)",
     "get_sla": "Admin Panel (SLA plans)", "list_slas": "Admin Panel (SLA plans)",
     "get_staff": "Admin Panel (agents)", "list_staff": "Admin Panel (agents)",
     "get_staff_teams": "Admin Panel (agents) — team ids on an agent's detail",

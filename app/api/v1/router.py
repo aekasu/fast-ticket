@@ -12,6 +12,7 @@ from app.modules.lookups.router import router as lookups_router
 from app.modules.search.router import router as search_router
 from app.modules.staff.router import router as staff_router
 from app.modules.tasks.router import router as tasks_router
+from app.modules.roles.router import router as roles_router
 from app.modules.tickets.router import router as tickets_router
 from app.modules.users.router import router as users_router
 
@@ -94,3 +95,6 @@ async def websocket_endpoint(ws: WebSocket):
         pass
     finally:
         manager.disconnect(client)
+
+# ── Roles and permission keys ────────────────────────────────────────────────
+v1_router.include_router(roles_router)
