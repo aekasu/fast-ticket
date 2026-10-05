@@ -727,6 +727,19 @@ def test_task_lifecycle(bridge, uniq):
     bridge.command("POST", f"/api/v1/tasks/{tid}/reply", {"message": "an update for collaborators"})
     assert any("an update for collaborators" in e["body"] for e in bridge.read(f"/api/v1/tasks/{tid}")["thread"])
 
+    turl = f"/api/v1/tasks/{tid}"
+    update = next(e for e in bridge.read(turl)["thread"] if "an update for collaborators" in e["body"])
+    done = bridge.command("PATCH", f"{turl}/thread/{update['id']}", {"body": "an edited update"})
+    assert done["result"]["changed"] is True and done["result"]["new_entry_id"] != update["id"]
+    thread = bridge.read(turl)["thread"]
+    assert not any("an update for collaborators" in e["body"] for e in thread)       # superseded version hidden
+    edited = next(e for e in thread if e["id"] == done["result"]["new_entry_id"])
+    assert edited["is_edited"] is True and "an edited update" in edited["body"]
+    assert any("a task note" in e["body"] for e in thread)                            # others untouched
+    if edited["type"] == "R":
+        bridge.command("POST", f"{turl}/thread/{edited['id']}/resend", {"signature": "none"})
+    bridge.refuses("PATCH", f"{turl}/thread/999999", {"body": "x"}, because="not found")
+
     # claim (held by me already -> allowed), team assignment, transfer
     bridge.command("POST", f"/api/v1/tasks/{tid}/claim", {"note": "mine"})
     team = bridge.create("/api/v1/teams", {"name": f"e2e-task-team-{uniq}", "members": [1]}, cleanup="/api/v1/teams/{id}")

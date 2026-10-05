@@ -24,7 +24,7 @@ from app.modules.tasks.models import (
     TaskTransfer,
     TaskStatusSchema,
 )
-from app.modules.tickets.models import Attachment, CommandResponse, ThreadEntry
+from app.modules.tickets.models import Attachment, CommandResponse, ThreadEntry, TicketEntryEdit, TicketEntryResend
 
 logger = logging.getLogger(__name__)
 
@@ -218,6 +218,46 @@ async def transfer_task(
         aggregate_type="task",
         aggregate_id=str(task_id),
         payload={"task_id": task_id, **body.model_dump()},
+        requested_by_staff_id=staff_id,
+        idempotency_key=idempotency_key,
+    )
+    return _cmd_resp(cmd, idempotency_key)
+
+
+async def edit_entry(
+    session: AsyncSession,
+    task_id: int,
+    entry_id: int,
+    body: TicketEntryEdit,
+    staff_id: int,
+    idempotency_key: str | None,
+) -> CommandResponse:
+    cmd = await dispatch_command(
+        session=session,
+        command_type="task.entry.edit",
+        aggregate_type="task",
+        aggregate_id=str(task_id),
+        payload={"task_id": task_id, "entry_id": entry_id, **body.model_dump(exclude_none=True)},
+        requested_by_staff_id=staff_id,
+        idempotency_key=idempotency_key,
+    )
+    return _cmd_resp(cmd, idempotency_key)
+
+
+async def resend_entry(
+    session: AsyncSession,
+    task_id: int,
+    entry_id: int,
+    body: TicketEntryResend,
+    staff_id: int,
+    idempotency_key: str | None,
+) -> CommandResponse:
+    cmd = await dispatch_command(
+        session=session,
+        command_type="task.entry.resend",
+        aggregate_type="task",
+        aggregate_id=str(task_id),
+        payload={"task_id": task_id, "entry_id": entry_id, **body.model_dump()},
         requested_by_staff_id=staff_id,
         idempotency_key=idempotency_key,
     )

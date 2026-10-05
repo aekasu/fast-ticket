@@ -10,7 +10,7 @@ Writes — permission map (role permissions):
   task.transfer — transfer to another department
   task.delete  — delete tasks
   task.edit    — edit task metadata
-  task.reply   — add notes and post updates
+  task.reply   — add notes and post updates; edit and resend thread entries (the bridge applies osTicket's exact edit rule)
 """
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
@@ -35,7 +35,7 @@ from app.modules.tasks.models import (
     TaskReply,
     TaskTransfer,
 )
-from app.modules.tickets.models import CommandResponse
+from app.modules.tickets.models import CommandResponse, TicketEntryEdit, TicketEntryResend
 
 router = APIRouter(tags=["tasks"])
 
@@ -221,6 +221,44 @@ async def reply_to_task(
 ):
     return await service.reply_to_task(
         session, task_id, body, current_user["staff_id"], idempotency_key
+    )
+
+
+@router.patch(
+    "/{task_id}/thread/{entry_id}",
+    response_model=CommandResponse,
+    status_code=202,
+    summary="Edit a thread entry (the entry gets a new id; the old one is hidden)",
+)
+async def edit_entry(
+    task_id: int,
+    entry_id: int,
+    body: TicketEntryEdit,
+    current_user: dict = require_perm("task.reply"),   # gate; the bridge applies osTicket's exact edit rule
+    session: AsyncSession = Depends(get_session),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    return await service.edit_entry(
+        session, task_id, entry_id, body, current_user["staff_id"], idempotency_key
+    )
+
+
+@router.post(
+    "/{task_id}/thread/{entry_id}/resend",
+    response_model=CommandResponse,
+    status_code=202,
+    summary="Resend a staff reply to the task's collaborators",
+)
+async def resend_entry(
+    task_id: int,
+    entry_id: int,
+    body: TicketEntryResend,
+    current_user: dict = require_perm("task.reply"),
+    session: AsyncSession = Depends(get_session),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    return await service.resend_entry(
+        session, task_id, entry_id, body, current_user["staff_id"], idempotency_key
     )
 
 

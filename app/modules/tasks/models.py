@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field, model_validator
 
 from app.core.custom_fields import CustomFieldAnswer, CustomFields
 
-from app.modules.tickets.models import CommandResponse, ThreadEntry  # reuse shared types
+from app.modules.tickets.models import CommandResponse, ThreadEntry, TicketEntryEdit, TicketEntryResend  # reuse shared types
 
 __all__ = ["CommandResponse", "ThreadEntry"]  # re-export for convenience
 

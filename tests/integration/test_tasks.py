@@ -437,3 +437,21 @@ async def test_task_custom_fields_are_queued_on_create_and_edit():
     rows = await _inbox_rows()
     assert json.loads(rows[0].payload)["custom_fields"] == {"site": "HQ"}
     assert json.loads(rows[1].payload)["custom_fields"] == {"site": "DC", "rack": 4}
+
+
+@pytest.mark.asyncio
+async def test_task_entry_edit_and_resend_queue_commands_and_check_permission():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        edit = await ac.patch(TASKS_URL + "/5/thread/8", json={"body": "new text", "resend": True},
+                              headers=_auth(["task.reply"]))
+        resend = await ac.post(TASKS_URL + "/5/thread/8/resend", json={"signature": "mine"}, headers=_auth(["task.reply"]))
+        empty = await ac.patch(TASKS_URL + "/5/thread/8", json={}, headers=_auth(["task.reply"]))
+        denied = await ac.patch(TASKS_URL + "/5/thread/8", json={"body": "x"}, headers=_auth(["task.close"]))
+        anon = await ac.post(TASKS_URL + "/5/thread/8/resend", json={})
+    assert (edit.status_code, resend.status_code, empty.status_code, denied.status_code, anon.status_code) == (
+        202, 202, 422, 403, 401)
+    rows = await _inbox_rows()
+    assert [r.command_type for r in rows] == ["task.entry.edit", "task.entry.resend"]
+    assert json.loads(rows[0].payload) == {"task_id": 5, "entry_id": 8, "body": "new text", "resend": True,
+                                           "signature": "none"}
+    assert json.loads(rows[1].payload) == {"task_id": 5, "entry_id": 8, "signature": "mine"}
