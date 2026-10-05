@@ -27,6 +27,7 @@ from app.core.rate_limit import limiter, rate_limit_exceeded_handler
 from app.core.request_limits import BodySizeLimitMiddleware
 from app.core.security_headers import SecurityHeadersMiddleware
 from app.core.timezone import load_database_timezone
+from app.core.uploads import upload_request_limit
 from app.core.ws_manager import manager as ws_manager
 from app.integration.osticket.commands_service import IdempotencyKeyReused, InvalidIdempotencyKey
 from app.workers.events import poll_and_process_events, purge_old_events
@@ -160,7 +161,13 @@ async def _invalid_idempotency_key(request, exc):
 
 
 app.add_middleware(SlowAPIMiddleware)
-app.add_middleware(BodySizeLimitMiddleware, max_bytes=settings.MAX_REQUEST_BYTES)
+app.add_middleware(
+    BodySizeLimitMiddleware,
+    max_bytes=settings.MAX_REQUEST_BYTES,
+    # the routes that take files (a reply or a note on a ticket or a task) carry a larger body
+    upload_max_bytes=upload_request_limit(),
+    upload_paths=r"^/api/v1/(tickets|tasks)/\d+/(reply|note)$",
+)
 
 # CORS (added last so it is outermost: 413/429 responses still carry the CORS headers)
 app.add_middleware(

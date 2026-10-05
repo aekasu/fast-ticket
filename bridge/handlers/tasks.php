@@ -274,7 +274,10 @@ class FastApiTaskHandler {
             throw new Exception("A reply 'message' is required.");
         }
         $errors = [];
-        $entry = $task->postReply(['response' => $message, 'ip_address' => '127.0.0.1'], $errors, false);
+        $entry = $task->postReply([
+            'response' => $message, 'ip_address' => '127.0.0.1',
+            'files' => FastApiAttachments::upload((array) ($payload['attachments'] ?? [])),
+        ], $errors, false);
         if (!$entry || $errors) {
             throw new Exception('Reply could not be posted: ' . json_encode($errors ?: 'post failed'));
         }
@@ -360,7 +363,10 @@ class FastApiTaskHandler {
             throw new Exception("A note 'note' is required.");
         }
         $errors = [];
-        $entry = $task->postNote(['title' => (string) ($payload['title'] ?? ''), 'note' => $note], $errors, $thisstaff);
+        $entry = $task->postNote([
+            'title' => (string) ($payload['title'] ?? ''), 'note' => $note,
+            'files' => FastApiAttachments::upload((array) ($payload['attachments'] ?? [])),
+        ], $errors, $thisstaff);
         if (!$entry || $errors) {
             throw new Exception('Note could not be posted: ' . json_encode($errors ?: 'post failed'));
         }

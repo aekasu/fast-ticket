@@ -101,6 +101,15 @@ class Settings(BaseSettings):
     MAX_REQUEST_BYTES: int = Field(
         default=1_000_000, ge=1_000, description="Largest accepted request body; bigger gets 413."
     )
+    ATTACHMENT_MAX_FILE_BYTES: int = Field(
+        default=10_000_000, ge=1_000, description="Largest attachment (decoded) the API accepts; osTicket's own max_file_size also applies."
+    )
+    ATTACHMENT_MAX_FILES: int = Field(default=10, ge=1, le=50, description="Most attachments in one request.")
+    ATTACHMENT_MAX_TOTAL_BYTES: int = Field(
+        default=20_000_000, ge=1_000,
+        description="Most attachment bytes (decoded) in one request. Routes that take files accept bodies up to this plus a third, plus MAX_REQUEST_BYTES.",
+    )
+    CSV_IMPORT_MAX_BYTES: int = Field(default=1_000_000, ge=1_000, description="Largest CSV a user import accepts.")
 
     # ── Security ──────────────────────────────────────────────────────────────
     API_DOCS_ENABLED: bool = Field(

@@ -324,7 +324,7 @@ class FastApiIntegrationPlugin extends Plugin {
     }
 
     /** Keys whose values are secrets (a staff member's password); matches the API's own masking. */
-    const SECRET_KEY = '/pass(word|wd)?|secret|token/i';
+    const SECRET_KEY = '/pass(word|wd)?|secret|token|file_data/i';
 
     private static function redactSecrets($value, &$changed) {
         if (!is_array($value))

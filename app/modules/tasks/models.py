@@ -5,6 +5,7 @@ from typing import Literal, Optional
 from pydantic import BaseModel, Field, model_validator
 
 from app.core.timezone import Instant, UtcInput
+from app.core.uploads import WithAttachments
 from app.core.custom_fields import CustomFieldAnswer, CustomFields
 
 from app.modules.tickets.models import (
@@ -118,7 +119,7 @@ class TaskTransfer(BaseModel):
     note: str = Field(default="", max_length=10000)
 
 
-class TaskReply(BaseModel):
+class TaskReply(WithAttachments):
     """An update posted to the task's collaborators."""
 
     message: str = Field(min_length=1, max_length=100000)
@@ -132,7 +133,7 @@ class TaskReopen(BaseModel):
     note: str = ""
 
 
-class TaskNote(BaseModel):
+class TaskNote(WithAttachments):
     title: str = ""
     note: str = Field(min_length=1)
 

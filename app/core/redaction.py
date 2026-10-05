@@ -12,7 +12,7 @@ import json
 import re
 from typing import Any
 
-SECRET_KEY = r"pass(word|wd)?|secret|token"
+SECRET_KEY = r"pass(word|wd)?|secret|token|file_data"   # file_data: an attachment's bytes in a command payload
 _SECRET = re.compile(SECRET_KEY, re.IGNORECASE)
 MASK = "[redacted]"
 

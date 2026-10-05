@@ -228,6 +228,7 @@ class FastApiTicketHandler {
             'response'  => $message,
             // osTicket's signature choices are none | mine | dept
             'signature' => in_array($signature, ['none', 'mine', 'dept'], true) ? $signature : 'none',
+            'files'     => FastApiAttachments::upload((array) ($payload['attachments'] ?? [])),
         ];
         $errors = [];
         // claim=false: a reply through the API must not silently assign the ticket.
@@ -246,7 +247,10 @@ class FastApiTicketHandler {
             throw new Exception("A note 'message' is required.");
         }
         $errors = [];
-        $entry = $ticket->postNote(['note' => $message, 'title' => (string) ($payload['title'] ?? '')], $errors, $thisstaff, true);
+        $entry = $ticket->postNote([
+            'note' => $message, 'title' => (string) ($payload['title'] ?? ''),
+            'files' => FastApiAttachments::upload((array) ($payload['attachments'] ?? [])),
+        ], $errors, $thisstaff, true);
         if (!$entry || $errors) {
             throw new Exception('Note was not posted: ' . self::errorText($errors));
         }

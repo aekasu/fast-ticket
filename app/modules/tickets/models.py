@@ -11,6 +11,7 @@ from typing import Literal, Optional
 from pydantic import BaseModel, Field, model_validator
 
 from app.core.timezone import Instant, UtcInput
+from app.core.uploads import WithAttachments
 from app.core.custom_fields import CustomFieldAnswer, CustomFields
 
 
@@ -200,7 +201,7 @@ class TicketCreate(BaseModel):
         return self
 
 
-class TicketReply(BaseModel):
+class TicketReply(WithAttachments):
     message: str = Field(min_length=1)
     signature: Literal["none", "mine", "dept"] = Field(
         default="none",
@@ -208,7 +209,7 @@ class TicketReply(BaseModel):
                     "department's. It does not change the stored thread, only the email.")
 
 
-class TicketNote(BaseModel):
+class TicketNote(WithAttachments):
     title: str = ""
     message: str = Field(min_length=1)
 

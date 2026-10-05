@@ -339,7 +339,7 @@ async def reply_to_task(
         command_type="task.reply",
         aggregate_type="task",
         aggregate_id=str(task_id),
-        payload={"task_id": task_id, **body.model_dump()},
+        payload={"task_id": task_id, **body.command_payload()},
         requested_by_staff_id=staff_id,
         idempotency_key=idempotency_key,
     )
@@ -396,7 +396,7 @@ async def add_note(
         command_type="task.note",
         aggregate_type="task",
         aggregate_id=str(task_id),
-        payload={"task_id": task_id, **body.model_dump()},
+        payload={"task_id": task_id, **body.command_payload()},
         requested_by_staff_id=staff_id,
         idempotency_key=idempotency_key,
     )

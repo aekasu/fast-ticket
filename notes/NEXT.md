@@ -13,7 +13,7 @@ a UI or more API breadth on your own. If the user instead asks for API work, pic
 ## Where things stand
 
 - **All committed, tree clean** (except the user's own `.claude/settings.json` — never commit it). Last commit
-  `b3b9d41`. Verified at that commit: `make test` 776, `make test-docker` 776, `make test-e2e` 66 on a rebuilt stack
+  `b3b9d41`. Verified at that commit: `make test` 784, `make test-docker` 784, `make test-e2e` 66 on a rebuilt stack
   (includes the oracle against osTicket's own PHP), `make doctor` 0 failed (one expected warning: the compose stack
   uses one all-privileges DB user). Security review of the new code: nothing at high confidence.
 - Built, in order: bridge worker + portability, security overhaul S0–S6, access cache, ticket lifecycle (PATCH, claim,

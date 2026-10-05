@@ -19,6 +19,7 @@ UNSCOPED_BY_DESIGN = {
     "get_form": "Admin Panel (dynamic forms)", "get_form_fields": "Admin Panel (dynamic forms)",
     "list_forms": "Admin Panel (dynamic forms)",
     "list_roles": "Admin Panel (roles)",
+    "get_max_file_size": "instance setting a client needs to build an upload form",
     "get_object_forms": "form definitions osTicket shows every agent on its create/edit pages (enabled, agent-visible fields)",
     "get_agent_form_fields": "form definitions osTicket shows every agent on its create/edit pages (enabled, agent-visible fields)",
     "get_list_items": "custom-list items a form field offers to agents",

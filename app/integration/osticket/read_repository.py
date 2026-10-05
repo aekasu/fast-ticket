@@ -974,6 +974,16 @@ async def get_sla(session: AsyncSession, sla_id: int) -> dict | None:
 
 # ── Priorities ────────────────────────────────────────────────────────────────
 
+async def get_max_file_size(session: AsyncSession) -> int:
+    """osTicket's maximum attachment size in bytes (``max_file_size``; 0 if it is not set)."""
+    value = (await session.execute(
+        _sql("SELECT value FROM ost_config WHERE namespace = 'core' AND `key` = 'max_file_size' LIMIT 1"))).scalar_one_or_none()
+    try:
+        return max(int(value), 0)
+    except (TypeError, ValueError):
+        return 0
+
+
 async def get_database_timezone(session: AsyncSession) -> dict:
     """The timezone naive osTicket timestamps are in: osTicket's persisted ``db_timezone`` setting and the server's
     ``time_zone`` / ``system_time_zone`` (osTicket's own ``db_timezone()`` reads the same two)."""

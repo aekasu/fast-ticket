@@ -277,3 +277,38 @@ class FastApiThreadEntry {
     }
 }
 }
+
+if (!class_exists('FastApiAttachments')) {
+/**
+ * Files that arrive in a command payload (a reply or note attachment) as base64: stored through osTicket's own
+ * upload field, the one the staff panel's reply form uses (FileUploadField::uploadAttachment — it applies the
+ * admin's maximum file size and refuses with osTicket's words), and returned as the {id, name} entries
+ * ThreadEntry::add() takes in $vars['files'].
+ */
+class FastApiAttachments {
+
+    static function upload(array $files) {
+        $out = [];
+        if (!$files) {
+            return $out;
+        }
+        // as scp/tickets.php configures its response/note attachment fields: any extension, the system's size cap
+        $field = new FileUploadField(['id' => 'attach', 'name' => 'attach:api', 'configuration' => ['extensions' => '']]);
+        foreach ($files as $info) {
+            $name = trim((string) ($info['name'] ?? ''));
+            $bytes = base64_decode((string) ($info['file_data'] ?? ''), true);
+            if ($name === '' || $bytes === false || $bytes === '') {
+                throw new Exception("Attachment '{$name}' is not a file with a name and base64 data.");
+            }
+            $file = ['name' => $name, 'type' => (string) ($info['type'] ?? ''), 'data' => $bytes, 'size' => strlen($bytes)];
+            try {
+                $stored = $field->uploadAttachment($file);
+            } catch (FileUploadError $e) {
+                throw new Exception("Attachment '{$name}': " . $e->getMessage());
+            }
+            $out[] = ['id' => $stored->getId(), 'name' => $name];
+        }
+        return $out;
+    }
+}
+}

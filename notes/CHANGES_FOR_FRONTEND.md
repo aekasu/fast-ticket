@@ -6,6 +6,24 @@ After a backend change run `npm run api:pull && npm run api:types`, read the sna
 list below and remove the met entries from `BACKEND_REQUESTS.md`. This file is the backend's side of that handshake;
 delete an entry once the frontend has adopted it.
 
+## 2026-10-05 — attachment upload on replies and notes (size-capped base64)
+
+**New.** `POST /tickets/{id}/reply`, `POST /tickets/{id}/note`, `POST /tasks/{id}/reply` and `POST /tasks/{id}/note` accept
+`attachments: [{name, content_type?, data}]`: `data` is the file's bytes in base64 (no `data:` prefix), `name` has no path,
+`content_type` is optional (osTicket detects it). Caps: `GET /settings/attachments` (any agent) returns
+`{max_file_bytes, osticket_max_file_bytes, api_max_file_bytes, max_files, max_total_bytes}`; `max_file_bytes` is the
+effective per-file limit (osTicket's admin setting `max_file_size`, 1 MB by default, or the API's cap if smaller).
+Over a cap on the API side is a 422 before anything is queued; osTicket's own size refusal comes back as the
+command's `error_message` ("File size is too large").
+The files appear on the new thread entry's `attachments` and download with the existing
+`GET /tickets/{id}/attachments/{attachment_id}` (tasks: `/tasks/...`). The request body limit is raised on these four
+routes only.
+
+**Frontend to do.** Add a file picker to the reply and note forms (ticket and task): read each file with `FileReader`
+/ `arrayBuffer`, base64 it, refuse a file over `max_file_bytes` or too many files client-side using the limits
+endpoint, and send them with the message in one request (one `Idempotency-Key`). Show osTicket's `error_message` on a
+refusal. Not available yet: attachments on ticket or task *create*, on canned responses or FAQs.
+
 ## 2026-10-05 — custom answers are typed (additive)
 
 Every `custom_fields[]` answer (tickets, tasks, users, organizations) now has `kind` and the decoded value beside the

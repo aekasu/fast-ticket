@@ -283,7 +283,7 @@ async def reply_to_ticket(
         command_type="ticket.reply",
         aggregate_type="ticket",
         aggregate_id=str(ticket_id),
-        payload={"ticket_id": ticket_id, **body.model_dump()},
+        payload={"ticket_id": ticket_id, **body.command_payload()},
         requested_by_staff_id=staff_id,
         idempotency_key=idempotency_key,
     )
@@ -302,7 +302,7 @@ async def add_note(
         command_type="ticket.note",
         aggregate_type="ticket",
         aggregate_id=str(ticket_id),
-        payload={"ticket_id": ticket_id, **body.model_dump()},
+        payload={"ticket_id": ticket_id, **body.command_payload()},
         requested_by_staff_id=staff_id,
         idempotency_key=idempotency_key,
     )
