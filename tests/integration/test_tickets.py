@@ -654,6 +654,7 @@ async def test_all_write_endpoints_require_auth():
         ("POST",   "/1/answered"),
         ("POST",   "/1/unanswered"),
         ("POST",   "/1/collaborators"),
+        ("DELETE", "/1/referrals/3"),
     ]
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         for method, path in endpoints:
@@ -704,6 +705,31 @@ async def test_collaborator_list_is_scoped_and_404s_for_an_invisible_ticket():
     assert ok.json() == {"collaborators": [{"id": 1, "user_id": 7, "name": "U", "email": "u@example.com",
                                             "is_active": False, "is_cc": True}]}
     assert collab.await_args.kwargs["access"].staff_id == 5
+
+
+@pytest.mark.asyncio
+async def test_referral_list_is_scoped_and_remove_queues_a_command():
+    refs = AsyncMock(return_value=[
+        {"id": 3, "object_type": "E", "object_id": 2, "name": "Tier 2", "created": "2026-10-01 10:00:00"},
+        {"id": 4, "object_type": "X", "object_id": 9, "name": "", "created": "2026-10-01 10:00:00"},
+    ])
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        with patch("app.modules.tickets.service.repo.get_ticket", new=AsyncMock(return_value=None)):
+            missing = await ac.get(TICKETS_URL + "/9/referrals", headers=_auth([]))
+        with patch("app.modules.tickets.service.repo.get_ticket", new=AsyncMock(return_value={"ticket_id": 9})), \
+             patch("app.modules.tickets.service.repo.get_ticket_referrals", new=refs):
+            ok = await ac.get(TICKETS_URL + "/9/referrals", headers=_auth([]))
+        rem = await ac.delete(TICKETS_URL + "/5/referrals/3", headers={**_auth(["ticket.assign"]), "Idempotency-Key": "rr-1"})
+        again = await ac.delete(TICKETS_URL + "/5/referrals/3", headers={**_auth(["ticket.assign"]), "Idempotency-Key": "rr-1"})
+        denied = await ac.delete(TICKETS_URL + "/5/referrals/3", headers=_auth(["ticket.edit"]))
+    assert missing.status_code == 404
+    assert [r["referee_type"] for r in ok.json()["referrals"]] == ["team"]
+    assert refs.await_args.kwargs["access"].staff_id == 5
+    assert (rem.status_code, again.status_code, denied.status_code) == (202, 202, 403)
+    assert rem.json()["command_id"] == again.json()["command_id"]
+    rows = await _inbox_rows()
+    assert [r.command_type for r in rows] == ["ticket.referral.remove"]
+    assert json.loads(rows[0].payload) == {"ticket_id": 5, "referral_id": 3}
 
 
 @pytest.mark.asyncio

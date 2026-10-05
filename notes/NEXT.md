@@ -13,7 +13,7 @@ a UI or more API breadth on your own. If the user instead asks for API work, pic
 ## Where things stand
 
 - **All committed, tree clean** (except the user's own `.claude/settings.json` — never commit it). Last commit
-  `b3b9d41`. Verified at that commit: `make test` 738, `make test-docker` 738, `make test-e2e` 63 on a rebuilt stack
+  `b3b9d41`. Verified at that commit: `make test` 742, `make test-docker` 742, `make test-e2e` 63 on a rebuilt stack
   (includes the oracle against osTicket's own PHP), `make doctor` 0 failed (one expected warning: the compose stack
   uses one all-privileges DB user). Security review of the new code: nothing at high confidence.
 - Built, in order: bridge worker + portability, security overhaul S0–S6, access cache, ticket lifecycle (PATCH, claim,
@@ -76,7 +76,7 @@ Work in this order; for every item follow the "Adding a scoped read" rule in AGE
 
 **A. Ticket lifecycle gaps (agents live here) — do first**
 - ~~Edit ticket fields~~ done: `PATCH /tickets/{id}` (subject, priority, topic, SLA, source, due date, note). Not yet: other custom form-field answers (see KNOWN_LIMITS).
-- ~~Claim, release, unassign, refer~~ done (`/claim`, `/release` with staff/team flags = unassign, `/refer`). Referral list/remove still open.
+- ~~Claim, release, unassign, refer~~ done (`/claim`, `/release` with staff/team flags = unassign, `/refer`). Referral list/remove done (`GET /tickets/{id}/referrals`, `DELETE .../referrals/{referral_id}`).
 - ~~Collaborators~~ done: `GET/PATCH/DELETE /tickets/{id}/collaborators[/{user_id}]` (active/CC flags, remove).
 - Thread: ~~entry edit/resend~~ done (`PATCH /tickets/{id}/thread/{entry_id}`, `POST .../resend`; the thread read now hides superseded versions). Still open: attachments (upload/download), "post client message".
 - Ticket export (PDF/ZIP), edit lock: skip until needed (low).

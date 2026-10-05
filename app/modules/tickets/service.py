@@ -25,6 +25,8 @@ from app.modules.tickets.models import (
     CommandResponse,
     ThreadEntry,
     CollaboratorList,
+    Referral,
+    ReferralList,
     TicketCollaboratorAdd,
     TicketEntryEdit,
     TicketEntryResend,
@@ -218,6 +220,29 @@ async def list_collaborators(session: AsyncSession, ticket_id: int, *, access) -
         return None
     rows = await repo.get_ticket_collaborators(session, ticket_id, access=access)
     return CollaboratorList(collaborators=[_row_to_collaborator(dict(r)) for r in rows])
+
+
+_REFEREE_TYPES = {"S": "agent", "E": "team", "D": "department"}
+
+
+async def list_referrals(session: AsyncSession, ticket_id: int, *, access) -> ReferralList | None:
+    """The ticket's referrals, or None if the ticket does not exist or ``access`` may not open it."""
+    if await repo.get_ticket(session, ticket_id, access=access) is None:
+        return None
+    rows = await repo.get_ticket_referrals(session, ticket_id, access=access)
+    return ReferralList(
+        referrals=[
+            Referral(
+                id=r["id"],
+                referee_type=_REFEREE_TYPES[r["object_type"]],
+                referee_id=r["object_id"],
+                name=r["name"] or "",
+                created=r["created"],
+            )
+            for r in map(dict, rows)
+            if r["object_type"] in _REFEREE_TYPES
+        ]
+    )
 
 
 # ── Writes ─────────────────────────────────────────────────────────────────────
@@ -585,6 +610,25 @@ async def remove_collaborator(
         aggregate_type="ticket",
         aggregate_id=str(ticket_id),
         payload={"ticket_id": ticket_id, "user_id": user_id},
+        requested_by_staff_id=staff_id,
+        idempotency_key=idempotency_key,
+    )
+    return _make_cmd_response(cmd, idempotency_key)
+
+
+async def remove_referral(
+    session: AsyncSession,
+    ticket_id: int,
+    referral_id: int,
+    staff_id: int,
+    idempotency_key: str | None,
+) -> CommandResponse:
+    cmd = await dispatch_command(
+        session=session,
+        command_type="ticket.referral.remove",
+        aggregate_type="ticket",
+        aggregate_id=str(ticket_id),
+        payload={"ticket_id": ticket_id, "referral_id": referral_id},
         requested_by_staff_id=staff_id,
         idempotency_key=idempotency_key,
     )

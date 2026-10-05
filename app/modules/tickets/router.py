@@ -9,7 +9,7 @@ query (``read_repository.ticket_visibility``); a ticket they may not open is a 4
 Writes — permission map (role permissions — any of the agent's roles; the bridge applies osTicket's exact
 per-department check when it runs the command):
   ticket.create     ticket.reply      ticket.note (→ ticket.reply used for notes)
-  ticket.close      ticket.assign (assign, claim, refer)     ticket.transfer
+  ticket.close      ticket.assign (assign, claim, refer, remove referral)     ticket.transfer
   ticket.release    (release / unassign)
   ticket.delete     ticket.merge      ticket.markanswered
   ticket.edit       (edit fields, change owner)
@@ -34,6 +34,7 @@ from app.modules.tickets.models import (
     TicketChangeOwner,
     TicketClose,
     CollaboratorList,
+    ReferralList,
     TicketCollaboratorAdd,
     TicketEntryEdit,
     TicketEntryResend,
@@ -183,6 +184,22 @@ async def list_collaborators(
     session: AsyncSession = Depends(get_session),
 ):
     result = await service.list_collaborators(session, ticket_id, access=current_user["access"])
+    if result is None:
+        raise HTTPException(status_code=404, detail=f"Ticket {ticket_id} not found.")
+    return result
+
+
+@router.get(
+    "/{ticket_id}/referrals",
+    response_model=ReferralList,
+    summary="List the agents, teams and departments the ticket is referred to",
+)
+async def list_referrals(
+    ticket_id: int,
+    current_user: dict = require_staff(),
+    session: AsyncSession = Depends(get_session),
+):
+    result = await service.list_referrals(session, ticket_id, access=current_user["access"])
     if result is None:
         raise HTTPException(status_code=404, detail=f"Ticket {ticket_id} not found.")
     return result
@@ -403,6 +420,24 @@ async def refer_ticket(
 ):
     return await service.refer_ticket(
         session, ticket_id, body, current_user["staff_id"], idempotency_key
+    )
+
+
+@router.delete(
+    "/{ticket_id}/referrals/{referral_id}",
+    response_model=CommandResponse,
+    status_code=202,
+    summary="Remove a referral",
+)
+async def remove_referral(
+    ticket_id: int,
+    referral_id: int,
+    current_user: dict = require_perm("ticket.assign"),
+    session: AsyncSession = Depends(get_session),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    return await service.remove_referral(
+        session, ticket_id, referral_id, current_user["staff_id"], idempotency_key
     )
 
 

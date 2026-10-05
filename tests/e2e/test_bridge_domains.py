@@ -895,6 +895,14 @@ def test_ticket_claim_release_and_refer(bridge, uniq):
     bridge.refuses("POST", f"{url}/refer", {"dept_id": 1}, because="already in the department")
     bridge.refuses("POST", f"{url}/refer", {"agent_id": 99999}, because="Unknown selection")
 
+    refs = bridge.read(f"{url}/referrals")["referrals"]
+    assert [(r["referee_type"], r["referee_id"]) for r in refs] == [("department", 2), ("team", team)]
+    assert refs[1]["name"] == f"e2e-claim-team-{uniq}" and refs[0]["name"]
+    bridge.command("DELETE", f"{url}/referrals/{refs[0]['id']}")
+    left = bridge.read(f"{url}/referrals")["referrals"]
+    assert [(r["referee_type"], r["referee_id"]) for r in left] == [("team", team)]    # only that one went
+    bridge.refuses("DELETE", f"{url}/referrals/{refs[0]['id']}", None, because="Referral not found")
+
 
 def test_ticket_thread_entry_edit_and_resend(bridge, uniq):
     holder = {}

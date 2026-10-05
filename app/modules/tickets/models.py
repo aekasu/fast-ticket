@@ -110,6 +110,18 @@ class CollaboratorList(BaseModel):
     collaborators: list[Collaborator]
 
 
+class Referral(BaseModel):
+    id: int
+    referee_type: Literal["agent", "team", "department"]
+    referee_id: int
+    name: str
+    created: datetime
+
+
+class ReferralList(BaseModel):
+    referrals: list[Referral]
+
+
 class TicketDetail(TicketListItem):
     """Full ticket including thread and collaborators."""
 

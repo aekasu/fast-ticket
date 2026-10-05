@@ -471,6 +471,29 @@ async def get_ticket_collaborators(session: AsyncSession, ticket_id: int, *, acc
     return list(result.mappings().all())
 
 
+async def get_ticket_referrals(session: AsyncSession, ticket_id: int, *, access: "Scope") -> list:
+    """The ticket's referrals (agent, team or department; nothing if the agent may not open the ticket)."""
+    sql = """
+        SELECT
+            r.id,
+            r.object_type,
+            r.object_id,
+            COALESCE(CASE r.object_type
+                WHEN 'S' THEN (SELECT CONCAT(s.firstname, ' ', s.lastname) FROM ost_staff s WHERE s.staff_id = r.object_id)
+                WHEN 'E' THEN (SELECT t.name FROM ost_team t WHERE t.team_id = r.object_id)
+                WHEN 'D' THEN (SELECT d.name FROM ost_department d WHERE d.id = r.object_id)
+            END, '') AS name,
+            r.created
+        FROM ost_thread_referral r
+        JOIN ost_thread th ON th.id = r.thread_id AND th.object_type = 'T'
+        WHERE th.object_id = :ticket_id
+        {visible}
+        ORDER BY r.id ASC
+    """.replace("{visible}", _visible_ticket(access))
+    result = await session.execute(_sql(sql), {"ticket_id": ticket_id})
+    return list(result.mappings().all())
+
+
 # ── Staff ─────────────────────────────────────────────────────────────────────
 
 
