@@ -164,15 +164,40 @@ class TicketListResponse(BaseModel):
 
 
 class TicketCreate(BaseModel):
+    """osTicket's staff "Open a New Ticket" form. The requester is an existing user (``user_id``) or a name and
+    email (an unknown email makes a new user). Nothing is emailed unless ``notify`` asks for it."""
+
     subject: str = Field(min_length=1, max_length=255)
     message: str = Field(min_length=1)
-    email: Optional[str] = None
-    name: Optional[str] = None
+    user_id: Optional[int] = Field(default=None, gt=0, description="An existing user as the requester")
+    email: Optional[str] = Field(default=None, max_length=255)
+    name: Optional[str] = Field(default=None, max_length=255)
     phone: Optional[str] = None
+    cc_user_ids: Optional[list[int]] = Field(default=None, max_length=50, description="Users added as collaborators (Cc)")
+    source: Optional[Literal["Phone", "Email", "Other", "API"]] = Field(
+        default=None, description="Ticket source; the staff form offers Phone, Email and Other. Default API.")
     dept_id: Optional[int] = None
     topic_id: Optional[int] = None
+    sla_id: Optional[int] = Field(default=None, ge=0, description="0 or absent: the help topic's or default SLA")
     priority_id: Optional[int] = None
+    due_date: Optional[UtcInput] = Field(default=None, description="UTC (an offset is converted); must be in the future")
+    assign_agent_id: Optional[int] = Field(default=None, gt=0, description="Assign to this agent (needs ticket.assign)")
+    assign_team_id: Optional[int] = Field(default=None, gt=0, description="Assign to this team (needs ticket.assign)")
+    status_id: Optional[int] = Field(default=None, gt=0, description="Initial ticket status; default: the help topic's or the system's")
+    response: Optional[str] = Field(default=None, max_length=100000, description="A first reply to the requester (needs ticket.reply)")
+    note: Optional[str] = Field(default=None, max_length=100000, description="An internal note (when the ticket is not assigned)")
+    signature: Literal["none", "mine", "dept"] = Field(default="none", description="Signature on the emailed first reply")
+    notify: Literal["none", "user", "all"] = Field(
+        default="none", description="Email the new-ticket notice: nobody (default), the requester, or the requester and collaborators")
     custom_fields: Optional[CustomFields] = Field(default=None, description="Answers to custom form fields, by variable name.")
+
+    @model_validator(mode="after")
+    def _requester_and_assignee(self):
+        if self.user_id is None and not (self.email and self.name):
+            raise ValueError("give user_id, or both name and email")
+        if self.assign_agent_id and self.assign_team_id:
+            raise ValueError("assign to an agent or a team, not both")
+        return self
 
 
 class TicketReply(BaseModel):

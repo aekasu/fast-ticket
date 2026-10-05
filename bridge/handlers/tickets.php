@@ -95,7 +95,17 @@ class FastApiTicketHandler {
         return $status;
     }
 
+    /**
+     * Create: what scp/tickets.php "open" does — Ticket::open(), the staff path (not the customer-facing
+     * Ticket::create() alone): it checks the create permission in the *chosen department's* role, validates
+     * source / assignment / due date, and also posts the optional first response and internal note, assigns,
+     * adds collaborators and records the SLA. Nothing is emailed unless 'notify' asks (reply-to).
+     * Payload: subject, message, user_id | (name, email), phone, cc_user_ids, source, dept_id, topic_id, sla_id,
+     * priority_id, due_date (UTC), assign_agent_id | assign_team_id, status_id, response, note, signature,
+     * notify (none|user|all), custom_fields.
+     */
     public static function create($payload, $staff_id) {
+        global $thisstaff, $cfg;
         $subject = trim((string) ($payload['subject'] ?? ''));
         if ($subject === '') {
             throw new Exception("Ticket 'subject' is required.");
@@ -109,13 +119,78 @@ class FastApiTicketHandler {
             'deptId'     => $payload['dept_id'] ?? null,
             'topicId'    => $payload['topic_id'] ?? null,
             'priorityId' => $payload['priority_id'] ?? null,
-            'source'     => 'API',
+            'source'     => (string) ($payload['source'] ?? 'API'),
             'ip'         => '127.0.0.1',
+            'reply-to'   => (string) ($payload['notify'] ?? 'none'),
+            'signature'  => (string) ($payload['signature'] ?? 'none'),
         ];
+        // osTicket's form preselects the system's default help topic
+        if (empty($vars['topicId'])) {
+            $vars['topicId'] = $cfg->getDefaultTopicId() ?: null;
+        }
+        if (!in_array($vars['reply-to'], ['none', 'user', 'all'], true)) {
+            throw new Exception("'notify' must be none, user or all.");
+        }
+
+        if (!empty($payload['user_id'])) {
+            $user = self::requireUser($payload['user_id']);
+            $vars['uid'] = $user->getId();
+        }
+        // Collaborators: Ticket::addCollaborators() silently skips an unknown id, so check them first.
+        $ccs = [];
+        foreach ((array) ($payload['cc_user_ids'] ?? []) as $cc) {
+            $ccs[] = self::requireUser($cc)->getId();
+        }
+        if ($ccs) {
+            $vars['ccs'] = $ccs;
+        }
+        if (!empty($payload['sla_id'])) {
+            if (!SLA::lookup((int) $payload['sla_id'])) {
+                throw new Exception('SLA plan not found: ' . $payload['sla_id']);
+            }
+            $vars['slaId'] = (int) $payload['sla_id'];
+        }
+        if (!empty($payload['status_id'])) {
+            if (!TicketStatus::lookup((int) $payload['status_id'])) {
+                throw new Exception('Ticket status not found: ' . $payload['status_id']);
+            }
+            $vars['statusId'] = (int) $payload['status_id'];
+        }
+        if (!empty($payload['assign_agent_id'])) {
+            $vars['assignId'] = 's' . self::requireStaff($payload['assign_agent_id'])->getId();
+        } elseif (!empty($payload['assign_team_id'])) {
+            $team = Team::lookup((int) $payload['assign_team_id']);
+            if (!$team) {
+                throw new Exception('Team not found: ' . $payload['assign_team_id']);
+            }
+            $vars['assignId'] = 't' . $team->getId();
+        }
+        // The form takes the due date as a string in osTicket's configured timezone; the payload carries UTC.
+        if (!empty($payload['due_date'])) {
+            $vars['duedate'] = (new DateTime($payload['due_date'], new DateTimeZone('UTC')))
+                ->setTimezone(new DateTimeZone($cfg->getTimezone()))->format('Y-m-d H:i:s');
+        }
+
+        // The first response needs ticket.reply in the department the ticket will land in; Ticket::open() would
+        // skip it silently, so refuse before anything is created.
+        $response = trim((string) ($payload['response'] ?? ''));
+        $note = trim((string) ($payload['note'] ?? ''));
+        if ($response !== '') {
+            $dept_id = (int) ($vars['deptId'] ?: (($t = Topic::lookup((int) $vars['topicId'])) ? $t->getDeptId() : 0)
+                ?: $cfg->getDefaultDeptId());
+            $role = $thisstaff ? $thisstaff->getRole($dept_id) : null;
+            if (!$role || !$role->hasPerm(Ticket::PERM_REPLY)) {
+                throw new Exception('Permission denied: the requesting staff member may not reply to tickets in this department.');
+            }
+            $vars['response'] = $response;
+        }
+        if ($note !== '') {
+            $vars['note'] = $note;
+        }
 
         // Custom fields are read from the same vars by their variable names (topic forms included).
         // Only names that are real fields of the ticket form or the chosen topic's forms get through, and never
-        // a key Ticket::create() reads to decide assignment, SLA, collaborators or status (mass assignment).
+        // a key Ticket::open() / create() reads to decide assignment, SLA, collaborators, status or alerts.
         $custom = (array) ($payload['custom_fields'] ?? []);
         if ($custom) {
             $forms = [TicketForm::getNewInstance()];
@@ -133,8 +208,8 @@ class FastApiTicketHandler {
         }
 
         $errors = [];
-        // autorespond=false, alertstaff=false: creating a ticket through the API sends no email.
-        $ticket = Ticket::create($vars, $errors, 'API', false, false);
+        $_SERVER['REMOTE_ADDR'] = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
+        $ticket = Ticket::open($vars, $errors);
         if (!$ticket || $errors) {
             throw new Exception('Ticket was not created: ' . self::errorText($errors));
         }

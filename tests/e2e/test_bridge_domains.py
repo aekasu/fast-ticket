@@ -1326,3 +1326,61 @@ def test_directory_lists_search_sort_count_and_total(bridge, uniq):
     ticket_number = bridge.read(f"/api/v1/tickets/{tk}")["number"]
     assert item["ticket_number"] == ticket_number and item["is_overdue"] is False
     assert bridge.get("/api/v1/tasks/?sort=ticket").status_code == 200 and bridge.get("/api/v1/tasks/?queue=nonsense").status_code == 422
+
+
+def test_ticket_create_takes_what_osticket_new_ticket_form_takes(bridge, uniq):
+    """source, SLA, due date, assignment, Cc, an existing requester, a first response and an internal note."""
+    from datetime import datetime, timedelta, timezone
+
+    requester = bridge.create("/api/v1/users", {"name": "E2E Requester", "email": _email(uniq, "req")}, cleanup="/api/v1/users/{id}")
+    cc = bridge.create("/api/v1/users", {"name": "E2E Cc", "email": _email(uniq, "cc")}, cleanup="/api/v1/users/{id}")
+    sla = bridge.create("/api/v1/slas", {"name": f"e2e-newtk-sla-{uniq}", "grace_period": 6, "is_active": True}, cleanup="/api/v1/slas/{id}")
+    team = bridge.create("/api/v1/teams", {"name": f"e2e-newtk-team-{uniq}", "members": [1]}, cleanup="/api/v1/teams/{id}")
+    due = (datetime.now(timezone.utc) + timedelta(days=3)).replace(microsecond=0, second=0)
+    due_with_offset = due.astimezone(timezone(timedelta(hours=5, minutes=30))).isoformat()    # an offset is converted
+
+    # one ticket with everything, assigned to an agent: the note rides on the assignment, the response is posted
+    tk = bridge.create("/api/v1/tickets/", {
+        "subject": f"e2e new ticket {uniq}", "message": "first message", "user_id": requester, "cc_user_ids": [cc],
+        "source": "Phone", "dept_id": 1, "topic_id": 1, "sla_id": sla, "due_date": due_with_offset,
+        "assign_agent_id": 1, "response": f"first response {uniq}", "note": "an internal note", "signature": "none",
+    })
+    bridge._cleanups.append(("DELETE", f"/api/v1/tickets/{tk}"))
+    got = bridge.read(f"/api/v1/tickets/{tk}")
+    assert got["user_id"] == requester and got["source"] == "Phone" and got["sla_id"] == sla
+    assert got["assignee_staff_id"] == 1
+    assert datetime.fromisoformat(got["due_date"].replace("Z", "+00:00")) == due          # stored as the same instant
+    assert [c["user_id"] for c in got["collaborators"]] == [cc]
+    assert any(e["type"] == "R" and f"first response {uniq}" in e["body"] for e in got["thread"])
+    assert any(e["type"] == "M" and "first message" in e["body"] for e in got["thread"])
+
+    # unassigned: the internal note is posted; defaults (source API, no assignee) hold
+    tk2 = bridge.create("/api/v1/tickets/", {
+        "subject": f"e2e new ticket b {uniq}", "message": "m", "name": "E2E Walk-in", "email": _email(uniq, "walk"),
+        "topic_id": 1, "note": f"a new-ticket note {uniq}",
+    })
+    bridge._cleanups.append(("DELETE", f"/api/v1/tickets/{tk2}"))
+    bridge._cleanups.append(("DELETE", f"/api/v1/users/{bridge.read(f'/api/v1/tickets/{tk2}')['user_id']}"))
+    got2 = bridge.read(f"/api/v1/tickets/{tk2}")
+    assert got2["source"] == "API" and got2["assignee_staff_id"] is None and got2["team_id"] is None
+    assert any(e["type"] == "N" and f"a new-ticket note {uniq}" in e["body"] for e in got2["thread"])
+
+    # assigned to a team
+    tk3 = bridge.create("/api/v1/tickets/", {
+        "subject": f"e2e new ticket c {uniq}", "message": "m", "user_id": requester, "topic_id": 1, "assign_team_id": team})
+    bridge._cleanups.append(("DELETE", f"/api/v1/tickets/{tk3}"))
+    assert bridge.read(f"/api/v1/tickets/{tk3}")["team_id"] == team
+
+    # osTicket's refusals
+    base = {"subject": f"e2e refused {uniq}", "message": "m", "user_id": requester, "topic_id": 1}
+    bridge.refuses("POST", "/api/v1/tickets/", {k: v for k, v in base.items() if k != "topic_id"},
+                   because="Help topic selection is required")                       # osTicket's form requires a topic
+    bridge.refuses("POST", "/api/v1/tickets/", {**base, "user_id": 999999}, because="User not found")
+    bridge.refuses("POST", "/api/v1/tickets/", {**base, "sla_id": 999999}, because="SLA plan not found")
+    bridge.refuses("POST", "/api/v1/tickets/", {**base, "assign_agent_id": 999999}, because="Staff not found")
+    bridge.refuses("POST", "/api/v1/tickets/", {**base, "cc_user_ids": [999999]}, because="User not found")
+    bridge.refuses("POST", "/api/v1/tickets/", {**base, "due_date": "2020-01-01T00:00:00Z"}, because="future")
+    assert bridge.get("/api/v1/tickets/?q=e2e refused").json()["total"] == 0                # nothing was half-created
+    assert bridge.client.post("/api/v1/tickets/", json={"subject": "s", "message": "m"}).status_code == 422   # a requester is needed
+    assert bridge.client.post("/api/v1/tickets/", json={**base, "source": "Carrier pigeon"}).status_code == 422
+    assert bridge.client.post("/api/v1/tickets/", json={**base, "assign_agent_id": 1, "assign_team_id": 1}).status_code == 422

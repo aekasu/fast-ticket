@@ -6,6 +6,40 @@ After a backend change run `npm run api:pull && npm run api:types`, read the sna
 list below and remove the met entries from `BACKEND_REQUESTS.md`. This file is the backend's side of that handshake;
 delete an entry once the frontend has adopted it.
 
+## 2026-10-05 — `POST /tickets/` is osTicket's staff "Open a New Ticket" (BREAKING: a requester and a topic are required)
+
+The create command now runs osTicket's own staff path (`Ticket::open`, what `scp/tickets.php?a=open` calls), so it
+also posts the optional first response and note, assigns, adds collaborators and records the SLA, and it checks the
+create permission in the **chosen department's** role (it was any-role before).
+
+**New request fields** (all optional unless noted; the schema has them):
+
+| Field | What it is | osTicket's form |
+|---|---|---|
+| `user_id` | An existing user as the requester | the User search/selection |
+| `name` + `email` | A new (or by-email existing) requester | the name/email boxes |
+| `cc_user_ids` | Users added as collaborators (Cc) | the Cc row |
+| `source` | `Phone` \| `Email` \| `Other` \| `API` (default `API`; the staff form offers the first three, default Phone) | Ticket Source |
+| `sla_id` | SLA plan (0 or absent: the topic's or default) | SLA Plan |
+| `due_date` | UTC instant or with an offset; must be in the future | Due Date |
+| `assign_agent_id` / `assign_team_id` | Assign on create (one of them; needs `ticket.assign`) | Assign To |
+| `status_id` | Initial status | Ticket Status |
+| `response` | A first reply to the requester (needs `ticket.reply` in the department) | Response |
+| `note` | Internal note (posted when the ticket is not assigned; with an assignee it rides on the assignment) | Internal Note |
+| `signature` | `none` \| `mine` \| `dept` for the emailed reply | Signature |
+| `notify` | `none` (default) \| `user` \| `all`: who gets the new-ticket email. Default none: an API create sends no email | Ticket Notice |
+
+**Breaking.** (1) A request must carry `user_id`, or both `name` and `email` (422 otherwise; before, an email-only or
+empty-requester create was accepted and failed later). (2) osTicket's form requires a help topic: with no `topic_id`
+and no default topic configured the command fails with "Help topic selection is required"; send `topic_id`.
+(3) The command can now fail with osTicket's other form refusals (unknown user, SLA, agent or Cc, a past due date,
+"Action Denied. You are not allowed to assign/reassign tickets", the required custom fields for agents).
+
+**Frontend to do.** Build the New Ticket screen's missing controls from the table (source select, SLA plan, due date
+picker, Assign To, Cc, Response with a signature choice, Internal Note); offer an existing-user picker (`GET /users?q=`)
+beside the name/email boxes; show the command's `error_message` as osTicket words it. Not possible yet: attachments
+(no upload) and the canned-response picker's variable expansion on the server side.
+
 ## 2026-10-05 — global search finds tickets by requester; reply `signature` is an enum
 
 | Change | Frontend to do |

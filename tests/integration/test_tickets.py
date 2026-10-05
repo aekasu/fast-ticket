@@ -260,7 +260,7 @@ async def test_create_ticket_queues_command():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         resp = await ac.post(
             TICKETS_URL + "/",
-            json={"subject": "My keyboard broke", "message": "Keys stopped working."},
+            json={"subject": "My keyboard broke", "message": "Keys stopped working.", "user_id": 7},
             headers=_auth(["ticket.create"]),
         )
     assert resp.status_code == 202
@@ -287,6 +287,7 @@ async def test_create_ticket_stores_optional_fields():
                 "subject": "Server down",
                 "message": "Production server is unreachable.",
                 "email": "user@example.com",
+                "name": "A User",
                 "dept_id": 3,
                 "topic_id": 7,
                 "priority_id": 1,
@@ -333,8 +334,8 @@ async def test_create_ticket_idempotency_key_deduplicates():
     """Two requests with same Idempotency-Key create only one inbox row."""
     headers = {**_auth(["ticket.create"]), "Idempotency-Key": "create-key-abc"}
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-        r1 = await ac.post(TICKETS_URL + "/", json={"subject": "Test", "message": "Body"}, headers=headers)
-        r2 = await ac.post(TICKETS_URL + "/", json={"subject": "Test", "message": "Body"}, headers=headers)
+        r1 = await ac.post(TICKETS_URL + "/", json={"subject": "Test", "message": "Body", "user_id": 7}, headers=headers)
+        r2 = await ac.post(TICKETS_URL + "/", json={"subject": "Test", "message": "Body", "user_id": 7}, headers=headers)
 
     assert r1.status_code == 202
     assert r2.status_code == 202
@@ -600,7 +601,7 @@ async def test_command_response_shape():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         resp = await ac.post(
             TICKETS_URL + "/",
-            json={"subject": "Shape test", "message": "Body."},
+            json={"subject": "Shape test", "message": "Body.", "user_id": 7},
             headers={**_auth(["ticket.create"]), "Idempotency-Key": "shape-test-key"},
         )
     assert resp.status_code == 202
@@ -774,7 +775,7 @@ async def test_custom_fields_are_accepted_typed_and_queued():
     body = {"custom_fields": {"asset": "A-9", "urgent": True, "count": 3, "kinds": ["a", "b"], "note": ""}}
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         upd = await ac.patch(TICKETS_URL + "/5", json=body, headers=_auth(["ticket.edit"]))
-        new = await ac.post(TICKETS_URL + "/", json={"subject": "s", "message": "m", **body}, headers=_auth(["ticket.create"]))
+        new = await ac.post(TICKETS_URL + "/", json={"subject": "s", "message": "m", "user_id": 7, **body}, headers=_auth(["ticket.create"]))
         bad_name = await ac.patch(TICKETS_URL + "/5", json={"custom_fields": {"9bad": "x"}}, headers=_auth(["ticket.edit"]))
         bad_value = await ac.patch(TICKETS_URL + "/5", json={"custom_fields": {"a": {"nested": 1}}}, headers=_auth(["ticket.edit"]))
         too_many = await ac.patch(TICKETS_URL + "/5", json={"custom_fields": {f"f{i}": "x" for i in range(65)}},
@@ -795,3 +796,24 @@ async def test_reply_signature_is_one_of_osticket_choices():
     assert (ok.status_code, default.status_code, bogus.status_code) == (202, 202, 422)
     rows = await _inbox_rows()
     assert [json.loads(r.payload)["signature"] for r in rows] == ["dept", "none"]
+
+
+@pytest.mark.asyncio
+async def test_create_ticket_takes_osticket_new_ticket_form_fields_and_validates_them():
+    full = {
+        "subject": "Printer", "message": "It jams", "user_id": 7, "cc_user_ids": [8, 9], "source": "Phone",
+        "dept_id": 1, "topic_id": 2, "sla_id": 3, "priority_id": 2, "due_date": "2030-01-01T12:00:00+02:00",
+        "assign_agent_id": 4, "status_id": 1, "response": "On it", "note": "n", "signature": "dept", "notify": "user",
+    }
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        ok = await ac.post(TICKETS_URL + "/", json=full, headers=_auth(["ticket.create"]))
+        no_requester = await ac.post(TICKETS_URL + "/", json={"subject": "s", "message": "m"}, headers=_auth(["ticket.create"]))
+        name_only = await ac.post(TICKETS_URL + "/", json={"subject": "s", "message": "m", "name": "N"}, headers=_auth(["ticket.create"]))
+        both = await ac.post(TICKETS_URL + "/", json={**full, "assign_team_id": 2}, headers=_auth(["ticket.create"]))
+        source = await ac.post(TICKETS_URL + "/", json={**full, "source": "Pigeon"}, headers=_auth(["ticket.create"]))
+        notify = await ac.post(TICKETS_URL + "/", json={**full, "notify": "everyone"}, headers=_auth(["ticket.create"]))
+    assert ok.status_code == 202
+    assert [r.status_code for r in (no_requester, name_only, both, source, notify)] == [422] * 5
+    payload = json.loads((await _inbox_rows())[0].payload)
+    assert payload["due_date"] == "2030-01-01T10:00:00"            # an offset is converted to UTC
+    assert (payload["assign_agent_id"], payload["cc_user_ids"], payload["notify"], payload["signature"]) == (4, [8, 9], "user", "dept")

@@ -142,6 +142,9 @@ class FastApiModel {
         'deptId', 'topicId', 'priorityId', 'source', 'ip', 'ip_address', 'uid', 'duedate', 'message',
         'object_id', 'object_type', 'poster', 'default_formdata', 'internal_formdata', 'description',
         'user_id', 'userId', 'flags', 'number', 'created', 'lastupdate', 'staff_id', 'team_id', 'dept_id',
+        // read by Ticket::open() (the staff path): the first response, the note, who is emailed
+        'response', 'note', 'reply-to', 'signature', 'cannedResponseId', 'mailflags', 'system_emails', 'title',
+        'ticket', 'msgId', 'files', 'cannedattachments',
     ];
 
     /**
