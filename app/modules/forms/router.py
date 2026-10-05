@@ -1,13 +1,17 @@
 """Forms endpoints.
 
-Permissions — Dynamic Forms are in the Admin Panel (isAdmin()): admin-only.
+Permissions — managing Dynamic Forms is the Admin Panel (isAdmin()): admin-only. The one read open to any agent is
+``GET /forms/for/{kind}``: the fields of the ticket, user, organization or task form as osTicket's own create and
+edit pages show them to staff (enabled and agent-visible), which an agent needs to type custom answers.
 """
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_session
-from app.core.security import require_admin
+from typing import Literal
+
+from app.core.security import require_admin, require_staff
 from app.modules.forms import service
 from app.modules.forms.models import (
     CommandResponse,
@@ -17,9 +21,25 @@ from app.modules.forms.models import (
     FormUpdate,
     FormDetail,
     FormListResponse,
+    AgentForms,
 )
 
 router = APIRouter(tags=["forms"])
+
+@router.get(
+    "/forms/for/{kind}",
+    response_model=AgentForms,
+    summary="The form fields an agent fills in for a ticket, user, organization or task",
+)
+async def forms_for(
+    kind: Literal["ticket", "user", "organization", "task"],
+    topic_id: int | None = Query(default=None, gt=0, description="Tickets only: also the help topic's forms"),
+    current_user: dict = require_staff(),   # osTicket shows these on pages gated by the object's own permissions
+    session: AsyncSession = Depends(get_session),
+):
+    """Enabled, agent-visible fields in osTicket's order, with whether each is editable and required for agents."""
+    return await service.object_forms(session, kind, topic_id)
+
 
 @router.get("/forms", response_model=FormListResponse, summary="List forms")
 async def list_forms(

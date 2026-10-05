@@ -17,6 +17,10 @@ from app.modules.forms.models import (
     FormFieldUpdate,
     FormDetail,
     FormListResponse,
+    AgentForm,
+    AgentFormField,
+    AgentForms,
+    ListItem,
 )
 
 logger = logging.getLogger(__name__)
@@ -110,6 +114,27 @@ async def get_form(session: AsyncSession, form_id: int) -> FormDetail | None:
         **row,
         fields=fields,
     )
+
+
+async def object_forms(session: AsyncSession, kind: str, topic_id: int | None) -> AgentForms:
+    """The forms an agent fills in for a ticket (optionally with the help topic's), user, organization or task."""
+    forms = []
+    for row in await repo.get_object_forms(session, kind=kind, topic_id=topic_id):
+        try:   # the topic switches individual fields off (Topic::getForms -> disableFields)
+            disabled = {int(i) for i in (json.loads(row.get("extra") or "{}").get("disable") or [])}
+        except (TypeError, ValueError, AttributeError):
+            disabled = set()
+        fields = []
+        for f in map(dict, await repo.get_agent_form_fields(session, row["id"])):
+            if f["id"] in disabled:
+                continue
+            item = _field_item(f).model_dump()
+            list_items = None
+            if f["type"].startswith("list-") and f["type"][5:].isdigit():
+                list_items = [ListItem(id=i["id"], value=i["value"]) for i in await repo.get_list_items(session, int(f["type"][5:]))]
+            fields.append(AgentFormField(**item, is_editable=bool(f["is_editable"]), list_items=list_items))
+        forms.append(AgentForm(id=row["id"], title=row["title"], type=row["type"], instructions=row["instructions"], fields=fields))
+    return AgentForms(forms=forms)
 
 
 async def create_form(

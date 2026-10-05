@@ -77,6 +77,8 @@ def read_call_kwargs(func: Callable) -> dict | None:
             kwargs[name] = 0
         elif name == "query":
             kwargs[name] = "doctor"
+        elif name == "kind":
+            kwargs[name] = "ticket"
         elif param.default is not inspect.Parameter.empty:
             continue
         elif name == "id" or name.endswith("_id") or name in ("sid", "rid"):

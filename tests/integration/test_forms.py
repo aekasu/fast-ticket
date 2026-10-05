@@ -194,3 +194,34 @@ async def test_field_commands_are_queued_validated_and_admin_only():
     assert payload["configuration"] == {"size": 20, "validator": "regex", "regex": "^A", "validator-error": "bad"}
     assert json.loads(rows[2].payload) == {"form_id": 5, "field_id": 9, "delete_data": True}
     assert json.loads(rows[3].payload)["delete_data"] is False
+
+
+@pytest.mark.asyncio
+async def test_object_forms_are_open_to_any_agent_and_skip_what_the_topic_disables():
+    forms = AsyncMock(return_value=[
+        {"id": 2, "title": "Ticket Details", "type": "T", "instructions": "", "extra": None},
+        {"id": 9, "title": "Topic form", "type": "G", "instructions": "fill me", "extra": '{"disable":[31]}'}])
+    fields = {2: [{"id": 20, "name": "subject", "label": "Subject", "type": "text", "is_required": 1, "is_editable": 1,
+                   "sort": 1, "hint": "", "flags": 0x7371, "configuration": "{}"}],
+              9: [{"id": 30, "name": "kind", "label": "Kind", "type": "list-3", "is_required": 0, "is_editable": 0,
+                   "sort": 1, "hint": "", "flags": 0x1371, "configuration": None},
+                  {"id": 31, "name": "off", "label": "Off", "type": "text", "is_required": 0, "is_editable": 1,
+                   "sort": 2, "hint": "", "flags": 0x3371, "configuration": "{}"}]}
+    async def agent_fields(session, form_id):
+        return fields[form_id]
+    items = AsyncMock(return_value=[{"id": 1, "value": "Alpha"}])
+    with patch("app.modules.forms.service.repo.get_object_forms", new=forms), \
+         patch("app.modules.forms.service.repo.get_agent_form_fields", new=agent_fields), \
+         patch("app.modules.forms.service.repo.get_list_items", new=items):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            ok = await ac.get("/api/v1/forms/for/ticket", params={"topic_id": 4}, headers=_auth([]))
+            bad = await ac.get("/api/v1/forms/for/widget", headers=_auth([]))
+            anon = await ac.get("/api/v1/forms/for/ticket")
+    assert (ok.status_code, bad.status_code, anon.status_code) == (200, 422, 401)
+    assert forms.await_args.kwargs == {"kind": "ticket", "topic_id": 4}
+    body = ok.json()["forms"]
+    assert [f["id"] for f in body] == [2, 9] and body[1]["instructions"] == "fill me"
+    assert [f["name"] for f in body[1]["fields"]] == ["kind"]                 # the topic switched "off" off
+    kind = body[1]["fields"][0]
+    assert (kind["is_editable"], kind["list_items"]) == (False, [{"id": 1, "value": "Alpha"}])
+    assert body[0]["fields"][0]["is_required"] is True and body[0]["fields"][0]["list_items"] is None

@@ -1384,3 +1384,37 @@ def test_ticket_create_takes_what_osticket_new_ticket_form_takes(bridge, uniq):
     assert bridge.client.post("/api/v1/tickets/", json={"subject": "s", "message": "m"}).status_code == 422   # a requester is needed
     assert bridge.client.post("/api/v1/tickets/", json={**base, "source": "Carrier pigeon"}).status_code == 422
     assert bridge.client.post("/api/v1/tickets/", json={**base, "assign_agent_id": 1, "assign_team_id": 1}).status_code == 422
+
+
+def test_forms_for_shows_agents_the_fields_osticket_shows_them(bridge, uniq):
+    """Enabled, agent-visible fields only; a topic's forms follow the core ticket form; every kind has its form."""
+    form = bridge.create("/api/v1/forms", {"title": f"e2e-forfor-{uniq}", "type": "G"}, cleanup="/api/v1/forms/{id}")
+    furl = f"/api/v1/forms/{form}"
+    for name, mode in (("seen", "optional"), ("internal", "internal_required"), ("customer_only", "users_only"),
+                       ("gone", "optional")):
+        bridge.command("POST", f"{furl}/fields", {"label": name, "type": "text", "name": name, "mode": mode})
+    fields = {f["name"]: f["id"] for f in bridge.read(furl)["fields"]}
+    bridge.command("PATCH", f"{furl}/fields/{fields['gone']}", {"is_enabled": False})
+    topic = bridge.create("/api/v1/topics", {"topic": f"e2e-forfor-topic-{uniq}", "dept_id": 1, "form_ids": [form]},
+                          cleanup="/api/v1/topics/{id}")
+
+    def names(body):
+        return [(f["title"].startswith("e2e-forfor"), [x["name"] for x in f["fields"]]) for f in body["forms"]]
+
+    plain = bridge.read("/api/v1/forms/for/ticket")["forms"]
+    assert [f["type"] for f in plain] == ["T"] and {"subject", "message", "priority"} <= {x["name"] for x in plain[0]["fields"]}
+    with_topic = bridge.read(f"/api/v1/forms/for/ticket?topic_id={topic}")
+    assert [f["type"] for f in with_topic["forms"]] == ["T", "G"]                          # core first, the topic's form after
+    mine = {x["name"]: x for x in with_topic["forms"][1]["fields"]}
+    assert set(mine) == {"seen", "internal"}                                               # disabled and customer-only are absent
+    assert mine["seen"]["is_editable"] is True and mine["seen"]["is_required"] is False
+    assert mine["internal"]["is_required"] is True and mine["internal"]["mode"] == "internal_required"
+    assert [x["name"] for x in with_topic["forms"][1]["fields"]] == ["seen", "internal"]   # in the form's order
+
+    user = bridge.read("/api/v1/forms/for/user")["forms"]
+    assert [f["type"] for f in user] == ["U"] and {"name", "email"} <= {x["name"] for x in user[0]["fields"]}
+    assert [f["type"] for f in bridge.read("/api/v1/forms/for/organization")["forms"]] == ["O"]
+    assert [f["type"] for f in bridge.read("/api/v1/forms/for/task")["forms"]] == ["A"]
+    assert bridge.get("/api/v1/forms/for/widget").status_code == 422
+    assert bridge.get(f"/api/v1/forms/for/user?topic_id={topic}").status_code == 200       # a topic only matters for tickets
+    assert [f["type"] for f in bridge.read(f"/api/v1/forms/for/user?topic_id={topic}")["forms"]] == ["U"]

@@ -92,6 +92,34 @@ class FormDetail(FormListItem):
     notes: str = ""
     fields: list[FormFieldItem] = []
 
+class ListItem(BaseModel):
+    id: int
+    value: str
+
+
+class AgentFormField(FormFieldItem):
+    """A field as an agent sees it on osTicket's create/edit pages (enabled and agent-visible only)."""
+
+    is_editable: bool = Field(description="The agent may type an answer (otherwise it is shown read-only)")
+    list_items: Optional[list[ListItem]] = Field(
+        default=None, description="For a custom-list field (``list-<id>``): the enabled items; answers use the item id")
+
+
+class AgentForm(BaseModel):
+    id: int
+    title: str
+    type: str
+    instructions: str = ""
+    fields: list[AgentFormField]
+
+
+class AgentForms(BaseModel):
+    """The forms to render for one kind of object, in osTicket's order: the core form first, then a ticket's help
+    topic forms."""
+
+    forms: list[AgentForm]
+
+
 class FormCreate(BaseModel):
     title: str = Field(min_length=1, max_length=255)
     type: str = Field(min_length=1, max_length=16)

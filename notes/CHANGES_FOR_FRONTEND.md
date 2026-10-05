@@ -6,6 +6,26 @@ After a backend change run `npm run api:pull && npm run api:types`, read the sna
 list below and remove the met entries from `BACKEND_REQUESTS.md`. This file is the backend's side of that handshake;
 delete an entry once the frontend has adopted it.
 
+## 2026-10-05 — form definitions for every agent: `GET /forms/for/{kind}`
+
+New, open to any agent (`GET /forms` and `GET /forms/{id}` stay admin-only). `kind` is `ticket`, `user`,
+`organization` or `task`; for tickets `?topic_id=` adds the help topic's forms. Response `{forms: [{id, title, type,
+instructions, fields: [...]}]}`, the core form first and then the topic's forms in order, each field as `FormFieldItem`
+(`name`, `label`, `type`, `hint`, `mode`, `sort`, `configuration`: choices, defaults, validators...) plus:
+
+- `is_required`: required **for agents** (osTicket's agent-required flag, not the customer one);
+- `is_editable`: the agent may type an answer; when false show the value read-only;
+- `list_items`: for a custom-list field (`list-<id>`) the enabled items `[{id, value}]`; the answer is the item id.
+
+Only fields osTicket shows agents are returned: enabled and agent-visible (customer-only fields are absent), and for a
+ticket the fields the help topic switches off are removed. The core fields (`subject`, `message`, `priority` on tickets;
+`name`, `email`, `phone`, `notes` on users...) come back too: skip the ones your screen already has as dedicated inputs.
+
+**Frontend to do.** Non-admin agents can now type custom answers: build the inputs from this instead of `GET /forms/{id}`
+(drop the admin-only path and the "no inputs for non-admins" note), re-fetch when the topic changes on New Ticket, decode
+nothing new (answers still use the formats in `src/lib/custom-fields.ts`). A custom-list field's answer cannot be written
+yet (see KNOWN_LIMITS), so show it read-only.
+
 ## 2026-10-05 — `POST /tickets/` is osTicket's staff "Open a New Ticket" (BREAKING: a requester and a topic are required)
 
 The create command now runs osTicket's own staff path (`Ticket::open`, what `scp/tickets.php?a=open` calls), so it

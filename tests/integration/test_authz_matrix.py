@@ -52,7 +52,7 @@ POLICY = {
     **{f"GET {p}": "staff" for p in [
         "/api/v1/agents", "/api/v1/tickets/queues", "/api/v1/canned", "/api/v1/canned/{canned_id}", "/api/v1/commands", "/api/v1/commands/{command_id}",
         "/api/v1/departments", "/api/v1/kb/categories", "/api/v1/kb/categories/{category_id}",
-        "/api/v1/kb/faqs", "/api/v1/kb/faqs/{faq_id}", "/api/v1/priorities", "/api/v1/permissions", "/api/v1/search",
+        "/api/v1/kb/faqs", "/api/v1/kb/faqs/{faq_id}", "/api/v1/priorities", "/api/v1/permissions", "/api/v1/forms/for/{kind}", "/api/v1/search",
         "/api/v1/tasks/", "/api/v1/tasks/queues", "/api/v1/tasks/{task_id}", "/api/v1/tasks/{task_id}/collaborators", "/api/v1/tickets/", "/api/v1/tickets/{ticket_id}", "/api/v1/tickets/{ticket_id}/collaborators", "/api/v1/tickets/{ticket_id}/referrals",
         "/api/v1/tickets/{ticket_id}/attachments/{attachment_id}", "/api/v1/tasks/{task_id}/attachments/{attachment_id}",
         "/api/v1/topics",

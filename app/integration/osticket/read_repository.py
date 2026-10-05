@@ -1288,6 +1288,61 @@ async def get_form_fields(session: AsyncSession, form_id: int) -> list:
     return list(result.mappings().all())
 
 
+# The forms an agent fills in. osTicket renders them on its create/edit pages: the core form of the object, plus
+# (tickets) the forms of the chosen help topic, each field shown only if it is enabled and agent-visible
+# (DynamicFormField FLAG_ENABLED 0x1, FLAG_AGENT_VIEW 0x1000) and editable if FLAG_AGENT_EDIT 0x2000.
+_OBJECT_FORM_TYPE = {"ticket": "T", "user": "U", "organization": "O", "task": "A"}
+
+
+async def get_object_forms(session: AsyncSession, *, kind: str, topic_id: int | None = None) -> list:
+    """The forms of a ticket/user/organization/task for agents, in order: the core form, then (tickets) the help
+    topic's other forms (``extra`` carries the field ids the topic switches off)."""
+    core = (await session.execute(_sql(
+        "SELECT f.id, f.title, f.type, COALESCE(f.instructions, '') AS instructions, NULL AS extra "
+        "FROM ost_form f WHERE f.type = :type AND (f.flags & 2) = 0 ORDER BY f.id LIMIT 1"),
+        {"type": _OBJECT_FORM_TYPE[kind]})).mappings().all()
+    forms = [dict(r) for r in core]
+    if kind == "ticket" and topic_id:
+        topic = (await session.execute(_sql(
+            "SELECT f.id, f.title, f.type, COALESCE(f.instructions, '') AS instructions, tf.extra "
+            "FROM ost_help_topic_form tf JOIN ost_form f ON f.id = tf.form_id "
+            "WHERE tf.topic_id = :topic_id AND f.type <> 'T' AND (f.flags & 2) = 0 ORDER BY tf.sort, tf.id"),
+            {"topic_id": topic_id})).mappings().all()
+        forms += [dict(r) for r in topic]
+    return forms
+
+
+async def get_agent_form_fields(session: AsyncSession, form_id: int) -> list:
+    """A form's fields as an agent sees them: enabled and agent-visible only."""
+    sql = """
+        SELECT
+            ff.id,
+            ff.name,
+            ff.label,
+            ff.type,
+            (COALESCE(ff.flags, 0) & 0x4000) > 0 AS is_required,   -- FLAG_AGENT_REQUIRED
+            (COALESCE(ff.flags, 0) & 0x2000) > 0 AS is_editable,   -- FLAG_AGENT_EDIT
+            ff.sort,
+            COALESCE(ff.hint, '') AS hint,
+            COALESCE(ff.flags, 0) AS flags,
+            ff.configuration
+        FROM ost_form_field ff
+        WHERE ff.form_id = :form_id AND (COALESCE(ff.flags, 0) & 0x1) > 0 AND (COALESCE(ff.flags, 0) & 0x1000) > 0
+        ORDER BY ff.sort ASC, ff.id ASC
+    """
+    result = await session.execute(_sql(sql), {"form_id": form_id})
+    return list(result.mappings().all())
+
+
+async def get_list_items(session: AsyncSession, list_id: int) -> list:
+    """The enabled items of a custom list (what a ``list-<id>`` field offers)."""
+    result = await session.execute(
+        _sql("SELECT i.id, i.value FROM ost_list_items i WHERE i.list_id = :list_id AND (i.status & 1) > 0 "
+             "ORDER BY i.sort, i.value, i.id"),
+        {"list_id": list_id})
+    return list(result.mappings().all())
+
+
 # ── Commands ──────────────────────────────────────────────────────────────────
 
 def own_commands(access: "Scope") -> str:
