@@ -22,7 +22,6 @@ require_once INCLUDE_DIR . 'class.staff.php';
 require_once INCLUDE_DIR . 'class.dept.php';
 require_once INCLUDE_DIR . 'class.team.php';
 require_once INCLUDE_DIR . 'class.user.php';
-require_once INCLUDE_DIR . 'class.thread_actions.php';
 require_once INCLUDE_DIR . 'class.sla.php';
 require_once INCLUDE_DIR . 'class.topic.php';
 require_once INCLUDE_DIR . 'class.priority.php';
@@ -544,11 +543,7 @@ class FastApiTicketHandler {
     /** The entry, checked to belong to this ticket's thread and to be visible to the acting staff member. */
     private static function requireEntry(Ticket $ticket, $entry_id) {
         global $thisstaff;
-        $entry = ThreadEntry::lookup((int) $entry_id);
-        if (!$entry || !$entry->getThread() || $entry->getThread()->getObjectId() != $ticket->getId()
-                || $entry->getThread()->getObjectType() !== 'T') {
-            throw new Exception("Thread entry not found on this ticket: {$entry_id}");
-        }
+        $entry = FastApiThreadEntry::entryOf($ticket, 'T', $entry_id);
         if (!$thisstaff || !$ticket->checkStaffPerm($thisstaff)) {
             throw new Exception('Permission denied: the requesting staff member may not open this ticket.');
         }
@@ -556,58 +551,20 @@ class FastApiTicketHandler {
     }
 
     /**
-     * Edit a thread entry: TEA_EditThreadEntry::updateEntry(), the code behind the thread's
-     * "Edit" action. It writes a new entry (child of the old) and hides the old one, so the
-     * entry id changes: the result carries new_entry_id. Who may edit is the action's own
-     * isEnabled() (own post, department manager, or the thread.edit role permission). With
-     * resend (replies only) the edited reply is also emailed again, as "Edit and Resend".
-     * Payload: entry_id, body, title, resend, signature (none|mine|theirs|dept).
+     * Edit a thread entry (see FastApiThreadEntry::edit). The entry id changes: the result carries
+     * new_entry_id. Payload: entry_id, body, title, resend, signature (none|mine|theirs|dept).
      */
     public static function editEntry($payload, $staff_id) {
-        global $thisstaff;
         $ticket = self::requireTicket($payload['ticket_id'] ?? 0);
         $entry = self::requireEntry($ticket, $payload['entry_id'] ?? 0);
-        $resend = !empty($payload['resend']);
-        $action = $resend ? new TEA_EditAndResendThreadEntry($entry) : new TEA_EditThreadEntry($entry);
-        // osTicket: system posts cannot be edited; only staff replies can be resent
-        if (!($entry->staff_id || $entry->user_id)) {
-            throw new Exception('System entries cannot be edited.');
-        }
-        if ($resend && !($entry->staff_id && $entry->type == 'R')) {
-            throw new Exception('Only a staff reply can be resent.');
-        }
-        if (!$action->isEnabled()) {
-            throw new Exception('Permission denied: the requesting staff member may not edit this entry.');
-        }
-        $body = (string) ($payload['body'] ?? '');
-        if (trim($body) === '') {
-            throw new Exception("An entry 'body' is required.");
-        }
-        $_POST = ['body' => $body, 'title' => (string) ($payload['title'] ?? $entry->title),
-                  'signature' => (string) ($payload['signature'] ?? 'none')];
-        $_SERVER['REMOTE_ADDR'] = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
-        $new = $action->updateEntry($resend);
-        if (!$new) {
-            throw new Exception('Entry was not edited.');
-        }
-        $changed = $new->getId() != $entry->getId();
-        if ($resend) {
-            $action->resend($new);
-        }
-        return ['ticket_id' => $ticket->getId(), 'entry_id' => (int) $entry->getId(),
-                'new_entry_id' => (int) $new->getId(), 'changed' => $changed, 'resent' => $resend];
+        return ['ticket_id' => $ticket->getId()] + FastApiThreadEntry::edit($entry, $payload);
     }
 
-    /** Resend a staff reply to the ticket's recipients: TEA_ResendThreadEntry (enabled for any agent who can open the ticket). */
+    /** Resend a staff reply to the ticket's recipients. */
     public static function resendEntry($payload, $staff_id) {
         $ticket = self::requireTicket($payload['ticket_id'] ?? 0);
         $entry = self::requireEntry($ticket, $payload['entry_id'] ?? 0);
-        if (!($entry->staff_id && $entry->type == 'R')) {
-            throw new Exception('Only a staff reply can be resent.');
-        }
-        $_POST = ['signature' => (string) ($payload['signature'] ?? 'none')];
-        (new TEA_ResendThreadEntry($entry))->resend($entry);
-        return ['ticket_id' => $ticket->getId(), 'entry_id' => (int) $entry->getId()];
+        return ['ticket_id' => $ticket->getId()] + FastApiThreadEntry::resend($entry, $payload);
     }
 
     public static function answered($payload, $staff_id) {

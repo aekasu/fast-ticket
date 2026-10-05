@@ -281,6 +281,30 @@ class FastApiTaskHandler {
         return ['task_id' => $task->getId(), 'entry_id' => (int) $entry->getId()];
     }
 
+    /** The entry, checked to belong to this task's thread and the task to be open to the acting staff member. */
+    private static function requireEntry(Task $task, $entry_id) {
+        global $thisstaff;
+        $entry = FastApiThreadEntry::entryOf($task, 'A', $entry_id);
+        if (!$thisstaff || !$task->checkStaffPerm($thisstaff)) {
+            throw new Exception('Permission denied: the requesting staff member may not open this task.');
+        }
+        return $entry;
+    }
+
+    /** Edit a task thread entry: TEA_EditThreadEntry (own post, department manager or thread.edit role permission). */
+    public static function editEntry($payload, $staff_id) {
+        $task = self::requireTask($payload['task_id'] ?? 0);
+        $entry = self::requireEntry($task, $payload['entry_id'] ?? 0);
+        return ['task_id' => $task->getId()] + FastApiThreadEntry::edit($entry, $payload);
+    }
+
+    /** Resend a staff reply to the task's collaborators. */
+    public static function resendEntry($payload, $staff_id) {
+        $task = self::requireTask($payload['task_id'] ?? 0);
+        $entry = self::requireEntry($task, $payload['entry_id'] ?? 0);
+        return ['task_id' => $task->getId()] + FastApiThreadEntry::resend($entry, $payload);
+    }
+
     private static function changeStatus($payload, $status, $perm, $what) {
         $task = self::requireTask($payload['task_id'] ?? 0);
         self::requirePerm($task, $perm, $what);

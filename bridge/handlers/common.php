@@ -205,3 +205,72 @@ class FastApiModel {
     }
 }
 }
+
+require_once INCLUDE_DIR . 'class.thread_actions.php';
+
+if (!class_exists('FastApiThreadEntry')) {
+/**
+ * Thread-entry edit and resend, shared by tickets and tasks: osTicket's TEA_* thread actions, which
+ * work on whatever object owns the thread. The caller has already checked that the acting staff
+ * member may open the object.
+ */
+class FastApiThreadEntry {
+
+    /** The entry, checked to belong to $object's thread ($type: 'T' ticket, 'A' task). */
+    static function entryOf($object, $type, $entry_id) {
+        $entry = ThreadEntry::lookup((int) $entry_id);
+        if (!$entry || !$entry->getThread() || $entry->getThread()->getObjectId() != $object->getId()
+                || $entry->getThread()->getObjectType() !== $type) {
+            throw new Exception("Thread entry not found on this " . ($type === 'T' ? 'ticket' : 'task') . ": {$entry_id}");
+        }
+        return $entry;
+    }
+
+    /**
+     * TEA_EditThreadEntry::updateEntry(): writes a new entry (child of the old) and hides the old
+     * one, so the entry id changes. Who may edit is the action's own isEnabled(). With resend
+     * (replies only) the edited reply is also sent again. Payload: body, title, resend, signature.
+     */
+    static function edit($entry, array $payload) {
+        $resend = !empty($payload['resend']);
+        $action = $resend ? new TEA_EditAndResendThreadEntry($entry) : new TEA_EditThreadEntry($entry);
+        // osTicket: system posts cannot be edited; only staff replies can be resent
+        if (!($entry->staff_id || $entry->user_id)) {
+            throw new Exception('System entries cannot be edited.');
+        }
+        if ($resend && !($entry->staff_id && $entry->type == 'R')) {
+            throw new Exception('Only a staff reply can be resent.');
+        }
+        if (!$action->isEnabled()) {
+            throw new Exception('Permission denied: the requesting staff member may not edit this entry.');
+        }
+        $body = (string) ($payload['body'] ?? '');
+        if (trim($body) === '') {
+            throw new Exception("An entry 'body' is required.");
+        }
+        $_POST = ['body' => $body, 'title' => (string) ($payload['title'] ?? $entry->title),
+                  'signature' => (string) ($payload['signature'] ?? 'none')];
+        $_SERVER['REMOTE_ADDR'] = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
+        $new = $action->updateEntry($resend);
+        if (!$new) {
+            throw new Exception('Entry was not edited.');
+        }
+        $changed = $new->getId() != $entry->getId();
+        if ($resend) {
+            $action->resend($new);
+        }
+        return ['entry_id' => (int) $entry->getId(), 'new_entry_id' => (int) $new->getId(),
+                'changed' => $changed, 'resent' => $resend];
+    }
+
+    /** TEA_ResendThreadEntry (enabled for any agent who can open the object). */
+    static function resend($entry, array $payload) {
+        if (!($entry->staff_id && $entry->type == 'R')) {
+            throw new Exception('Only a staff reply can be resent.');
+        }
+        $_POST = ['signature' => (string) ($payload['signature'] ?? 'none')];
+        (new TEA_ResendThreadEntry($entry))->resend($entry);
+        return ['entry_id' => (int) $entry->getId()];
+    }
+}
+}
