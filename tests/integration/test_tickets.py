@@ -817,3 +817,29 @@ async def test_create_ticket_takes_osticket_new_ticket_form_fields_and_validates
     payload = json.loads((await _inbox_rows())[0].payload)
     assert payload["due_date"] == "2030-01-01T10:00:00"            # an offset is converted to UTC
     assert (payload["assign_agent_id"], payload["cc_user_ids"], payload["notify"], payload["signature"]) == (4, [8, 9], "user", "dept")
+
+
+@pytest.mark.asyncio
+async def test_canned_render_asks_the_bridge_only_after_the_agent_may_use_both():
+    bridged = AsyncMock(return_value={"id": 3, "title": "Greeting", "response": "<p>Hi Ada</p>", "files": [{"id": 1, "name": "a.pdf", "size": 5}]})
+    ticket, canned = AsyncMock(return_value={"ticket_id": 9}), AsyncMock(return_value={"id": 3})
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        with patch("app.modules.tickets.service.repo.get_ticket", new=ticket), \
+             patch("app.modules.tickets.service.repo.get_canned", new=canned), \
+             patch("app.modules.tickets.service.bridge_json", new=bridged):
+            ok = await ac.get(TICKETS_URL + "/9/canned/3", params={"plain": "true"}, headers=_auth([]))
+            html = await ac.get(TICKETS_URL + "/9/canned/3", headers=_auth([]))
+        with patch("app.modules.tickets.service.repo.get_ticket", new=AsyncMock(return_value=None)), \
+             patch("app.modules.tickets.service.bridge_json", new=bridged) as untouched:
+            no_ticket = await ac.get(TICKETS_URL + "/9/canned/3", headers=_auth([]))
+        with patch("app.modules.tickets.service.repo.get_ticket", new=ticket), \
+             patch("app.modules.tickets.service.repo.get_canned", new=AsyncMock(return_value=None)):
+            no_canned = await ac.get(TICKETS_URL + "/9/canned/3", headers=_auth([]))
+        anon = await ac.get(TICKETS_URL + "/9/canned/3")
+    assert (ok.status_code, html.status_code, no_ticket.status_code, no_canned.status_code, anon.status_code) == (200, 200, 404, 404, 401)
+    assert ok.json() == {"id": 3, "title": "Greeting", "response": "<p>Hi Ada</p>", "format": "text",
+                         "files": [{"id": 1, "name": "a.pdf", "size": 5}]}
+    assert html.json()["format"] == "html"
+    assert bridged.await_args_list[0].args == ("canned.render", 5, {"ticket_id": 9, "canned_id": 3, "plain": True})
+    assert bridged.await_count == 2                      # the two refused requests never reached the bridge
+    assert canned.await_args.kwargs["manage"] is False   # the reply picker's rule, not the management page's

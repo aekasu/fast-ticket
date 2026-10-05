@@ -104,6 +104,23 @@ class ThreadEntry(BaseModel):
     attachments: list[Attachment] = []
 
 
+class CannedFile(BaseModel):
+    id: int
+    name: str
+    size: int
+
+
+class CannedRendered(BaseModel):
+    """A canned response with the ticket's variables filled in (``%{ticket.name.first}``, ``%{ticket.number}``, ...),
+    as osTicket's reply form inserts it."""
+
+    id: int
+    title: str
+    response: str = Field(description="The reply text, HTML unless ``plain`` was asked for")
+    format: Literal["html", "text"]
+    files: list[CannedFile] = Field(default_factory=list, description="Files attached to the canned response (names only)")
+
+
 class Collaborator(BaseModel):
     id: int
     user_id: int

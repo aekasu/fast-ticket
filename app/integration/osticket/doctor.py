@@ -225,6 +225,12 @@ async def check_handshake(fetch: Callable[[str, str], Awaitable[dict]] | None = 
         ))
     if not info.get("tables_ready"):
         checks.append(Check("plugin tables", FAIL, "the plugin reports its tables are missing"))
+    if not info.get("read_available"):
+        checks.append(Check(
+            "bridge read endpoint", WARN,
+            "the installed plugin has no read endpoint: canned responses cannot be filled in and files kept by a "
+            "storage plugin cannot be downloaded — update the plugin (make bridge-zip)",
+        ))
     if not info.get("worker_available"):
         checks.append(Check(
             "inbox worker", WARN,

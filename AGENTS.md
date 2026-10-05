@@ -30,6 +30,7 @@ fast-ticket/
 │   ├── plugin.php                    # Signal hooks, inbox claim + dispatch, outbox emit, handshake route, settings (integration key)
 │   ├── schema.php                    # the ONLY definition of the plugin's two tables (created on enable, prefix-aware)
 │   ├── registry.php                  # command type → [handler file, class, method, outbox event] (one line each)
+│   ├── read.php / reads.php          # the read mode: POST /api/fast-ticket/read, operation → handler (canned.render, file.stream)
 │   ├── worker.php                    # optional long-running inbox worker (~1 s latency); cron is the fallback
 │   └── handlers/<domain>.php         # FastApi<Domain>Handler classes — one static method per command (+ common.php helpers)
 ├── tests/
@@ -79,7 +80,7 @@ Dispatcher guarantees (`bridge/plugin.php`, keep them): each command first check
 **Adding a scoped read — where the rule lives.** Writes keep osTicket's rules in osTicket (the bridge runs its PHP as the agent); a read copies a rule into SQL, and a wrong copy is a data leak. So before adding a read that returns ticket, task, thread or other agent-scoped data:
 1. Read osTicket's own rule (the class method *and* the `scp/*.php` page that lists or opens it).
 2. If the rule is simple, or already ported (`ticket_visibility`, `task_visibility`, `AccessContext`, the topic/department name lists), write it in SQL, add a SQL-semantics test over every state, and add a case to the oracle (`tests/e2e/oracle/oracle.php`) when the rule is new.
-3. If the rule is awkward to copy faithfully, **do not approximate it**. Either make the read admin-only until the rule is ported (and add a KNOWN_LIMITS entry), or serve it through the bridge so osTicket's PHP decides. A bridge read mode does not exist yet (it is the planned "HTTP fallback read mode" in `notes/NEXT.md`); building it is a design decision to raise with the user, not something to slip into one endpoint.
+3. If the rule is awkward to copy faithfully, **do not approximate it**. Either make the read admin-only until the rule is ported (and add a KNOWN_LIMITS entry), or serve it through the **bridge read mode** so osTicket's PHP decides: a synchronous HTTP call to the plugin (`POST /api/fast-ticket/read`, same integration key, run as the requesting staff member, never writes). Add the operation to `bridge/reads.php` and a handler in `bridge/handlers/reads.php` (it must check access with osTicket's own rules too), call it from a service with `bridge_json(...)` / `open_bridge_stream(...)` in `app/integration/osticket/bridge_read.py` **after** the API has checked the agent's access (a resource they may not open is a 404 before the bridge is asked), and keep `tests/unit/test_bridge_reads.py` passing. It costs one HTTP round trip per read, so use it for what SQL cannot answer (canned-response variables, file bytes from a storage plugin), not for lists.
 
 Queries are written against osTicket's default `ost_` prefix and run through `_sql()`, which rewrites the prefix to `OSTICKET_TABLE_PREFIX` — **never call `text()` directly there**, or that instance's table names break. `make doctor` runs every function in this file against the live schema, so a new read function must be callable with `limit`/`offset`/`*_id` arguments only (a test enforces it).
 

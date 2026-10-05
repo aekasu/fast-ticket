@@ -93,7 +93,7 @@ async def download_task_attachment(
     row = await service.task_attachment(session, task_id, attachment_id, access=current_user["access"])
     if row is None:
         raise HTTPException(status_code=404, detail="Attachment not found.")
-    return file_response(row)
+    return await file_response(row, staff_id=current_user["staff_id"], object_type="A", object_id=task_id)
 
 
 @router.get("/{task_id}/assignees", response_model=AssigneeOptions, summary="Agents and teams this task can be assigned to")

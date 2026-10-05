@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.custom_fields import BUILT_IN_FIELDS, CustomFieldAnswer, answer_from_row
 from app.core.attachments import group_by_entry
 from app.integration.osticket import read_repository as repo
+from app.integration.osticket.bridge_read import bridge_json
 from app.modules.agents import service as agents_service
 from app.integration.osticket.commands_service import dispatch_command
 from app.modules.tickets.models import (
@@ -25,6 +26,7 @@ from app.modules.tickets.models import (
     CommandResponse,
     ThreadEntry,
     CollaboratorList,
+    CannedRendered,
     Referral,
     ReferralList,
     TicketCollaboratorAdd,
@@ -228,6 +230,19 @@ async def list_collaborators(session: AsyncSession, ticket_id: int, *, access) -
 
 
 _REFEREE_TYPES = {"S": "agent", "E": "team", "D": "department"}
+
+
+async def render_canned(
+    session: AsyncSession, ticket_id: int, canned_id: int, plain: bool, *, access, staff_id: int
+) -> CannedRendered | None:
+    """The canned response for this ticket with osTicket filling in its variables (the bridge asks osTicket's own
+    ``replaceVars``); None if the agent may not open the ticket or may not use the response."""
+    if await repo.get_ticket(session, ticket_id, access=access) is None:
+        return None
+    if await repo.get_canned(session, canned_id, access=access, manage=False) is None:
+        return None
+    result = await bridge_json("canned.render", staff_id, {"ticket_id": ticket_id, "canned_id": canned_id, "plain": plain})
+    return CannedRendered(**result, format="text" if plain else "html")
 
 
 async def list_referrals(session: AsyncSession, ticket_id: int, *, access) -> ReferralList | None:

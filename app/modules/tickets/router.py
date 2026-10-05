@@ -34,6 +34,7 @@ from app.modules.tickets.models import (
     TicketChangeOwner,
     TicketClose,
     CollaboratorList,
+    CannedRendered,
     ReferralList,
     TicketCollaboratorAdd,
     TicketEntryEdit,
@@ -153,7 +154,7 @@ async def download_ticket_attachment(
     row = await service.ticket_attachment(session, ticket_id, attachment_id, access=current_user["access"])
     if row is None:
         raise HTTPException(status_code=404, detail="Attachment not found.")
-    return file_response(row)
+    return await file_response(row, staff_id=current_user["staff_id"], object_type="T", object_id=ticket_id)
 
 
 @router.get(
@@ -188,6 +189,27 @@ async def list_collaborators(
     result = await service.list_collaborators(session, ticket_id, access=current_user["access"])
     if result is None:
         raise HTTPException(status_code=404, detail=f"Ticket {ticket_id} not found.")
+    return result
+
+
+@router.get(
+    "/{ticket_id}/canned/{canned_id}",
+    response_model=CannedRendered,
+    summary="A canned response with this ticket's variables filled in",
+)
+async def render_canned(
+    ticket_id: int,
+    canned_id: int,
+    plain: bool = Query(default=False, description="Strip the HTML (osTicket's plain-text reply box)"),
+    current_user: dict = require_staff(),   # ajax.tickets.php cannedResponse(): the agent must be able to open the ticket
+    session: AsyncSession = Depends(get_session),
+):
+    """osTicket's own variable expansion, asked of osTicket (the bridge's read mode): the picked canned response as the
+    reply box should receive it. 404 for a ticket the agent may not open or a response they may not use."""
+    result = await service.render_canned(
+        session, ticket_id, canned_id, plain, access=current_user["access"], staff_id=current_user["staff_id"])
+    if result is None:
+        raise HTTPException(status_code=404, detail="Ticket or canned response not found.")
     return result
 
 

@@ -13,7 +13,7 @@ a UI or more API breadth on your own. If the user instead asks for API work, pic
 ## Where things stand
 
 - **All committed, tree clean** (except the user's own `.claude/settings.json` — never commit it). Last commit
-  `b3b9d41`. Verified at that commit: `make test` 786, `make test-docker` 786, `make test-e2e` 66 on a rebuilt stack
+  `b3b9d41`. Verified at that commit: `make test` 800, `make test-docker` 800, `make test-e2e` 72 on a rebuilt stack
   (includes the oracle against osTicket's own PHP), `make doctor` 0 failed (one expected warning: the compose stack
   uses one all-privileges DB user). Security review of the new code: nothing at high confidence.
 - Built, in order: bridge worker + portability, security overhaul S0–S6, access cache, ticket lifecycle (PATCH, claim,
@@ -62,7 +62,7 @@ below based on what the UI needs.
 The frontend keeps a list of what its screens need. Met so far (2026-10-05): typed `/auth/me` and login schemas, 429 with
 `Retry-After` and `detail`, priority-sort tie-break (most recently updated first), `format` on thread entries,
 `est_due_date` / `is_overdue` / `last_activity` on tickets (sort `last_activity`), `GET /roles`, `GET /permissions`,
-referral list/remove, task collaborators, task thread-entry edit/resend. Timestamps now carry a `Z` (2026-10-05). Every change the frontend must adopt is logged in `notes/CHANGES_FOR_FRONTEND.md` (keep adding to it). Search/sort/totals/counts on the user, organization, KB and task lists are done (2026-10-05, see the log). Global search by requester and the reply signature enum are done. Typed custom answers are done. Still open, by value: canned expansion (needs the bridge-read design). Ticket create now takes osTicket's staff-form fields (2026-10-05).
+referral list/remove, task collaborators, task thread-entry edit/resend. Timestamps now carry a `Z` (2026-10-05). Every change the frontend must adopt is logged in `notes/CHANGES_FOR_FRONTEND.md` (keep adding to it). Search/sort/totals/counts on the user, organization, KB and task lists are done (2026-10-05, see the log). Global search by requester and the reply signature enum are done. Typed custom answers are done. Canned-response expansion is done (bridge read mode). Nothing from the frontend's request list is open. Ticket create now takes osTicket's staff-form fields (2026-10-05).
 
 ## Direction, in order
 
@@ -125,7 +125,7 @@ users. Add them one read at a time. Needs `MYSQL_PASSWORD` exported besides the 
 - Install the plugin zip through osTicket's admin panel on a real instance (only the CLI installer was run).
 - Run the e2e suite against another osTicket/MySQL version, and a non-`ost_` prefix stack
   (`docker compose -p other up`).
-- HTTP fallback read mode (user said "later") for setups where direct DB access is not acceptable.
+- The bridge read mode exists (`bridge/read.php`; canned render and file streaming). The *full* "no direct DB access" mode, where every read goes through the bridge, does not: reads still query MySQL directly.
 
 ### 5. Smaller cleanups worth doing when nearby
 - WebSocket: connection-attempt rate limit; event-driven close on `staff.*` events instead of the 15 s recheck.

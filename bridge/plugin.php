@@ -508,6 +508,9 @@ class FastApiIntegrationPlugin extends Plugin {
         $dispatcher->append(
             url_get("^/fast-ticket/handshake", array($this, 'handshake'))
         );
+        $dispatcher->append(
+            url_post("^/fast-ticket/read", array($this, 'bridgeRead'))
+        );
     }
 
     /**
@@ -539,7 +542,14 @@ class FastApiIntegrationPlugin extends Plugin {
             'php_version'      => PHP_VERSION,
             'tables_ready'     => $tables_ready,
             'worker_available' => function_exists('pcntl_exec'),
+            // the read endpoint (read.php, reads.php): canned-response variables and files in any storage backend
+            'read_available'   => is_file(dirname(__FILE__) . '/read.php') && is_file(dirname(__FILE__) . '/reads.php'),
         ]);
+    }
+
+    /** POST /api/fast-ticket/read — synchronous, read-only questions for osTicket's own PHP (see read.php). */
+    function bridgeRead() {
+        require_once dirname(__FILE__) . '/read.php';
     }
 
     function authenticateForFastApi() {

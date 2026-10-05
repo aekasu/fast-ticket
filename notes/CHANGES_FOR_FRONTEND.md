@@ -6,6 +6,19 @@ After a backend change run `npm run api:pull && npm run api:types`, read the sna
 list below and remove the met entries from `BACKEND_REQUESTS.md`. This file is the backend's side of that handshake;
 delete an entry once the frontend has adopted it.
 
+## 2026-10-05 — canned responses with the ticket's variables filled in: `GET /tickets/{id}/canned/{canned_id}`
+
+**New.** Returns `{id, title, response, format, files}`: the canned response as osTicket's own reply form would insert
+it, with `%{ticket.name.first}`, `%{ticket.number}`, `%{ticket.subject}` and the rest of osTicket's variables expanded by
+osTicket itself (`format` is `html`, or `text` with `?plain=true`, which strips the HTML). `files` lists the response's
+attached files by name only. 404 when the agent may not open the ticket or may not use that response (or it is
+disabled). Any agent can ask (osTicket gates it on opening the ticket, not on a permission).
+
+**Frontend to do.** When an agent picks a canned response in the reply or note box, call this instead of `GET /canned/{id}`
+plus the local expansion, insert `response`, and delete the variable table in `src/lib/canned.ts` (and its unit tests).
+Also new and invisible to clients: downloads of files kept by a storage plugin now go through osTicket, so the 501
+for them mostly disappears.
+
 ## 2026-10-05 — user CSV import: `POST /users/import`
 
 **New.** `POST /users/import` with `{csv, pasted?}` (needs `user.create`, like osTicket's Import dialog) queues osTicket's own
