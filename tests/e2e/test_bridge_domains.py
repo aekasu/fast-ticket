@@ -1547,3 +1547,38 @@ def test_role_lifecycle_keeps_what_an_update_does_not_send(bridge, uniq):
 def test_a_role_in_use_cannot_be_deleted(bridge):
     in_use = next(r for r in bridge.read("/api/v1/roles?page_size=200")["items"] if r["in_use"])
     bridge.refuses("DELETE", f"/api/v1/roles/{in_use['id']}", None, because="in use")
+
+
+def test_api_key_lifecycle_keeps_what_an_update_does_not_send(bridge, uniq):
+    kid = bridge.create("/api/v1/api-keys", {"ip_address": "203.0.113.7", "can_exec_cron": True, "notes": f"e2e {uniq}"},
+                        cleanup="/api/v1/api-keys/{id}")
+    got = bridge.read(f"/api/v1/api-keys/{kid}")
+    assert len(got["key"]) >= 16 and got["ip_address"] == "203.0.113.7"
+    assert (got["is_active"], got["can_create_tickets"], got["can_exec_cron"], got["notes"]) == (True, True, True, f"e2e {uniq}")
+    bridge.command("PATCH", f"/api/v1/api-keys/{kid}", {"is_active": False})
+    after = bridge.read(f"/api/v1/api-keys/{kid}")
+    assert (after["is_active"], after["can_exec_cron"], after["notes"], after["key"]) == (False, True, f"e2e {uniq}", got["key"])
+    assert any(k["id"] == kid for k in bridge.read("/api/v1/api-keys?page_size=200")["items"])
+    bridge.refuses("POST", "/api/v1/api-keys", {"ip_address": "not an address"}, because="valid ip")
+    bridge.command("DELETE", f"/api/v1/api-keys/{kid}")
+    assert bridge.get(f"/api/v1/api-keys/{kid}").status_code == 404
+
+
+def test_page_lifecycle_and_pages_in_use_are_protected(bridge, uniq):
+    pid = bridge.create("/api/v1/pages", {"name": f"e2e page {uniq}", "type": "other", "body": "<p>hello</p>", "notes": "n"},
+                        cleanup="/api/v1/pages/{id}")
+    got = bridge.read(f"/api/v1/pages/{pid}")
+    assert (got["name"], got["type"], got["is_active"], got["in_use"], got["notes"]) == (f"e2e page {uniq}", "other", True, False, "n")
+    assert "hello" in got["body"]
+    bridge.command("PATCH", f"/api/v1/pages/{pid}", {"body": "<p>changed</p>"})          # the rest is preserved
+    after = bridge.read(f"/api/v1/pages/{pid}")
+    assert "changed" in after["body"] and (after["name"], after["notes"], after["is_active"]) == (f"e2e page {uniq}", "n", True)
+    bridge.refuses("POST", "/api/v1/pages", {"name": f"e2e page {uniq}", "type": "other", "body": "x"}, because="already exists")
+
+    default = next(p for p in bridge.read("/api/v1/pages?page_size=200")["items"] if p["type"] == "landing")
+    assert default["in_use"] is True
+    bridge.refuses("DELETE", f"/api/v1/pages/{default['id']}", None, because="in use")
+    bridge.refuses("PATCH", f"/api/v1/pages/{default['id']}", {"is_active": False}, because="in-use")
+    assert all(p["type"] in ("landing", "offline", "thank-you", "other") for p in bridge.read("/api/v1/pages?page_size=200")["items"])
+    bridge.command("DELETE", f"/api/v1/pages/{pid}")
+    assert bridge.get(f"/api/v1/pages/{pid}").status_code == 404

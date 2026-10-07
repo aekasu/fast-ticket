@@ -1191,6 +1191,52 @@ async def get_log(session: AsyncSession, log_id: int) -> dict | None:
     return dict(row) if row else None
 
 
+_API_KEY_COLUMNS = ("k.id, k.apikey AS `key`, k.ipaddr AS ip_address, k.isactive AS is_active, "
+                    "k.can_create_tickets, k.can_exec_cron, COALESCE(k.notes, '') AS notes, k.created, k.updated")
+
+
+async def list_api_keys(session: AsyncSession, limit: int = 50, offset: int = 0) -> list:
+    """osTicket's own API keys (Admin Panel)."""
+    sql = f"SELECT {_API_KEY_COLUMNS} FROM ost_api_key k ORDER BY k.id ASC LIMIT :limit OFFSET :offset"
+    return list((await session.execute(_sql(sql), {"limit": limit, "offset": offset})).mappings().all())
+
+
+async def count_api_keys(session: AsyncSession) -> int:
+    return int((await session.execute(_sql("SELECT COUNT(*) FROM ost_api_key"))).scalar() or 0)
+
+
+async def get_api_key(session: AsyncSession, key_id: int) -> dict | None:
+    sql = f"SELECT {_API_KEY_COLUMNS} FROM ost_api_key k WHERE k.id = :key_id"
+    row = (await session.execute(_sql(sql), {"key_id": key_id})).mappings().one_or_none()
+    return dict(row) if row else None
+
+
+_SITE_PAGE_TYPES = "('other', 'landing', 'thank-you', 'offline')"   # scp/pages.php lists these; the rest are email/auth templates
+_PAGE_COLUMNS = f"""
+    p.id, p.name, p.type, p.isactive AS is_active, p.created, p.updated, COALESCE(p.notes, '') AS notes, p.body,
+    -- Page::isInUse(): a help topic uses it, or it is one of the three default pages in the settings
+    ((SELECT COUNT(*) FROM ost_help_topic ht WHERE ht.page_id = p.id) > 0
+     OR p.id IN (SELECT CAST(c.value AS UNSIGNED) FROM ost_config c WHERE c.namespace = 'core'
+                 AND c.`key` IN ('landing_page_id', 'offline_page_id', 'thank-you_page_id'))) AS in_use
+"""
+
+
+async def list_pages(session: AsyncSession, limit: int = 50, offset: int = 0) -> list:
+    """Site pages (Admin Panel)."""
+    sql = f"SELECT {_PAGE_COLUMNS} FROM ost_content p WHERE p.type IN {_SITE_PAGE_TYPES} ORDER BY p.name ASC LIMIT :limit OFFSET :offset"
+    return list((await session.execute(_sql(sql), {"limit": limit, "offset": offset})).mappings().all())
+
+
+async def count_pages(session: AsyncSession) -> int:
+    return int((await session.execute(_sql(f"SELECT COUNT(*) FROM ost_content p WHERE p.type IN {_SITE_PAGE_TYPES}"))).scalar() or 0)
+
+
+async def get_page(session: AsyncSession, page_id: int) -> dict | None:
+    sql = f"SELECT {_PAGE_COLUMNS} FROM ost_content p WHERE p.id = :page_id AND p.type IN {_SITE_PAGE_TYPES}"
+    row = (await session.execute(_sql(sql), {"page_id": page_id})).mappings().one_or_none()
+    return dict(row) if row else None
+
+
 async def get_staff_profile(session: AsyncSession, staff_id: int) -> dict | None:
     """The agent's own profile: their ``ost_staff`` row and their per-agent settings (``ost_config`` ``staff.<id>``)."""
     sql = """

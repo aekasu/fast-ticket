@@ -15,6 +15,8 @@ from app.modules.tasks.router import router as tasks_router
 from app.modules.profile.router import router as profile_router
 from app.modules.system.router import router as system_router
 from app.modules.dashboard.router import router as dashboard_router
+from app.modules.apikeys.router import router as apikeys_router
+from app.modules.pages.router import router as pages_router
 from app.modules.roles.router import router as roles_router
 from app.modules.settings.router import router as settings_router
 from app.modules.tickets.router import router as tickets_router
@@ -102,6 +104,8 @@ async def websocket_endpoint(ws: WebSocket):
 
 # ── Roles and permission keys ────────────────────────────────────────────────
 v1_router.include_router(roles_router)
+v1_router.include_router(pages_router)
+v1_router.include_router(apikeys_router)
 v1_router.include_router(dashboard_router)
 v1_router.include_router(system_router)
 v1_router.include_router(profile_router)

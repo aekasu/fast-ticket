@@ -6,6 +6,11 @@ After a backend change run `npm run api:pull && npm run api:types`, read the sna
 list below and remove the met entries from `BACKEND_REQUESTS.md`. This file is the backend's side of that handshake;
 delete an entry once the frontend has adopted it.
 
+## 2026-10-07 — API keys and site pages (Admin Panel, admin only)
+
+- `GET /api-keys`, `GET /api-keys/{id}`, `POST /api-keys {ip_address, is_active?, can_create_tickets?, can_exec_cron?, notes?}`, `PATCH /api-keys/{id}` (flags and notes; the address is fixed), `DELETE /api-keys/{id}`. These are **osTicket's** HTTP-API keys, not this API's login; the key is shown to administrators, as osTicket's page does.
+- `GET /pages`, `GET /pages/{id}`, `POST /pages {name, type: landing|offline|thank-you|other, body, is_active?, notes?}`, `PATCH`, `DELETE`. `in_use` is true for the three default pages and a help topic's page: those cannot be disabled or deleted (osTicket's refusal comes back on the command). Email and registration templates that live in the same table are not listed (osTicket's page doesn't either).
+
 ## 2026-10-07 — knowledge-base and canned-response attachments
 
 - `FAQDetail` and `CannedDetail` carry `attachments: [{id, name, size, content_type, inline}]` (separate files; inline images stay in the text). Download: `GET /kb/faqs/{faq_id}/attachments/{attachment_id}` (any agent) and `GET /canned/{canned_id}/attachments/{attachment_id}` (an agent who may see the response: 404 otherwise). Always sent as a download.

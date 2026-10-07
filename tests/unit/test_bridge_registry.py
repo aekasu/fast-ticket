@@ -147,5 +147,5 @@ def test_permission_specs_are_well_formed_and_their_kind_is_right():
 def test_admin_panel_commands_are_exactly_the_admin_only_domains():
     admin = {c for c, e in ENTRIES.items() if e[4] == "admin"}
     domains = {c.split(".")[0] for c in admin}
-    assert domains == {"staff", "dept", "team", "topic", "sla", "priority", "form", "banlist", "role", "log"}
+    assert domains == {"staff", "dept", "team", "topic", "sla", "priority", "form", "banlist", "role", "log", "apikey", "page"}
     assert not [c for c in ENTRIES if c.split(".")[0] in domains and ENTRIES[c][4] != "admin"]
