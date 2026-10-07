@@ -6,6 +6,11 @@ After a backend change run `npm run api:pull && npm run api:types`, read the sna
 list below and remove the met entries from `BACKEND_REQUESTS.md`. This file is the backend's side of that handshake;
 delete an entry once the frontend has adopted it.
 
+## 2026-10-07 — system logs and system information (Admin Panel, admin only)
+
+- `GET /logs?type=Debug|Warning|Error&since=&until=&sort=id|title|type|ip|created|updated&descending=&page=&page_size=` → `{items:[{id,type,title,logger,ip_address,created,updated}], total, page, page_size}`; `GET /logs/{id}` adds `log` (the text). `POST /logs/delete {ids}` (202; the result's `deleted` counts the rows that existed).
+- `GET /system/info`: osTicket and PHP/MySQL versions, web server, the PHP extensions osTicket looks for (`loaded`), the two PHP settings it checks, schema name and signature, space used, attachment space, database timezone, installed language packs. Not included: osTicket's "latest version" check (it phones home).
+
 ## 2026-10-07 — custom answers as list columns: `?fields=`
 
 - `GET /tickets/`, `/tasks/`, `/users`, `/orgs` take `?fields=name1,name2` (variable names, at most 20; see `GET /forms/for/{kind}`): every row then carries `custom_fields` with just those answers (typed, as on the detail reads), an empty list when the row has none, and `null` when `fields` was not asked. One extra query per page, not one per row; tickets and tasks are scoped as the list is. An invalid name list is a 422. **Do:** show custom columns from it and drop the "one request per row" workaround.

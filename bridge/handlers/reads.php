@@ -89,5 +89,67 @@ class FastApiReadHandler {
         $file->sendData(false);
         return null;
     }
+
+    /**
+     * What the Admin Panel's "System Information" page shows (scp/system.php). Administrators only.
+     * Result: osticket_version, web_server, mysql_version, php_version, extensions[], php_settings[], schema_*,
+     * space_used_mib, attachment_space_mib, database_timezone, interpreted_timezone, language_packs[].
+     */
+    public static function systemInfo($params, $staff) {
+        global $thisstaff, $cfg, $ost;
+        if (!$thisstaff || !$thisstaff->isAdmin()) {
+            throw new FastApiReadRefused(404, 'not_found', 'No such page.');
+        }
+        $known = [
+            'gd' => ['gdlib', 'Used for image manipulation and PDF printing'],
+            'imap' => ['imap', 'Used for email fetching'],
+            'xml' => ['xml', 'XML API'],
+            'dom' => ['xml-dom', 'Used for HTML email processing'],
+            'json' => ['json', 'Improves performance creating and processing JSON'],
+            'mbstring' => ['mbstring', 'Highly recommended for non western european language content'],
+            'phar' => ['phar', 'Highly recommended for plugins and language packs'],
+            'intl' => ['intl', 'Highly recommended for non western european language content'],
+            'fileinfo' => ['fileinfo', 'Used to detect file types for uploads'],
+            'zip' => ['zip', 'Used for ticket and task exporting'],
+            'apcu' => ['APCu', 'Improves overall performance'],
+            'Zend Opcache' => ['Zend Opcache', 'Improves overall performance'],
+        ];
+        $extensions = [];
+        foreach ($known as $key => $info) {
+            $extensions[] = ['key' => $key, 'name' => $info[0], 'description' => $info[1], 'loaded' => extension_loaded($key)];
+        }
+        $space = function ($sql) {
+            return round((float) db_result(db_query($sql)), 2);
+        };
+        $packs = [];
+        foreach (Internationalization::availableLanguages() as $info) {
+            $p = $info['path'];
+            if (!empty($info['phar'])) {
+                $p = 'phar://' . $p;
+            }
+            $manifest = file_exists($p . '/MANIFEST.php') ? (include $p . '/MANIFEST.php') : null;
+            $packs[] = ['code' => (string) $info['code'],
+                        'name' => (string) Internationalization::getLanguageDescription($info['code']),
+                        'version' => $manifest ? (string) ($manifest['Version'] ?? '') : null];
+        }
+        return [
+            'osticket_version' => (string) $ost->getVersion(),
+            'web_server' => (string) ($_SERVER['SERVER_SOFTWARE'] ?? ''),
+            'mysql_version' => (string) db_version(),
+            'php_version' => phpversion(),
+            'extensions' => $extensions,
+            'php_settings' => [
+                ['name' => 'cgi.fix_pathinfo', 'value' => (string) ini_get('cgi.fix_pathinfo'), 'ok' => ini_get('cgi.fix_pathinfo') == 1],
+                ['name' => 'date.timezone', 'value' => (string) ini_get('date.timezone'), 'ok' => (bool) ini_get('date.timezone')],
+            ],
+            'schema_name' => DBNAME,
+            'schema_signature' => (string) $cfg->getSchemaSignature(),
+            'space_used_mib' => $space('SELECT sum(data_length + index_length) / 1048576 FROM information_schema.TABLES WHERE table_schema = ' . db_input(DBNAME)),
+            'attachment_space_mib' => $space('SELECT (DATA_LENGTH + INDEX_LENGTH) / 1048576 FROM information_schema.TABLES WHERE TABLE_SCHEMA = ' . db_input(DBNAME) . ' AND TABLE_NAME = ' . db_input(FILE_CHUNK_TABLE)),
+            'database_timezone' => (string) db_timezone(),
+            'interpreted_timezone' => (string) $cfg->getDbTimezone(),
+            'language_packs' => $packs,
+        ];
+    }
 }
 }

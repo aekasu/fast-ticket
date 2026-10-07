@@ -14,4 +14,5 @@
 return [
     'canned.render' => ['reads', 'FastApiReadHandler', 'cannedRender'],
     'file.stream'   => ['reads', 'FastApiReadHandler', 'fileStream'],
+    'system.info'   => ['reads', 'FastApiReadHandler', 'systemInfo'],
 ];

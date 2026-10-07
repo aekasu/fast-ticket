@@ -1120,6 +1120,48 @@ async def list_priorities(session: AsyncSession, limit: int = 50, offset: int = 
     return list(result.mappings().all())
 
 
+_LOG_SORTS = {"id": "log_id", "title": "title", "type": "log_type", "ip": "ip_address", "created": "created", "updated": "updated"}
+
+
+def _log_filters(log_type, since, until) -> tuple[str, dict]:
+    where, params = ["1 = 1"], {}
+    if log_type:
+        where.append("l.log_type = :log_type")
+        params["log_type"] = log_type
+    if since:
+        where.append("l.created >= :since")
+        params["since"] = since
+    if until:
+        where.append("l.created <= :until")
+        params["until"] = until
+    return " AND ".join(where), params
+
+
+async def list_logs(
+    session: AsyncSession, *, log_type: str | None = None, since=None, until=None,
+    sort: str = "id", descending: bool = True, limit: int = 50, offset: int = 0,
+) -> list:
+    """System log entries (Admin Panel; the caller is an administrator)."""
+    where, params = _log_filters(log_type, since, until)
+    order = _LOG_SORTS.get(sort, "log_id")
+    sql = (f"SELECT l.log_id AS id, l.log_type AS type, l.title, l.logger, l.ip_address, l.created, l.updated "
+           f"FROM ost_syslog l WHERE {where} ORDER BY l.{order} {'DESC' if descending else 'ASC'}, l.log_id DESC LIMIT :limit OFFSET :offset")
+    result = await session.execute(_sql(sql), {**params, "limit": limit, "offset": offset})
+    return list(result.mappings().all())
+
+
+async def count_logs(session: AsyncSession, *, log_type: str | None = None, since=None, until=None) -> int:
+    where, params = _log_filters(log_type, since, until)
+    return int((await session.execute(_sql(f"SELECT COUNT(*) FROM ost_syslog l WHERE {where}"), params)).scalar() or 0)
+
+
+async def get_log(session: AsyncSession, log_id: int) -> dict | None:
+    sql = ("SELECT l.log_id AS id, l.log_type AS type, l.title, l.log, l.logger, l.ip_address, l.created, l.updated "
+           "FROM ost_syslog l WHERE l.log_id = :log_id")
+    row = (await session.execute(_sql(sql), {"log_id": log_id})).mappings().one_or_none()
+    return dict(row) if row else None
+
+
 async def get_staff_profile(session: AsyncSession, staff_id: int) -> dict | None:
     """The agent's own profile: their ``ost_staff`` row and their per-agent settings (``ost_config`` ``staff.<id>``)."""
     sql = """
