@@ -1671,3 +1671,24 @@ def test_email_template_set_lifecycle_and_messages(bridge, uniq):
     assert bridge.read(f"/api/v1/email-templates/{copy}")["message_count"] == 19
     bridge.command("DELETE", f"/api/v1/email-templates/{sid}")
     assert bridge.get(f"/api/v1/email-templates/{sid}").status_code == 404
+
+
+def test_email_address_lifecycle_and_the_default_ones_are_protected(bridge, uniq):
+    addr = f"e2e.{uniq}@{DELIVERABLE_DOMAIN}"
+    eid = bridge.create("/api/v1/emails", {"email": addr, "name": "E2E Address", "dept_id": 1, "priority_id": 2, "notes": "n"},
+                        cleanup="/api/v1/emails/{id}")
+    got = bridge.read(f"/api/v1/emails/{eid}")
+    assert (got["email"], got["name"], got["dept_id"], got["priority_id"], got["notes"]) == (addr, "E2E Address", 1, 2, "n")
+    assert (got["no_autoresponse"], got["is_default"], got["has_mailbox"], got["has_smtp"], got["accounts"]) == (False, False, False, False, [])
+    assert got["dept_name"] and got["priority_name"]
+
+    bridge.command("PATCH", f"/api/v1/emails/{eid}", {"no_autoresponse": True})                 # the rest is kept
+    after = bridge.read(f"/api/v1/emails/{eid}")
+    assert (after["no_autoresponse"], after["name"], after["dept_id"], after["notes"], after["email"]) == (True, "E2E Address", 1, "n", addr)
+    assert any(e["id"] == eid for e in bridge.read("/api/v1/emails?page_size=200")["items"])
+    bridge.refuses("POST", "/api/v1/emails", {"email": addr, "name": "dup"}, because="already exists")
+
+    default = next(e for e in bridge.read("/api/v1/emails?page_size=200")["items"] if e["is_default"])
+    bridge.refuses("DELETE", f"/api/v1/emails/{default['id']}", None, because="cannot be deleted")
+    bridge.command("DELETE", f"/api/v1/emails/{eid}")
+    assert bridge.get(f"/api/v1/emails/{eid}").status_code == 404

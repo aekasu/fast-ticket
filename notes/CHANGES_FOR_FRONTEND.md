@@ -6,6 +6,10 @@ After a backend change run `npm run api:pull && npm run api:types`, read the sna
 list below and remove the met entries from `BACKEND_REQUESTS.md`. This file is the backend's side of that handshake;
 delete an entry once the frontend has adopted it.
 
+## 2026-10-07 — the system's email addresses (Admin Panel, admin only)
+
+- `GET /emails` → `{items:[{id, email, name, dept_id/name, priority_id/name, topic_id/name, no_autoresponse, is_default, has_mailbox, has_smtp, created, updated}], total, ...}`; `GET /emails/{id}` adds `notes` and `accounts[]` (mailbox / SMTP: active, host, port, protocol, encryption, folder, fetch settings, error count and last error; **never credentials**). `POST /emails {email, name, dept_id?, priority_id?, topic_id?, no_autoresponse?, notes?}`, `PATCH /emails/{id}` (partial), `DELETE /emails/{id}` (not the default or alert address). Setting up a mailbox or SMTP account (host, login, OAuth) stays in osTicket.
+
 ## 2026-10-07 — email template sets and their messages (Admin Panel, admin only)
 
 - `GET /email-templates` → `{items:[{id, name, lang, notes, is_active, in_use, message_count, created, updated}], total, ...}`; `GET /email-templates/{id}` adds `messages[]` for all 19 messages osTicket knows (`code_name`, `name`, `group`, `description`, `defined`, `subject`, `updated`; `defined=false` means the set has no copy yet and osTicket uses its built-in text). `GET /email-templates/{id}/messages/{code_name}` adds the `body`.

@@ -105,3 +105,17 @@ async def test_email_template_writes_are_queued_and_unknown_messages_are_404():
     assert [r.command_type for r in rows] == ["emailtemplate.create", "emailtemplate.update", "emailtemplate.message.update", "emailtemplate.delete"]
     assert json.loads(rows[1].payload) == {"set_id": 2, "is_active": False}
     assert json.loads(rows[2].payload) == {"set_id": 2, "code_name": "ticket.autoresp", "subject": "s", "body": "<p>b</p>"}
+
+
+@pytest.mark.asyncio
+async def test_email_address_writes_are_admin_commands_with_only_what_was_sent():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        admin = _auth(is_admin=True)
+        made = await ac.post("/api/v1/emails", json={"email": "help@example.com", "name": "Help", "dept_id": 2}, headers=admin)
+        bad = await ac.post("/api/v1/emails", json={"email": "not-an-address", "name": "Help"}, headers=admin)
+        changed = await ac.patch("/api/v1/emails/4", json={"no_autoresponse": True}, headers=admin)
+        removed = await ac.delete("/api/v1/emails/4", headers=admin)
+        denied = await ac.delete("/api/v1/emails/4", headers=_auth(["ticket.edit"]))
+    assert [r.status_code for r in (made, bad, changed, removed, denied)] == [202, 422, 202, 202, 403]
+    rows = await _rows()
+    assert json.loads(rows[1].payload) == {"email_id": 4, "no_autoresponse": True}

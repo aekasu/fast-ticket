@@ -1321,6 +1321,49 @@ async def get_template_message(session: AsyncSession, set_id: int, code_name: st
     return dict(row) if row else None
 
 
+_EMAIL_COLUMNS = """
+    e.email_id AS id, e.email, e.name, e.dept_id, d.name AS dept_name, e.priority_id, p.priority AS priority_name,
+    e.topic_id, ht.topic AS topic_name, e.noautoresp AS no_autoresponse, e.notes, e.created, e.updated,
+    (e.email_id IN (SELECT CAST(c.value AS UNSIGNED) FROM ost_config c WHERE c.namespace = 'core'
+                    AND c.`key` IN ('default_email_id', 'alert_email_id'))) AS is_default,
+    EXISTS (SELECT 1 FROM ost_email_account a WHERE a.email_id = e.email_id AND a.type = 'mailbox') AS has_mailbox,
+    EXISTS (SELECT 1 FROM ost_email_account a WHERE a.email_id = e.email_id AND a.type = 'smtp') AS has_smtp
+"""
+_EMAIL_FROM = """
+    FROM ost_email e
+    LEFT JOIN ost_department d ON d.id = e.dept_id
+    LEFT JOIN ost_ticket_priority p ON p.priority_id = e.priority_id
+    LEFT JOIN ost_help_topic ht ON ht.topic_id = e.topic_id
+"""
+
+
+async def list_emails(session: AsyncSession, limit: int = 50, offset: int = 0) -> list:
+    """The system's email addresses (Admin Panel)."""
+    sql = f"SELECT {_EMAIL_COLUMNS} {_EMAIL_FROM} ORDER BY e.email ASC LIMIT :limit OFFSET :offset"
+    return list((await session.execute(_sql(sql), {"limit": limit, "offset": offset})).mappings().all())
+
+
+async def count_emails(session: AsyncSession) -> int:
+    return int((await session.execute(_sql("SELECT COUNT(*) FROM ost_email"))).scalar() or 0)
+
+
+async def get_email(session: AsyncSession, email_id: int) -> dict | None:
+    sql = f"SELECT {_EMAIL_COLUMNS} {_EMAIL_FROM} WHERE e.email_id = :email_id"
+    row = (await session.execute(_sql(sql), {"email_id": email_id})).mappings().one_or_none()
+    return dict(row) if row else None
+
+
+async def list_email_accounts(session: AsyncSession, email_id: int) -> list:
+    """The mail accounts of an address, without the credentials (``auth_id`` and the stored secrets are never read)."""
+    sql = """
+        SELECT a.id, a.type, a.active, a.host, a.port, a.protocol, a.encryption, a.folder, a.fetchfreq, a.fetchmax,
+               a.postfetch, a.num_errors, a.last_error_msg, NULLIF(a.last_error, '0000-00-00 00:00:00') AS last_error,
+               NULLIF(a.last_activity, '0000-00-00 00:00:00') AS last_activity
+        FROM ost_email_account a WHERE a.email_id = :email_id ORDER BY a.id
+    """
+    return list((await session.execute(_sql(sql), {"email_id": email_id})).mappings().all())
+
+
 async def get_staff_profile(session: AsyncSession, staff_id: int) -> dict | None:
     """The agent's own profile: their ``ost_staff`` row and their per-agent settings (``ost_config`` ``staff.<id>``)."""
     sql = """
