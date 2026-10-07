@@ -6,6 +6,12 @@ After a backend change run `npm run api:pull && npm run api:types`, read the sna
 list below and remove the met entries from `BACKEND_REQUESTS.md`. This file is the backend's side of that handshake;
 delete an entry once the frontend has adopted it.
 
+## 2026-10-07 — Admin Panel settings pages (admin only)
+
+- `GET /settings/{section}` and `PATCH /settings/{section}` (202, partial) for `system`, `tickets`, `tasks`, `agents`, `users`, `kb`, `emails` and `pages` (landing / offline / thank-you page ids). The body is osTicket's own keys, flat and typed: numbers, text, booleans (checkboxes and the 1/0 switches such as `isonline` and the `*_alert_active` flags) and, for `system`, `secondary_langs` as a list of codes. `tickets` carries the auto-response, notice and alert switches that osTicket keeps on that page.
+- osTicket validates the whole section exactly as its page does and refuses with its own wording on the command (`error_message` is a JSON object of field → message, e.g. `{"ticket_number_format": "…requires at least one hash character (#)"}`); a refused save changes nothing. A key that is not in the section is refused. Select-like values (`client_registration`, `agent_name_format`, password policies, …) are osTicket's own strings: take the options from its pages' values (`public`/`private`/`disabled` etc.); the API does not enumerate them yet.
+- Not here: company profile and logos, the default storage backend, manual queue sort (see `KNOWN_LIMITS.md`).
+
 ## 2026-10-07 — custom lists (Admin Panel, admin only) and custom-list answers
 
 - `GET /lists`, `GET /lists/{id}` (`{id, name, name_plural, sort_mode: Alpha|-Alpha|SortCol, notes, item_count, handled_by, is_editable, allow_add, is_deletable}`), `POST /lists`, `PATCH /lists/{id}`, `DELETE /lists/{id}` (refused while a form field uses it). A list osTicket manages itself (ticket statuses: `handled_by` set) is read-only here.

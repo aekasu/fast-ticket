@@ -39,6 +39,7 @@ UNSCOPED_BY_DESIGN = {
     "get_department": "Admin Panel (department detail)",
     "get_priority": "Admin Panel (priority detail)",
     "get_role": "Admin Panel (role detail)",
+    "get_core_config": "Admin Panel (settings); the service exposes only the keys of the requested section",
     "list_custom_lists": "Admin Panel (custom lists)",
     "count_custom_lists": "Admin Panel (custom lists)",
     "get_custom_list": "Admin Panel (custom lists)",

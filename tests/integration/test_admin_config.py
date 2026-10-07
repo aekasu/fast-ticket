@@ -1,6 +1,7 @@
 """API keys and site pages: Admin Panel pages, so admin only, every write queued as a command with only what was sent."""
 
 import json
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -64,3 +65,26 @@ async def test_custom_list_and_item_writes_are_queued_with_only_what_was_sent():
     assert [r.command_type for r in rows] == ["list.create", "list.update", "list.item.create", "list.item.update", "list.item.delete", "list.delete"]
     assert json.loads(rows[1].payload) == {"list_id": 3, "notes": "n"}
     assert json.loads(rows[3].payload) == {"list_id": 3, "item_id": 7, "is_enabled": False}
+
+
+@pytest.mark.asyncio
+async def test_settings_pages_are_admin_only_and_queue_only_what_was_sent():
+    stored = {"autolock_minutes": "3", "enable_kb": "", "isonline": "1", "secondary_langs": "de, fr"}
+    with patch("app.modules.settings.service.repo.get_core_config", new=AsyncMock(return_value=stored)):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            admin, agent = _auth(is_admin=True), _auth(["ticket.edit"])
+            system = await ac.get("/api/v1/settings/system", headers=admin)
+            kb = await ac.get("/api/v1/settings/kb", headers=admin)
+            denied = await ac.get("/api/v1/settings/system", headers=agent)
+            changed = await ac.patch("/api/v1/settings/system", json={"autolock_minutes": 5, "enable_avatars": True}, headers=admin)
+            wrong_section_key = await ac.patch("/api/v1/settings/kb", json={"autolock_minutes": 5}, headers=admin)
+            wrong_type = await ac.patch("/api/v1/settings/system", json={"autolock_minutes": "soon"}, headers=admin)
+            negative = await ac.patch("/api/v1/settings/system", json={"max_page_size": -1}, headers=admin)
+    assert (system.status_code, kb.status_code, denied.status_code, changed.status_code) == (200, 200, 403, 202)
+    assert system.json()["autolock_minutes"] == 3 and system.json()["isonline"] is True
+    assert system.json()["secondary_langs"] == ["de", "fr"] and kb.json() == {"enable_kb": False, "restrict_kb": False, "enable_premade": False}
+    assert wrong_section_key.status_code == 202            # an unknown key is ignored by the model; the bridge refuses a wrong-section key
+    assert (wrong_type.status_code, negative.status_code) == (422, 422)
+    rows = await _rows()
+    assert json.loads(rows[0].payload) == {"section": "system", "values": {"autolock_minutes": 5, "enable_avatars": True}}
+    assert json.loads(rows[1].payload) == {"section": "kb", "values": {}}

@@ -1278,6 +1278,12 @@ async def count_custom_list_items(session: AsyncSession, list_id: int) -> int:
     return int((await session.execute(_sql(sql), {"list_id": list_id})).scalar() or 0)
 
 
+async def get_core_config(session: AsyncSession) -> dict:
+    """osTicket's ``core`` settings as stored (key -> text). The caller picks the keys it exposes."""
+    rows = (await session.execute(_sql("SELECT `key`, value FROM ost_config WHERE namespace = 'core'"))).all()
+    return {key: value for key, value in rows}
+
+
 async def get_staff_profile(session: AsyncSession, staff_id: int) -> dict | None:
     """The agent's own profile: their ``ost_staff`` row and their per-agent settings (``ost_config`` ``staff.<id>``)."""
     sql = """

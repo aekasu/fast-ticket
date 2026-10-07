@@ -124,6 +124,7 @@ return [
     'list.item.create'        => ['lists', 'FastApiListHandler', 'createItem', 'list.item_created', 'admin'],
     'list.item.update'        => ['lists', 'FastApiListHandler', 'updateItem', 'list.item_updated', 'admin'],
     'list.item.delete'        => ['lists', 'FastApiListHandler', 'deleteItem', 'list.item_deleted', 'admin'],
+    'settings.update'         => ['settings', 'FastApiSettingsHandler', 'update', 'settings.updated', 'admin'],
     'priority.create'         => ['lookups', 'FastApiPriorityHandler', 'create', 'priority.created', 'admin'],
     'priority.update'         => ['lookups', 'FastApiPriorityHandler', 'update', 'priority.updated', 'admin'],
     'priority.delete'         => ['lookups', 'FastApiPriorityHandler', 'delete', 'priority.deleted', 'admin'],
