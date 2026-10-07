@@ -6,6 +6,10 @@ After a backend change run `npm run api:pull && npm run api:types`, read the sna
 list below and remove the met entries from `BACKEND_REQUESTS.md`. This file is the backend's side of that handshake;
 delete an entry once the frontend has adopted it.
 
+## 2026-10-07 — the Dashboard activity report
+
+- `GET /dashboard/report?start=YYYY-MM-DD&period=until_today|one_week|two_weeks|one_month|one_quarter&group=department|topic|agent` (any agent) → `{start, period, group, plot:{days[], series:[{event, counts[]}]}, table:{columns[], rows[][]}}`: osTicket's own report class run as the agent, so which departments, topics and agents the rows cover is osTicket's rule (an agent sees their departments; "agent" shows themselves, plus the agents they manage or all with `stats.agents`). Table cells are strings as osTicket prints them (hours with one decimal). `start` omitted = a month ago. No CSV export route: build it from `table`.
+
 ## 2026-10-07 — system logs and system information (Admin Panel, admin only)
 
 - `GET /logs?type=Debug|Warning|Error&since=&until=&sort=id|title|type|ip|created|updated&descending=&page=&page_size=` → `{items:[{id,type,title,logger,ip_address,created,updated}], total, page, page_size}`; `GET /logs/{id}` adds `log` (the text). `POST /logs/delete {ids}` (202; the result's `deleted` counts the rows that existed).

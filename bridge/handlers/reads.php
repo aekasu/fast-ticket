@@ -151,5 +151,36 @@ class FastApiReadHandler {
             'language_packs' => $packs,
         ];
     }
+
+    /**
+     * The Dashboard activity report (scp/dashboard.php): OverviewReport's plot and one tabular group, which applies
+     * osTicket's own scoping to the signed-in agent. Params: start ('' = a month ago, else YYYY-MM-DD), period (one of
+     * OverviewReport::$end_choices keys), group (dept | topic | staff).
+     */
+    public static function dashboardReport($params, $staff) {
+        global $thisstaff;
+        require_once INCLUDE_DIR . 'class.report.php';
+        $period = (string) ($params['period'] ?? 'now');
+        $group = (string) ($params['group'] ?? 'dept');
+        $start = (string) ($params['start'] ?? '');
+        if (!array_key_exists($period, OverviewReport::$end_choices)
+                || !in_array($group, ['dept', 'topic', 'staff'], true)
+                || ($start !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $start))) {
+            throw new FastApiReadRefused(400, 'bad_request', 'Bad report parameters.');
+        }
+        $report = new OverviewReport($start, $period);
+        $plot = $report->getPlotData();
+        $days = array_map(function ($t) { return date('Y-m-d', $t); }, $plot['times']);
+        $series = [];
+        foreach ($plot['plots'] as $event => $counts) {
+            $series[] = ['event' => (string) $event, 'counts' => array_map('intval', $counts)];
+        }
+        $table = $report->getTabularData($group);
+        $rows = array_map(function ($row) { return array_map('strval', $row); }, $table['data']);
+        return [
+            'plot' => ['days' => $days, 'series' => $series],
+            'table' => ['columns' => array_map('strval', $table['columns']), 'rows' => $rows],
+        ];
+    }
 }
 }

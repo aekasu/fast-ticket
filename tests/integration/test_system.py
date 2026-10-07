@@ -59,3 +59,19 @@ async def test_system_info_comes_from_osticket_for_administrators_only():
     assert (ok.status_code, denied.status_code) == (200, 403)
     assert ok.json()["osticket_version"] == "v1.18" and ok.json()["language_packs"][0]["version"] is None
     assert bridge.await_args.args[0] == "system.info"
+
+
+@pytest.mark.asyncio
+async def test_dashboard_report_is_asked_of_osticket_as_the_agent():
+    result = {"plot": {"days": ["2026-10-01"], "series": [{"event": "Created", "counts": [3]}]},
+              "table": {"columns": ["Department", "Opened"], "rows": [["Support", "3"]]}}
+    bridge = AsyncMock(return_value=result)
+    with patch("app.modules.dashboard.service.bridge_json", new=bridge):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            ok = await ac.get("/api/v1/dashboard/report?start=2026-09-01&period=one_week&group=agent", headers=_auth([]))
+            bad = await ac.get("/api/v1/dashboard/report?period=forever", headers=_auth([]))
+            anon = await ac.get("/api/v1/dashboard/report")
+    assert (ok.status_code, bad.status_code, anon.status_code) == (200, 422, 401)
+    assert ok.json()["table"]["rows"] == [["Support", "3"]] and ok.json()["plot"]["days"] == ["2026-10-01"]
+    op, staff_id, params = bridge.await_args.args
+    assert (op, params) == ("dashboard.report", {"start": "2026-09-01", "period": "+7 days", "group": "staff"})
