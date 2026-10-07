@@ -52,7 +52,7 @@ POLICY = {
     **{f"GET {p}": "staff" for p in [
         "/api/v1/agents", "/api/v1/tickets/queues", "/api/v1/canned", "/api/v1/canned/{canned_id}", "/api/v1/commands", "/api/v1/commands/{command_id}",
         "/api/v1/departments", "/api/v1/kb/categories", "/api/v1/kb/categories/{category_id}",
-        "/api/v1/kb/faqs", "/api/v1/kb/faqs/{faq_id}", "/api/v1/priorities", "/api/v1/ticket-statuses", "/api/v1/permissions", "/api/v1/forms/for/{kind}", "/api/v1/settings/attachments", "/api/v1/search",
+        "/api/v1/kb/faqs", "/api/v1/kb/faqs/{faq_id}", "/api/v1/priorities", "/api/v1/profile", "/api/v1/ticket-statuses", "/api/v1/permissions", "/api/v1/forms/for/{kind}", "/api/v1/settings/attachments", "/api/v1/search",
         "/api/v1/tasks/", "/api/v1/tasks/queues", "/api/v1/tasks/{task_id}", "/api/v1/tasks/{task_id}/collaborators", "/api/v1/tickets/", "/api/v1/tickets/{ticket_id}", "/api/v1/tickets/{ticket_id}/collaborators", "/api/v1/tickets/{ticket_id}/referrals", "/api/v1/tickets/{ticket_id}/related", "/api/v1/tickets/{ticket_id}/canned/{canned_id}",
         "/api/v1/tickets/{ticket_id}/attachments/{attachment_id}", "/api/v1/tasks/{task_id}/attachments/{attachment_id}",
         "/api/v1/topics",
@@ -100,6 +100,8 @@ POLICY = {
     "DELETE /api/v1/tickets/{ticket_id}/collaborators/{user_id}": "perm:ticket.edit",
     "POST /api/v1/tickets/{ticket_id}/note": "perm:ticket.reply",
     "POST /api/v1/tickets/{ticket_id}/reply": "perm:ticket.reply",
+    "PATCH /api/v1/profile": "self",            # self-service write: any agent, their own record only
+    "POST /api/v1/profile/password": "self",
     "POST /api/v1/tickets/{ticket_id}/merge": "perm:ticket.merge",
     "POST /api/v1/tickets/{ticket_id}/unmerge": "perm:ticket.merge",
     "POST /api/v1/tickets/{ticket_id}/link": "perm:ticket.link",
@@ -133,7 +135,7 @@ def _personas():
 
 
 def _expected(policy: str, name: str, access) -> bool:
-    if policy == "staff":
+    if policy in ("staff", "self"):
         return True
     if policy == "admin":
         return access.is_admin
@@ -161,6 +163,10 @@ def test_a_write_is_never_open_to_every_agent():
     open_writes = [k for k, v in POLICY.items() if v in ("staff", "public", "authenticated") and not k.startswith("GET ")
                    and k != "POST /api/v1/auth/login"]
     assert open_writes == []
+
+
+def test_the_only_self_service_writes_are_the_profile_ones():
+    assert {k for k, v in POLICY.items() if v == "self"} == {"PATCH /api/v1/profile", "POST /api/v1/profile/password"}
 
 
 def test_only_reads_are_open_to_every_agent():

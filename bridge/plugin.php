@@ -306,6 +306,9 @@ class FastApiIntegrationPlugin extends Plugin {
         if (!$thisstaff)
             throw new Exception("Permission denied: {$command_type} needs a requesting staff member.");
 
+        if ($permission === 'self') {
+            return;   // self-service: the handler acts on the requesting staff member's own record only
+        }
         if ($permission === 'admin') {
             if ($thisstaff->isAdmin())
                 return;

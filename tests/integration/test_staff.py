@@ -368,3 +368,18 @@ async def test_all_endpoints_require_auth():
             kwargs = {} if method in ("GET", "DELETE") else {"json": {}}
             resp = await func(path, **kwargs)
             assert resp.status_code == 401, f"{method} {path} → {resp.status_code}"
+
+
+@pytest.mark.asyncio
+async def test_profile_commands_are_open_to_any_agent_and_only_about_themselves():
+    import json as _json
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        patched = await ac.patch("/api/v1/profile", json={"phone": "555", "onvacation": True}, headers=_auth([]))
+        password = await ac.post("/api/v1/profile/password", json={"current_password": "a", "new_password": "b"}, headers=_auth([]))
+        bad = await ac.patch("/api/v1/profile", json={"max_page_size": 500, "email": "no-at-sign"}, headers=_auth([]))
+        anon = await ac.patch("/api/v1/profile", json={"phone": "1"})
+    assert (patched.status_code, password.status_code, bad.status_code, anon.status_code) == (202, 202, 422, 401)
+    rows = await _inbox_rows()
+    assert [r.command_type for r in rows] == ["profile.update", "profile.change_password"]
+    assert _json.loads(rows[0].payload) == {"phone": "555", "onvacation": True}          # only what was sent
+    assert rows[1].requested_by_staff_id == rows[1].requested_by_staff_id and rows[1].aggregate_id == str(rows[1].requested_by_staff_id)

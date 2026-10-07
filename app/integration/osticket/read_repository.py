@@ -1084,6 +1084,24 @@ async def list_priorities(session: AsyncSession, limit: int = 50, offset: int = 
     return list(result.mappings().all())
 
 
+async def get_staff_profile(session: AsyncSession, staff_id: int) -> dict | None:
+    """The agent's own profile: their ``ost_staff`` row and their per-agent settings (``ost_config`` ``staff.<id>``)."""
+    sql = """
+        SELECT s.username, COALESCE(s.firstname, '') AS firstname, COALESCE(s.lastname, '') AS lastname,
+               COALESCE(s.email, '') AS email, s.phone, COALESCE(s.phone_ext, '') AS phone_ext, s.mobile,
+               COALESCE(s.signature, '') AS signature, COALESCE(s.timezone, '') AS timezone, COALESCE(s.lang, '') AS lang,
+               s.max_page_size, s.auto_refresh_rate, s.default_signature_type, s.default_paper_size,
+               s.onvacation > 0 AS onvacation
+        FROM ost_staff s WHERE s.staff_id = :staff_id
+    """
+    row = (await session.execute(_sql(sql), {"staff_id": staff_id})).mappings().one_or_none()
+    if row is None:
+        return None
+    settings = (await session.execute(
+        _sql("SELECT `key`, value FROM ost_config WHERE namespace = :ns"), {"ns": f"staff.{int(staff_id)}"})).all()
+    return {"staff": dict(row), "config": {key: value for key, value in settings}}
+
+
 async def list_ticket_statuses(session: AsyncSession, limit: int = 50, offset: int = 0) -> list:
     """Enabled ticket statuses (``TicketStatusList::getStatuses``: ``mode`` bit 1 is "enabled"), in osTicket's order."""
     sql = """

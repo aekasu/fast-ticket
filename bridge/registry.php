@@ -86,6 +86,8 @@ return [
     'kb.canned.update'        => ['kb', 'FastApiKbHandler', 'updateCanned', 'kb.canned.updated', 'role:canned.manage'],
     'kb.canned.delete'        => ['kb', 'FastApiKbHandler', 'deleteCanned', 'kb.canned.deleted', 'role:canned.manage'],
 
+    'profile.update'             => ['profile', 'FastApiProfileHandler', 'update', 'profile.updated', 'self'],
+    'profile.change_password'     => ['profile', 'FastApiProfileHandler', 'changePassword', 'profile.password_changed', 'self'],
     'staff.create'            => ['staff', 'FastApiStaffHandler', 'create', 'staff.created', 'admin'],
     'staff.update'            => ['staff', 'FastApiStaffHandler', 'update', 'staff.updated', 'admin'],
     'staff.delete'            => ['staff', 'FastApiStaffHandler', 'delete', 'staff.deleted', 'admin'],

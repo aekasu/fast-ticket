@@ -6,6 +6,12 @@ After a backend change run `npm run api:pull && npm run api:types`, read the sna
 list below and remove the met entries from `BACKEND_REQUESTS.md`. This file is the backend's side of that handshake;
 delete an entry once the frontend has adopted it.
 
+## 2026-10-07 — My Profile (self-service)
+
+- `GET /profile` (any agent): their own profile: `username, firstname, lastname, email, phone, phone_ext, mobile, signature, timezone, lang, max_page_size (0 = system), auto_refresh_rate (minutes, 0 = off), default_signature_type, default_paper_size, onvacation`, and the per-agent settings `datetime_format, default_from_name, thread_view_order, default_ticket_queue_id, reply_redirect, img_att_view, editor_spacing` (empty = the system default).
+- `PATCH /profile` (202, any agent, partial: what is absent keeps its stored value; osTicket's own refusals such as "Email already in use by another agent" come back on the command). `POST /profile/password {current_password, new_password}` (202): the current password must be right and osTicket's password policy applies. **A password change voids the agent's existing tokens: send them to the login screen.** Neither takes a staff id: the bridge acts on the requesting agent only.
+- **Do:** replace the read-only My Profile with a form on these; nothing about 2FA is exposed (accounts with 2FA still cannot log in).
+
 ## 2026-10-07 — roles CRUD and the missing admin-list columns
 
 - Roles: `GET /roles/{id}`, `POST /roles {name, notes?, permissions[], enabled?}`, `PATCH /roles/{id}` (partial: what is absent keeps its stored value, permissions included), `DELETE /roles/{id}` (refused with "in use" while an agent or department-access entry uses it). All admin only. A role (list and detail) now has `created`, `updated` and `in_use`. osTicket needs at least one permission and a unique name; its refusals are shown as worded. Permission keys must be role keys from `GET /permissions`.

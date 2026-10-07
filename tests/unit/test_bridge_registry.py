@@ -96,7 +96,16 @@ def test_every_registered_handler_method_exists():
 def _spec_for(guard: str) -> str:
     from app.core.permissions import permission_kind
 
-    return "admin" if guard == "admin" else f"{permission_kind(guard)}:{guard}"
+    return "admin" if guard == "admin" else "self" if guard == "staff" else f"{permission_kind(guard)}:{guard}"
+
+
+# The only commands any enabled agent may queue: each acts on the requesting agent's own record and reads no id
+# from the payload (bridge/handlers/profile.php). Registry spec: ``self``.
+SELF_SERVICE = {"profile.update", "profile.change_password"}
+
+
+def test_self_service_commands_are_exactly_the_profile_ones():
+    assert {c for c, e in ENTRIES.items() if e[4] == "self"} == SELF_SERVICE
 
 
 def test_every_command_has_exactly_one_api_guard_and_it_is_never_merely_staff():
@@ -107,7 +116,7 @@ def test_every_command_has_exactly_one_api_guard_and_it_is_never_merely_staff():
     guards = command_guards()
     assert set(guards) == set(ENTRIES), "route analysis and registry disagree on the command set"
     assert not {c: g for c, g in guards.items() if len(g) != 1}
-    assert not [c for c, g in guards.items() if g == {"staff"}], "a write route guarded only by require_staff"
+    assert {c for c, g in guards.items() if g == {"staff"}} == SELF_SERVICE, "a write route guarded only by require_staff"
 
 
 def test_the_bridge_demands_exactly_what_the_api_route_demands():
@@ -128,7 +137,7 @@ def test_permission_specs_are_well_formed_and_their_kind_is_right():
 
     for command, entry in ENTRIES.items():
         spec = entry[4]
-        if spec == "admin":
+        if spec in ("admin", "self"):
             continue
         kind, _, key = spec.partition(":")
         assert kind in ("global", "role") and key in ALL_PERMISSIONS, (command, spec)
