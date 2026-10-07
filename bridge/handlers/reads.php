@@ -236,5 +236,26 @@ class FastApiReadHandler {
         }
         return ['matches' => $groups];
     }
+
+    /**
+     * osTicket's own sentence for each entry of a schedule ("Weekly on Monday (08:00 am - 05:00 pm)"), without markup.
+     * Administrators only. Params: schedule_id. Result: descriptions {entry id: text}.
+     */
+    public static function scheduleDescribe($params, $staff) {
+        global $thisstaff;
+        if (!$thisstaff || !$thisstaff->isAdmin()) {
+            throw new FastApiReadRefused(404, 'not_found', 'No such page.');
+        }
+        require_once INCLUDE_DIR . 'class.schedule.php';
+        $schedule = Schedule::lookup((int) ($params['schedule_id'] ?? 0));
+        if (!$schedule) {
+            throw new FastApiReadRefused(404, 'not_found', 'No such schedule.');
+        }
+        $out = [];
+        foreach ($schedule->getEntries() as $entry) {
+            $out[(string) $entry->getId()] = trim(html_entity_decode(strip_tags($entry->getDesc())));
+        }
+        return ['descriptions' => (object) $out];
+    }
 }
 }

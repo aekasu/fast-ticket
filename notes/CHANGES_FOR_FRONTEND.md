@@ -6,6 +6,11 @@ After a backend change run `npm run api:pull && npm run api:types`, read the sna
 list below and remove the met entries from `BACKEND_REQUESTS.md`. This file is the backend's side of that handshake;
 delete an entry once the frontend has adopted it.
 
+## 2026-10-07 — schedules (Admin Panel, admin only)
+
+- `GET /schedules`, `GET /schedules/{id}` (`type: business_hours|holidays`, `timezone` (empty = floating), `description`, `holiday_schedule_ids` for business hours, and `entries[]` with osTicket's own sentence in `description`), `POST /schedules {name, type, timezone?, description?, copy_from_id?, holiday_schedule_ids?}` (a copy must be the same type), `PATCH /schedules/{id}` (partial; the type is fixed), `DELETE /schedules/{id}` (refused while an SLA plan, a department, the system settings or a business-hours schedule uses it).
+- Entries: `POST /schedules/{id}/entries`, `PUT /schedules/{id}/entries/{entry_id}` (replaced whole), `DELETE`. An entry is `{name, repeats: never|daily|weekly|weekdays|weekends|monthly|yearly, starts_on, all_day?, starts_at?, ends_at? (HH:MM, 24-hour), stops_on?, day?, week?, month?}`: weekly takes `day` 1-7 (Mon-Sun); monthly and yearly repeat on the date of `starts_on`, or on the n-th weekday (`week` 1-5 or -1 for the last, `day` 1-7, and `month` for yearly). osTicket's rules apply (unique names; one daily entry excludes others; no overlapping weekday entries; valid time span) with its wording.
+
 ## 2026-10-07 — ticket filters (Admin Panel, admin only)
 
 - `GET /filters` (without the system ban list, which keeps `/banlist`), `GET /filters/{id}` (adds `notes`, `rules[{id, what, how, val}]`, `actions[{id, sort, type, ...}]`), `GET /filters/options` (the fields a rule can match, grouped as osTicket groups them — ticket-form fields appear as `field.<id>` — plus the 8 match types, the targets and the action types with the fields each takes).

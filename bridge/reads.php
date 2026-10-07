@@ -16,5 +16,6 @@ return [
     'file.stream'   => ['reads', 'FastApiReadHandler', 'fileStream'],
     'dashboard.report' => ['reads', 'FastApiReadHandler', 'dashboardReport'],
     'filter.options' => ['reads', 'FastApiReadHandler', 'filterOptions'],
+    'schedule.describe' => ['reads', 'FastApiReadHandler', 'scheduleDescribe'],
     'system.info'   => ['reads', 'FastApiReadHandler', 'systemInfo'],
 ];

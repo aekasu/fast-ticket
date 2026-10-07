@@ -1398,6 +1398,38 @@ async def list_filter_actions(session: AsyncSession, filter_id: int) -> list:
     return list((await session.execute(_sql(sql), {"filter_id": filter_id})).mappings().all())
 
 
+_SCHEDULE_COLUMNS = """
+    s.id, s.name, s.flags, s.timezone, s.description, s.created, s.updated,
+    (SELECT COUNT(*) FROM ost_schedule_entry e WHERE e.schedule_id = s.id) AS entry_count,
+    (SELECT c.value FROM ost_config c WHERE c.namespace = CONCAT('schedule.', s.id) AND c.`key` = 'configuration') AS configuration
+"""
+
+
+async def list_schedules(session: AsyncSession, limit: int = 50, offset: int = 0) -> list:
+    """Business-hours and holiday schedules (Admin Panel)."""
+    sql = f"SELECT {_SCHEDULE_COLUMNS} FROM ost_schedule s ORDER BY s.name ASC LIMIT :limit OFFSET :offset"
+    return list((await session.execute(_sql(sql), {"limit": limit, "offset": offset})).mappings().all())
+
+
+async def count_schedules(session: AsyncSession) -> int:
+    return int((await session.execute(_sql("SELECT COUNT(*) FROM ost_schedule"))).scalar() or 0)
+
+
+async def get_schedule(session: AsyncSession, schedule_id: int) -> dict | None:
+    sql = f"SELECT {_SCHEDULE_COLUMNS} FROM ost_schedule s WHERE s.id = :schedule_id"
+    row = (await session.execute(_sql(sql), {"schedule_id": schedule_id})).mappings().one_or_none()
+    return dict(row) if row else None
+
+
+async def list_schedule_entries(session: AsyncSession, schedule_id: int) -> list:
+    sql = """
+        SELECT e.id, e.name, e.repeats, e.starts_on, e.starts_at, e.ends_at, NULLIF(e.stops_on, '0000-00-00 00:00:00') AS stops_on,
+               e.day, e.week, e.month, e.sort
+        FROM ost_schedule_entry e WHERE e.schedule_id = :schedule_id ORDER BY e.sort, e.id
+    """
+    return list((await session.execute(_sql(sql), {"schedule_id": schedule_id})).mappings().all())
+
+
 async def get_staff_profile(session: AsyncSession, staff_id: int) -> dict | None:
     """The agent's own profile: their ``ost_staff`` row and their per-agent settings (``ost_config`` ``staff.<id>``)."""
     sql = """

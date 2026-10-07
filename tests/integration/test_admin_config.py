@@ -139,3 +139,23 @@ async def test_filter_writes_validate_rules_and_the_fields_each_action_needs():
     created = json.loads(rows[0].payload)
     assert created["actions"] == [{"type": "pri", "priority": 3}, {"type": "reject"}]      # osTicket's own key for the priority
     assert json.loads(rows[1].payload) == {"filter_id": 3, "is_active": False}                   # no rules / actions: kept as stored
+
+
+@pytest.mark.asyncio
+async def test_schedule_entry_writes_check_what_each_repeat_needs():
+    entry = {"name": "Mon", "repeats": "weekly", "starts_on": "2026-01-05", "starts_at": "08:00", "ends_at": "17:00", "day": 1}
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        admin = _auth(is_admin=True)
+        made = await ac.post("/api/v1/schedules", json={"name": "Hours", "type": "business_hours", "holiday_schedule_ids": [4]}, headers=admin)
+        bad_type = await ac.post("/api/v1/schedules", json={"name": "Hours", "type": "weekends"}, headers=admin)
+        added = await ac.post("/api/v1/schedules/5/entries", json=entry, headers=admin)
+        no_day = await ac.post("/api/v1/schedules/5/entries", json={**entry, "day": None}, headers=admin)
+        no_times = await ac.post("/api/v1/schedules/5/entries", json={**entry, "starts_at": None}, headers=admin)
+        all_day = await ac.post("/api/v1/schedules/5/entries", json={"name": "Xmas", "repeats": "yearly", "starts_on": "2026-12-25", "all_day": True}, headers=admin)
+        bad_time = await ac.post("/api/v1/schedules/5/entries", json={**entry, "starts_at": "8am"}, headers=admin)
+        replaced = await ac.put("/api/v1/schedules/5/entries/9", json=entry, headers=admin)
+        removed = await ac.delete("/api/v1/schedules/5/entries/9", headers=admin)
+    assert [r.status_code for r in (made, bad_type, added, no_day, no_times, all_day, bad_time, replaced, removed)] == [202, 422, 202, 422, 422, 202, 422, 202, 202]
+    rows = await _rows()
+    assert json.loads(rows[1].payload)["day"] == 1 and json.loads(rows[1].payload)["starts_on"] == "2026-01-05"
+    assert json.loads(rows[3].payload) == {"schedule_id": 5, "entry_id": 9, "all_day": False, **entry}

@@ -1727,3 +1727,50 @@ def test_ticket_filter_lifecycle_rules_and_actions(bridge, uniq):
     assert bridge.get("/api/v1/filters/1").status_code == 404 and ban is not None
     bridge.command("DELETE", f"/api/v1/filters/{fid}")
     assert bridge.get(f"/api/v1/filters/{fid}").status_code == 404
+
+
+def test_schedule_and_entries_lifecycle(bridge, uniq):
+    seeded = {s["name"]: s for s in bridge.read("/api/v1/schedules?page_size=200")["items"]}
+    office = next(s for s in seeded.values() if s["type"] == "business_hours" and s["entry_count"] > 2)
+    holidays = next(s for s in seeded.values() if s["type"] == "holidays")
+    seeded_detail = bridge.read(f"/api/v1/schedules/{office['id']}")
+    assert seeded_detail["holiday_schedule_ids"] and all(e["description"] for e in seeded_detail["entries"])
+    assert any(e["repeats"] == "weekly" and e["day"] == 1 and e["starts_at"] == "08:00:00" for e in seeded_detail["entries"])
+
+    sid = bridge.create("/api/v1/schedules", {"name": f"e2e hours {uniq}", "type": "business_hours", "timezone": "UTC",
+                                              "description": "d", "holiday_schedule_ids": [holidays["id"]]},
+                        cleanup="/api/v1/schedules/{id}")
+    got = bridge.read(f"/api/v1/schedules/{sid}")
+    assert (got["type"], got["timezone"], got["description"], got["holiday_schedule_ids"], got["entries"]) == ("business_hours", "UTC", "d", [holidays["id"]], [])
+
+    mon = bridge.create(f"/api/v1/schedules/{sid}/entries", {"name": "Monday", "repeats": "weekly", "starts_on": "2026-01-05",
+                                                              "starts_at": "08:00", "ends_at": "17:00", "day": 1})
+    bridge.create(f"/api/v1/schedules/{sid}/entries", {"name": "Weekends off", "repeats": "weekends", "starts_on": "2026-01-03", "all_day": True})
+    entries = {e["name"]: e for e in bridge.read(f"/api/v1/schedules/{sid}")["entries"]}
+    assert (entries["Monday"]["repeats"], entries["Monday"]["day"], entries["Monday"]["starts_at"], entries["Monday"]["ends_at"]) == ("weekly", 1, "08:00:00", "17:00:00")
+    assert entries["Monday"]["all_day"] is False and "Monday" in entries["Monday"]["description"]
+    assert entries["Weekends off"]["all_day"] is True and entries["Weekends off"]["repeats"] == "weekends"
+
+    bridge.refuses("POST", f"/api/v1/schedules/{sid}/entries", {"name": "Monday", "repeats": "weekly", "starts_on": "2026-01-05",
+                                                                  "starts_at": "09:00", "ends_at": "10:00", "day": 2}, because="unique")
+    bridge.refuses("POST", f"/api/v1/schedules/{sid}/entries", {"name": "Backwards", "repeats": "weekly", "starts_on": "2026-01-06",
+                                                                  "starts_at": "17:00", "ends_at": "08:00", "day": 2}, because="time span")
+    bridge.command("PUT", f"/api/v1/schedules/{sid}/entries/{mon}", {"name": "Monday", "repeats": "weekly", "starts_on": "2026-01-05",
+                                                                       "starts_at": "09:00", "ends_at": "18:00", "day": 1})
+    assert next(e for e in bridge.read(f"/api/v1/schedules/{sid}")["entries"] if e["id"] == mon)["starts_at"] == "09:00:00"
+
+    bridge.command("PATCH", f"/api/v1/schedules/{sid}", {"description": "changed"})              # name, timezone, holidays kept
+    after = bridge.read(f"/api/v1/schedules/{sid}")
+    assert (after["name"], after["timezone"], after["description"], after["holiday_schedule_ids"], len(after["entries"])) == (f"e2e hours {uniq}", "UTC", "changed", [holidays["id"]], 2)
+    bridge.command("DELETE", f"/api/v1/schedules/{sid}/entries/{mon}")
+    assert len(bridge.read(f"/api/v1/schedules/{sid}")["entries"]) == 1
+
+    copy = bridge.create("/api/v1/schedules", {"name": f"e2e copy {uniq}", "type": "business_hours", "copy_from_id": sid}, cleanup="/api/v1/schedules/{id}")
+    assert len(bridge.read(f"/api/v1/schedules/{copy}")["entries"]) == 1
+    bridge.refuses("POST", "/api/v1/schedules", {"name": f"e2e copy {uniq}", "type": "business_hours"}, because="already in use")
+    bridge.refuses("POST", "/api/v1/schedules", {"name": f"e2e wrong {uniq}", "type": "holidays", "copy_from_id": sid}, because="Type must be")
+    bridge.refuses("DELETE", f"/api/v1/schedules/{office['id']}", None, because="in use")
+    bridge.refuses("DELETE", f"/api/v1/schedules/{holidays['id']}", None, because="in use")      # the seeded business hours list it
+    bridge.command("DELETE", f"/api/v1/schedules/{copy}")
+    bridge.command("DELETE", f"/api/v1/schedules/{sid}")
+    assert bridge.get(f"/api/v1/schedules/{sid}").status_code == 404
