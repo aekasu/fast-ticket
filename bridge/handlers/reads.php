@@ -257,5 +257,62 @@ class FastApiReadHandler {
         }
         return ['descriptions' => (object) $out];
     }
+
+    /**
+     * The choices behind the settings pages' drop-downs, enumerated by osTicket itself (the same calls its pages make):
+     * name formats, avatar sources, password policies, registration methods, log levels, lock modes, ACL targets and
+     * the ticket queues. Administrators only. Result: options {settings key: [{value, label}]}.
+     */
+    public static function settingsOptions($params, $staff) {
+        global $thisstaff, $cfg;
+        if (!$thisstaff || !$thisstaff->isAdmin()) {
+            throw new FastApiReadRefused(404, 'not_found', 'No such page.');
+        }
+        require_once INCLUDE_DIR . 'class.avatar.php';
+        require_once INCLUDE_DIR . 'class.queue.php';
+        require_once INCLUDE_DIR . 'class.lock.php';
+        $pairs = function ($map) {
+            $out = [];
+            foreach ($map as $value => $label) {
+                $out[] = ['value' => (string) $value, 'label' => trim(html_entity_decode(strip_tags((string) $label)))];
+            }
+            return $out;
+        };
+        $formats = [];
+        foreach (PersonsName::allFormats() as $key => $f) {
+            $formats[$key] = __($f[0]);
+        }
+        $avatars = [];
+        foreach (AvatarSource::allSources() as $id => $class) {
+            foreach ((array) $class::getModes() as $mode => $name) {
+                $avatars["$id.$mode"] = $class::getName() . ' / ' . $name;
+            }
+        }
+        $policies = [' ' => __('All Active Policies')];
+        foreach (PasswordPolicy::allActivePolicies() as $policy) {
+            $policies[$policy->getBkId()] = $policy->getName();
+        }
+        $registration = [
+            'disabled' => __('Disabled — All users are guests'),
+            'public' => __('Public — Anyone can register'),
+            'closed' => __('Private — Only agents can register users'),
+        ];
+        $queues = [];
+        foreach (CustomQueue::queues() as $queue) {
+            $queues[$queue->getId()] = $queue->getFullName();
+        }
+        $options = [
+            'agent_name_format' => $pairs($formats), 'client_name_format' => $pairs($formats),
+            'agent_avatar' => $pairs($avatars), 'client_avatar' => $pairs($avatars),
+            'agent_passwd_policy' => $pairs($policies), 'client_passwd_policy' => $pairs($policies),
+            'client_registration' => $pairs($registration),
+            'log_level' => $pairs([0 => __('None (Disable Logger)'), 3 => __('DEBUG'), 2 => __('WARN'), 1 => __('ERROR')]),
+            'ticket_lock' => $pairs([Lock::MODE_DISABLED => __('Disabled'), Lock::MODE_ON_VIEW => __('Lock on view'),
+                                     Lock::MODE_ON_ACTIVITY => __('Lock on activity')]),
+            'acl_backend' => $pairs($cfg->getACLBackendOpts()),
+            'default_ticket_queue' => $pairs($queues),
+        ];
+        return ['options' => (object) $options];
+    }
 }
 }

@@ -44,3 +44,14 @@ def _build(section: str):
 
 
 SECTION_MODELS = {section: _build(section) for section in SECTIONS}
+
+
+class SettingOption(BaseModel):
+    value: str = Field(description="What to send back in the PATCH (a blank policy is a single space, as osTicket posts it)")
+    label: str
+
+
+class SettingsOptions(BaseModel):
+    """The choices behind the settings pages' drop-downs, listed by osTicket itself, keyed by the setting's name."""
+
+    options: dict[str, list[SettingOption]]

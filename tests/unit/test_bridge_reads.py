@@ -24,7 +24,7 @@ def called_ops() -> set[str]:
 
 
 def test_every_registered_read_is_used_and_every_call_is_registered():
-    assert registry_ops() == called_ops() == {"canned.render", "file.stream", "system.info", "dashboard.report", "filter.options", "schedule.describe"}
+    assert registry_ops() == called_ops() == {"canned.render", "file.stream", "system.info", "dashboard.report", "filter.options", "schedule.describe", "settings.options"}
 
 
 def test_every_read_handler_exists_in_the_php():

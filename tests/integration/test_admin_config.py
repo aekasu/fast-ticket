@@ -159,3 +159,16 @@ async def test_schedule_entry_writes_check_what_each_repeat_needs():
     rows = await _rows()
     assert json.loads(rows[1].payload)["day"] == 1 and json.loads(rows[1].payload)["starts_on"] == "2026-01-05"
     assert json.loads(rows[3].payload) == {"schedule_id": 5, "entry_id": 9, "all_day": False, **entry}
+
+
+@pytest.mark.asyncio
+async def test_settings_options_come_from_osticket_for_administrators_only():
+    bridge = AsyncMock(return_value={"options": {"client_registration": [{"value": "public", "label": "Public"}]}})
+    with patch("app.modules.settings.service.bridge_json", new=bridge):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            ok = await ac.get("/api/v1/settings/options", headers=_auth(is_admin=True))
+            denied = await ac.get("/api/v1/settings/options", headers=_auth(["ticket.reply"]))
+    assert (ok.status_code, denied.status_code) == (200, 403)
+    assert ok.json() == {"options": {"client_registration": [{"value": "public", "label": "Public"}]}}
+    bridge.assert_awaited_once()
+    assert bridge.await_args.args[0] == "settings.options"

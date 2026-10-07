@@ -17,5 +17,6 @@ return [
     'dashboard.report' => ['reads', 'FastApiReadHandler', 'dashboardReport'],
     'filter.options' => ['reads', 'FastApiReadHandler', 'filterOptions'],
     'schedule.describe' => ['reads', 'FastApiReadHandler', 'scheduleDescribe'],
+    'settings.options' => ['reads', 'FastApiReadHandler', 'settingsOptions'],
     'system.info'   => ['reads', 'FastApiReadHandler', 'systemInfo'],
 ];

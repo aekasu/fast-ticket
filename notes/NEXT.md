@@ -73,8 +73,14 @@ profile, logos and the default storage backend in settings; manual queue sort; t
 custom status is a list item osTicket manages itself: the list is read-only here); a list's per-item property fields;
 CSV export of the dashboard report (the frontend builds it from `table`).
 
-Verified at the end of this session: `make test` 911, `make test-docker` 911, `make test-e2e` 96 on a rebuilt stack
-(oracle included), `make doctor` 0 failed. Security review of the session's code: nothing at high confidence.
+After that round the frontend adopted everything (its own `notes/BACKEND_REQUESTS.md` lists what is left). Since then:
+`GET /settings/options` (the drop-down choices of the settings pages, via the bridge read mode) is done. Verified:
+`make test` 913, `make test-docker` 913, `make test-e2e` 97 on a rebuilt stack (oracle included).
+
+**Still open on the frontend's list, in the order I would take them:** the Overdue-queue mismatch (the API's `is_overdue`
+vs osTicket's cron-set `isoverdue`: a bug on our side, decide which one a queue should follow), a field added to a form
+after a ticket existed missing from that ticket's `custom_fields`, attaching a canned response's files to the reply it
+fills, company profile / logos in settings. Email diagnostic and mailbox/SMTP setup stay out by decision.
 
 ## Direction, in order
 

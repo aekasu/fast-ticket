@@ -6,6 +6,10 @@ After a backend change run `npm run api:pull && npm run api:types`, read the sna
 list below and remove the met entries from `BACKEND_REQUESTS.md`. This file is the backend's side of that handshake;
 delete an entry once the frontend has adopted it.
 
+## 2026-10-07 — the settings drop-down choices
+
+- `GET /settings/options` (admin): `{options: {<setting key>: [{value, label}]}}`, listed by osTicket itself, for `agent_name_format`, `client_name_format`, `agent_avatar`, `client_avatar`, `agent_passwd_policy`, `client_passwd_policy` (a blank policy, "All Active Policies", has the value `" "` — a single space, as osTicket posts it), `client_registration` (`disabled|public|closed`), `log_level` (`"0"|"3"|"2"|"1"`), `ticket_lock`, `acl_backend` and `default_ticket_queue`. Send `value` back in the section's `PATCH`. Turn those settings' text/number inputs into selects. The default priority/status/department/SLA/help-topic ids are not here: they come from `/priorities`, `/ticket-statuses`, `/departments`, `/slas`, `/help-topics`.
+
 ## 2026-10-07 — plugins (read-only)
 
 - `GET /plugins` (admin): `{plugins:[{id, name, version, install_path, is_phar, is_active, installed, instances:[{id, name, is_enabled}]}]}`. Installing, enabling and configuring a plugin runs its code and is not exposed.

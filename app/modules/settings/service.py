@@ -2,8 +2,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.integration.osticket import read_repository as repo
+from app.integration.osticket.bridge_read import bridge_json
 from app.integration.osticket.commands_service import dispatch_command
-from app.modules.settings.models import SECTION_MODELS, AttachmentLimits, CommandResponse, api_name
+from app.modules.settings.models import SECTION_MODELS, AttachmentLimits, CommandResponse, SettingOption, SettingsOptions, api_name
 from app.modules.settings.sections import SECTIONS
 
 
@@ -45,3 +46,8 @@ async def update_section(session: AsyncSession, section: str, body, staff_id: in
         session=session, command_type="settings.update", aggregate_type="settings", aggregate_id=section,
         payload={"section": section, "values": values}, requested_by_staff_id=staff_id, idempotency_key=idempotency_key)
     return CommandResponse(command_id=cmd.id, status=cmd.status, idempotency_key=idempotency_key)
+
+
+async def options(staff_id: int) -> SettingsOptions:
+    result = await bridge_json("settings.options", staff_id, {})
+    return SettingsOptions(options={key: [SettingOption(**o) for o in opts] for key, opts in result["options"].items()})

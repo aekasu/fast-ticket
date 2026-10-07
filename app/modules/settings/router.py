@@ -2,7 +2,7 @@
 
 Permissions — ``/settings/attachments`` is open to any agent (``require_staff()``): it is a limit the client must
 know to build a form. The settings pages (``/settings/<section>``, osTicket's ``scp/settings.php``) are Admin Panel
-pages (``isAdmin()``), so they are ``require_admin()``.
+pages (``isAdmin()``), so they are ``require_admin()``; so is ``/settings/options`` (the drop-down choices, asked of osTicket).
 """
 
 from fastapi import APIRouter, Depends, Header
@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.db import get_session
 from app.core.security import require_admin, require_staff
 from app.modules.settings import service
-from app.modules.settings.models import SECTION_MODELS, AttachmentLimits, CommandResponse
+from app.modules.settings.models import SECTION_MODELS, AttachmentLimits, CommandResponse, SettingsOptions
 
 router = APIRouter(tags=["settings"])
 
@@ -22,6 +22,11 @@ async def attachment_limits(
     session: AsyncSession = Depends(get_session),
 ):
     return await service.attachment_limits(session)
+
+
+@router.get("/settings/options", response_model=SettingsOptions, summary="The choices behind the settings pages' drop-downs")
+async def settings_options(current_user: dict = require_admin()):
+    return await service.options(current_user["staff_id"])
 
 
 # One pair of routes per settings page. They are written out (not registered in a loop) so the route analysis in

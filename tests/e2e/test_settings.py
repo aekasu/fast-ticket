@@ -51,3 +51,19 @@ def test_osticket_refuses_bad_values_with_its_own_words_and_changes_nothing(brid
                                                        "task_alert_dept_manager": False, "task_alert_dept_members": False},
                    because="recipient")
     assert _snapshot(bridge) == before
+
+
+def test_the_dropdown_choices_come_from_osticket_and_include_every_stored_value(bridge):
+    """The options are enumerated by osTicket's PHP; whatever the instance has stored must be one of them."""
+    options = bridge.read("/api/v1/settings/options")["options"]
+    stored = {"agents": ["agent_name_format", "agent_avatar", "agent_passwd_policy"],
+              "users": ["client_name_format", "client_avatar", "client_passwd_policy", "client_registration"],
+              "system": ["log_level", "acl_backend"], "tickets": ["ticket_lock", "default_ticket_queue"]}
+    for section, keys in stored.items():
+        got = bridge.read(f"/api/v1/settings/{section}")
+        for key in keys:
+            values = [o["value"] for o in options[key]]
+            assert options[key] and all(o["label"] for o in options[key]), key
+            assert str(got[key]) in values or got[key] in ("", 0), (key, got[key], values)
+    assert [o["value"] for o in options["client_registration"]] == ["disabled", "public", "closed"]
+    assert [o["value"] for o in options["log_level"]] == ["0", "3", "2", "1"]
