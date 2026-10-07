@@ -74,6 +74,7 @@ async def list_departments(
             is_public=bool(row["is_public"]),
             created=row["created"],
             updated=row["updated"],
+            **(_department_columns(row) if access.is_admin else {}),
         )
         for row in rows
     ]
@@ -83,6 +84,17 @@ async def list_departments(
         page=page,
         page_size=page_size,
     )
+
+def _department_columns(row: dict) -> dict:
+    flags = int(row.get("flags") or 0)
+    return {
+        "status": "archived" if flags & 0x8 else ("active" if flags & 0x4 else "disabled"),
+        "manager_id": row.get("manager_id"),
+        "manager_name": row.get("manager_name"),
+        "email_address": row.get("email_address"),
+        "agents_count": row.get("agents_count"),
+    }
+
 
 # Dept::FLAG_* bits and the Dept::ALERTS_* modes (include/class.dept.php)
 _ALERTS_BY_MODE = {0: "dept_only", 1: "dept_and_extended", 2: "no_one", 3: "admin_only"}
@@ -184,6 +196,9 @@ async def list_teams(
             is_enabled=bool(row["is_enabled"]),
             created=row["created"],
             updated=row["updated"],
+            lead_id=row.get("lead_id"),
+            lead_name=row.get("lead_name"),
+            members_count=row.get("members_count"),
         )
         for row in rows
     ]
@@ -282,6 +297,7 @@ async def list_staff(
             role_id=row["role_id"],
             created=row["created"],
             updated=row["updated"],
+            last_login=row.get("last_login"),
         )
         for row in rows
     ]

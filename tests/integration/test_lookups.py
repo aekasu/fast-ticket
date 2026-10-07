@@ -330,3 +330,24 @@ async def test_list_ticket_statuses_is_open_to_any_agent():
             resp = await ac.get("/api/v1/ticket-statuses", headers=_auth())
     assert resp.status_code == 200
     assert resp.json()["statuses"] == rows
+
+
+# ── Roles ─────────────────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_roles_are_created_updated_and_deleted_through_commands():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        admin = _auth(is_admin=True)
+        created = await ac.post("/api/v1/roles", json={"name": "Triage", "permissions": ["ticket.reply", "ticket.assign"]}, headers=admin)
+        updated = await ac.patch("/api/v1/roles/4", json={"enabled": False, "notes": "n"}, headers=admin)
+        deleted = await ac.delete("/api/v1/roles/4", headers=admin)
+        no_perms = await ac.post("/api/v1/roles", json={"name": "Empty", "permissions": []}, headers=admin)
+        unknown = await ac.post("/api/v1/roles", json={"name": "Bad", "permissions": ["ticket.nope"]}, headers=admin)
+        global_key = await ac.post("/api/v1/roles", json={"name": "Bad", "permissions": ["user.create"]}, headers=admin)
+    assert (created.status_code, updated.status_code, deleted.status_code) == (202, 202, 202)
+    assert {no_perms.status_code, unknown.status_code, global_key.status_code} == {422}
+    rows = await _inbox_rows()
+    assert [r.command_type for r in rows] == ["role.create", "role.update", "role.delete"]
+    import json as _json
+    assert _json.loads(rows[0].payload)["permissions"] == ["ticket.reply", "ticket.assign"]
+    assert _json.loads(rows[1].payload) == {"role_id": 4, "enabled": False, "notes": "n"}   # only what was sent

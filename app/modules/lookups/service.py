@@ -81,7 +81,6 @@ async def list_topics(
             page_size=page_size,
         )
     rows = await repo.list_topics(session, limit=page_size, offset=offset)
-    
     items = [
         TopicListItem(
             id=row["id"],
@@ -90,6 +89,9 @@ async def list_topics(
             is_public=bool(row["is_public"]),
             created=row["created"],
             updated=row["updated"],
+            path=row.get("path"),
+            priority_name=row.get("priority_name"),
+            dept_name=row.get("dept_name"),
         )
         for row in rows
     ]

@@ -92,6 +92,7 @@ async def list_forms(
             is_deletable=bool(row["is_deletable"]),
             created=row["created"],
             updated=row["updated"],
+            field_count=row.get("field_count"),
         )
         for row in rows
     ]

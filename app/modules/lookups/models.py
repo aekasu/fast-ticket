@@ -21,6 +21,9 @@ class TopicListItem(BaseModel):
     is_public: bool
     created: Instant
     updated: Instant
+    path: Optional[str] = Field(default=None, description="Parent / Child, as osTicket's Help Topics page shows it (admin list)")
+    priority_name: Optional[str] = None
+    dept_name: Optional[str] = None
 
 class TopicListResponse(BaseModel):
     items: list[TopicListItem]

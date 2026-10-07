@@ -1493,3 +1493,43 @@ def test_user_csv_import_is_osticket_import_all_or_nothing(bridge, uniq):
     assert user_by(good) is None
     bridge.refuses("POST", "/api/v1/users/import", {"csv": "name,email\nE2E X\n"}, because="import")
     bridge.refuses("POST", "/api/v1/users/import", {"csv": "bogus_header,other\n1,2\n"}, because="header")
+
+
+def test_admin_lists_carry_osticket_columns(bridge):
+    staff = bridge.read("/api/v1/staff?page_size=200")["items"]
+    assert all("last_login" in s for s in staff)
+    depts = bridge.read("/api/v1/departments?page_size=200")["items"]
+    assert all(d["status"] in ("active", "disabled", "archived") and d["agents_count"] >= 0 for d in depts)
+    assert any(d["agents_count"] > 0 for d in depts)
+    teams = bridge.read("/api/v1/teams?page_size=200")["items"]
+    assert all(t["members_count"] >= 0 for t in teams)
+    topics = bridge.read("/api/v1/topics?page_size=200")["items"]
+    assert all(t["path"].endswith(t["topic"]) for t in topics)
+    forms = bridge.read("/api/v1/forms?page_size=200")["items"]
+    assert all(f["field_count"] >= 0 for f in forms) and any(f["field_count"] > 0 for f in forms)
+
+
+def test_role_lifecycle_keeps_what_an_update_does_not_send(bridge, uniq):
+    rid = bridge.create(
+        "/api/v1/roles", {"name": f"e2e-role-{uniq}", "notes": "first", "permissions": ["ticket.reply", "ticket.assign"]},
+        cleanup="/api/v1/roles/{id}")
+    got = bridge.read(f"/api/v1/roles/{rid}")
+    assert (got["name"], got["notes"], got["enabled"], got["in_use"]) == (f"e2e-role-{uniq}", "first", True, 0)
+    assert got["permissions"] == ["ticket.assign", "ticket.reply"] and got["created"]
+
+    bridge.command("PATCH", f"/api/v1/roles/{rid}", {"notes": "changed"})            # permissions and name preserved
+    got = bridge.read(f"/api/v1/roles/{rid}")
+    assert (got["name"], got["notes"], got["permissions"]) == (f"e2e-role-{uniq}", "changed", ["ticket.assign", "ticket.reply"])
+
+    bridge.command("PATCH", f"/api/v1/roles/{rid}", {"permissions": ["ticket.close"], "enabled": False})
+    got = bridge.read(f"/api/v1/roles/{rid}")
+    assert (got["permissions"], got["enabled"], got["notes"]) == (["ticket.close"], False, "changed")
+
+    bridge.refuses("POST", "/api/v1/roles", {"name": f"e2e-role-{uniq}", "permissions": ["ticket.reply"]}, because="already in use")
+    bridge.command("DELETE", f"/api/v1/roles/{rid}")
+    assert bridge.get(f"/api/v1/roles/{rid}").status_code == 404
+
+
+def test_a_role_in_use_cannot_be_deleted(bridge):
+    in_use = next(r for r in bridge.read("/api/v1/roles?page_size=200")["items"] if r["in_use"])
+    bridge.refuses("DELETE", f"/api/v1/roles/{in_use['id']}", None, because="in use")

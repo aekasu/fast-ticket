@@ -611,7 +611,8 @@ async def list_staff(session: AsyncSession, limit: int = 50, offset: int = 0) ->
             s.dept_id,
             s.role_id,
             s.created,
-            s.updated
+            s.updated,
+            NULLIF(s.lastlogin, '0000-00-00 00:00:00') AS last_login
         FROM ost_staff s
         ORDER BY s.username ASC LIMIT :limit OFFSET :offset
     """
@@ -682,7 +683,15 @@ async def list_departments(
             d.name,
             d.ispublic AS is_public,
             d.created,
-            d.updated
+            d.updated,
+            d.flags,
+            IF(d.manager_id > 0, d.manager_id, NULL) AS manager_id,
+            (SELECT CONCAT(m.firstname, ' ', m.lastname) FROM ost_staff m WHERE m.staff_id = d.manager_id) AS manager_name,
+            (SELECT e.email FROM ost_email e WHERE e.email_id = d.email_id) AS email_address,
+            -- Dept::getNumMembers(): primary members, the manager and extended-access agents, each counted once
+            (SELECT COUNT(DISTINCT s.staff_id) FROM ost_staff s
+               LEFT JOIN ost_staff_dept_access a ON a.staff_id = s.staff_id AND a.dept_id = d.id
+              WHERE s.dept_id = d.id OR s.staff_id = d.manager_id OR a.dept_id IS NOT NULL) AS agents_count
         FROM ost_department d
         WHERE {visible}
         ORDER BY d.name ASC LIMIT :limit OFFSET :offset
@@ -740,7 +749,10 @@ async def list_teams(session: AsyncSession, limit: int = 50, offset: int = 0) ->
             t.name,
             (t.flags & 1) > 0 AS is_enabled,   -- Team::FLAG_ENABLED
             t.created,
-            t.updated
+            t.updated,
+            IF(t.lead_id > 0, t.lead_id, NULL) AS lead_id,
+            (SELECT CONCAT(l.firstname, ' ', l.lastname) FROM ost_staff l WHERE l.staff_id = t.lead_id) AS lead_name,
+            (SELECT COUNT(*) FROM ost_team_member m WHERE m.team_id = t.team_id) AS members_count
         FROM ost_team t
         ORDER BY t.name ASC LIMIT :limit OFFSET :offset
     """
@@ -882,8 +894,14 @@ async def list_topics(session: AsyncSession, limit: int = 50, offset: int = 0) -
             (COALESCE(ht.flags, 0) & 2) > 0 AS is_active,   -- Topic::FLAG_ACTIVE
             ht.ispublic > 0 AS is_public,
             ht.created,
-            ht.updated
+            ht.updated,
+            -- "Grandparent / Parent / Topic", as the Help Topics page shows the path (two ancestor levels)
+            CONCAT_WS(' / ', gp.topic, pt.topic, ht.topic) AS path,
+            (SELECT p.priority FROM ost_ticket_priority p WHERE p.priority_id = ht.priority_id) AS priority_name,
+            (SELECT d.name FROM ost_department d WHERE d.id = ht.dept_id) AS dept_name
         FROM ost_help_topic ht
+        LEFT JOIN ost_help_topic pt ON pt.topic_id = ht.topic_pid
+        LEFT JOIN ost_help_topic gp ON gp.topic_id = pt.topic_pid
         ORDER BY ht.topic ASC LIMIT :limit OFFSET :offset
     """
     result = await session.execute(_sql(sql), {"limit": limit, "offset": offset})
@@ -1019,12 +1037,36 @@ async def list_roles(session: AsyncSession, limit: int = 50, offset: int = 0) ->
             COALESCE(r.name, '') AS name,
             COALESCE(r.notes, '') AS notes,
             (r.flags & 1) > 0 AS enabled,
-            r.permissions
+            r.permissions,
+            r.created,
+            NULLIF(r.updated, '0000-00-00 00:00:00') AS updated,
+            -- Role::isDeleteable(): unused by any agent (primary role) or department-access entry
+            ((SELECT COUNT(*) FROM ost_staff s WHERE s.role_id = r.id)
+             + (SELECT COUNT(*) FROM ost_staff_dept_access a WHERE a.role_id = r.id)) AS in_use
         FROM ost_role r
         ORDER BY r.name ASC, r.id ASC LIMIT :limit OFFSET :offset
     """
     result = await session.execute(_sql(sql), {"limit": limit, "offset": offset})
     return list(result.mappings().all())
+
+
+async def get_role(session: AsyncSession, role_id: int) -> dict | None:
+    sql = """
+        SELECT
+            r.id,
+            COALESCE(r.name, '') AS name,
+            COALESCE(r.notes, '') AS notes,
+            (r.flags & 1) > 0 AS enabled,
+            r.permissions,
+            r.created,
+            NULLIF(r.updated, '0000-00-00 00:00:00') AS updated,
+            ((SELECT COUNT(*) FROM ost_staff s WHERE s.role_id = r.id)
+             + (SELECT COUNT(*) FROM ost_staff_dept_access a WHERE a.role_id = r.id)) AS in_use
+        FROM ost_role r
+        WHERE r.id = :role_id
+    """
+    row = (await session.execute(_sql(sql), {"role_id": role_id})).mappings().one_or_none()
+    return dict(row) if row else None
 
 
 async def list_priorities(session: AsyncSession, limit: int = 50, offset: int = 0) -> list:
@@ -1281,7 +1323,8 @@ async def list_forms(session: AsyncSession, limit: int = 50, offset: int = 0) ->
             f.type,
             (f.flags & 1) > 0 AS is_deletable,   -- DynamicForm::FLAG_DELETABLE
             f.created,
-            f.updated
+            f.updated,
+            (SELECT COUNT(*) FROM ost_form_field ff WHERE ff.form_id = f.id) AS field_count
         FROM ost_form f
         WHERE (f.flags & 2) = 0                  -- DynamicForm::FLAG_DELETED is a soft delete
         ORDER BY f.title ASC LIMIT :limit OFFSET :offset

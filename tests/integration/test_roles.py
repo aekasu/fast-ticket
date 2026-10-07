@@ -23,7 +23,8 @@ async def test_roles_list_parses_permissions_and_is_admin_only():
         anon = await ac.get(URL + "/roles")
     assert (ok.status_code, denied.status_code, anon.status_code) == (200, 403, 401)
     items = ok.json()["items"]
-    assert items[0] == {"id": 2, "name": "Expanded Access", "notes": "", "enabled": True, "permissions": ["ticket.edit"]}
+    assert {k: items[0][k] for k in ("id", "name", "notes", "enabled", "permissions")} == {
+        "id": 2, "name": "Expanded Access", "notes": "", "enabled": True, "permissions": ["ticket.edit"]}
     assert items[1]["enabled"] is False and items[1]["permissions"] == []
 
 

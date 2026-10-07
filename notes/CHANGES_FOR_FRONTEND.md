@@ -6,6 +6,11 @@ After a backend change run `npm run api:pull && npm run api:types`, read the sna
 list below and remove the met entries from `BACKEND_REQUESTS.md`. This file is the backend's side of that handshake;
 delete an entry once the frontend has adopted it.
 
+## 2026-10-07 — roles CRUD and the missing admin-list columns
+
+- Roles: `GET /roles/{id}`, `POST /roles {name, notes?, permissions[], enabled?}`, `PATCH /roles/{id}` (partial: what is absent keeps its stored value, permissions included), `DELETE /roles/{id}` (refused with "in use" while an agent or department-access entry uses it). All admin only. A role (list and detail) now has `created`, `updated` and `in_use`. osTicket needs at least one permission and a unique name; its refusals are shown as worded. Permission keys must be role keys from `GET /permissions`.
+- List items gained (all optional, never required): agents `last_login`; departments `status`, `manager_id`, `manager_name`, `email_address`, `agents_count` (administrators only; other agents see null); teams `lead_id`, `lead_name`, `members_count`; help topics `path` ("Parent / Child"), `priority_name`, `dept_name`; forms `field_count`. **Do:** fill the Admin list columns from these and drop the per-row requests and the "lists carry less" notes.
+
 ## 2026-10-07 — link / unlink / un-merge, the related-tickets read, and a status on a reply or note
 
 - `GET /tickets/{id}/related` (any agent who can open the ticket): `{relation: none|linked|merged, merge_type: visual|combine|separate|null, is_parent, parent, children[]}`; each related ticket is `{ticket_id, number, subject, status_name}`. A related ticket the agent may not open is left out.

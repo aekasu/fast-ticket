@@ -23,6 +23,12 @@ class DepartmentListItem(BaseModel):
     is_public: bool
     created: Instant
     updated: Instant
+    # Admin Panel columns; null for an agent who only sees their own departments
+    status: Optional[DepartmentStatus] = None
+    manager_id: Optional[int] = None
+    manager_name: Optional[str] = None
+    email_address: Optional[str] = None
+    agents_count: Optional[int] = None
 
 class DepartmentListResponse(BaseModel):
     items: list[DepartmentListItem]
@@ -105,6 +111,9 @@ class TeamListItem(BaseModel):
     is_enabled: bool
     created: Instant
     updated: Instant
+    lead_id: Optional[int] = None
+    lead_name: Optional[str] = None
+    members_count: Optional[int] = None
 
 class TeamListResponse(BaseModel):
     items: list[TeamListItem]
@@ -152,6 +161,7 @@ class StaffListItem(BaseModel):
     role_id: int
     created: Instant
     updated: Instant
+    last_login: Optional[Instant] = None
 
 class StaffListResponse(BaseModel):
     items: list[StaffListItem]

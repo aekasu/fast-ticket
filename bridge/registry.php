@@ -106,6 +106,9 @@ return [
     'sla.update'              => ['lookups', 'FastApiSlaHandler', 'update', 'sla.updated', 'admin'],
     'sla.delete'              => ['lookups', 'FastApiSlaHandler', 'delete', 'sla.deleted', 'admin'],
 
+    'role.create'             => ['roles', 'FastApiRoleHandler', 'create', 'role.created', 'admin'],
+    'role.update'             => ['roles', 'FastApiRoleHandler', 'update', 'role.updated', 'admin'],
+    'role.delete'             => ['roles', 'FastApiRoleHandler', 'delete', 'role.deleted', 'admin'],
     'priority.create'         => ['lookups', 'FastApiPriorityHandler', 'create', 'priority.created', 'admin'],
     'priority.update'         => ['lookups', 'FastApiPriorityHandler', 'update', 'priority.updated', 'admin'],
     'priority.delete'         => ['lookups', 'FastApiPriorityHandler', 'delete', 'priority.deleted', 'admin'],

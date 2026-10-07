@@ -18,6 +18,7 @@ class FormListItem(BaseModel):
     is_deletable: bool
     created: Instant
     updated: Instant
+    field_count: Optional[int] = None
 
 class FormListResponse(BaseModel):
     items: list[FormListItem]

@@ -38,6 +38,7 @@ UNSCOPED_BY_DESIGN = {
     "get_team_members": "Admin Panel (teams) — member ids on a team's detail",
     "get_department": "Admin Panel (department detail)",
     "get_priority": "Admin Panel (priority detail)",
+    "get_role": "Admin Panel (role detail)",
     "get_topic": "Admin Panel (topic detail)",
     "list_topics": "the Admin Panel's full topic list: the service reaches it only for administrators",
     # Reference data osTicket offers every agent, or narrows in Python by osTicket's own procedure.
