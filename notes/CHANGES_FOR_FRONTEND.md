@@ -6,6 +6,11 @@ After a backend change run `npm run api:pull && npm run api:types`, read the sna
 list below and remove the met entries from `BACKEND_REQUESTS.md`. This file is the backend's side of that handshake;
 delete an entry once the frontend has adopted it.
 
+## 2026-10-07 — ticket filters (Admin Panel, admin only)
+
+- `GET /filters` (without the system ban list, which keeps `/banlist`), `GET /filters/{id}` (adds `notes`, `rules[{id, what, how, val}]`, `actions[{id, sort, type, ...}]`), `GET /filters/options` (the fields a rule can match, grouped as osTicket groups them — ticket-form fields appear as `field.<id>` — plus the 8 match types, the targets and the action types with the fields each takes).
+- `POST /filters {name, execorder?, is_active?, target: Any|Web|Email|API, email_id?, match_all_rules?, stop_onmatch?, notes?, rules[≥1], actions[]}`, `PATCH /filters/{id}` (partial; `rules` / `actions`, when sent, **replace** the whole list), `DELETE /filters/{id}`. A rule is `{what, how, val}`; an action is `{type, ...its fields}`: `reject`, `replyto`, `noresp` (no fields), `canned` (`canned_id`), `dept` (`dept_id`), `pri` (`priority_id`), `sla` (`sla_id`), `team` (`team_id`), `agent` (`staff_id`), `topic` (`topic_id`), `status` (`status_id`), `email` (`recipients`, `subject`, `message`, `from_email_id?`). osTicket's own validation applies (regex compile, active department / help topic, valid email for an `email equal` rule, unique name) and its wording comes back on the command.
+
 ## 2026-10-07 — the system's email addresses (Admin Panel, admin only)
 
 - `GET /emails` → `{items:[{id, email, name, dept_id/name, priority_id/name, topic_id/name, no_autoresponse, is_default, has_mailbox, has_smtp, created, updated}], total, ...}`; `GET /emails/{id}` adds `notes` and `accounts[]` (mailbox / SMTP: active, host, port, protocol, encryption, folder, fetch settings, error count and last error; **never credentials**). `POST /emails {email, name, dept_id?, priority_id?, topic_id?, no_autoresponse?, notes?}`, `PATCH /emails/{id}` (partial), `DELETE /emails/{id}` (not the default or alert address). Setting up a mailbox or SMTP account (host, login, OAuth) stays in osTicket.

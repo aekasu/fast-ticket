@@ -15,5 +15,6 @@ return [
     'canned.render' => ['reads', 'FastApiReadHandler', 'cannedRender'],
     'file.stream'   => ['reads', 'FastApiReadHandler', 'fileStream'],
     'dashboard.report' => ['reads', 'FastApiReadHandler', 'dashboardReport'],
+    'filter.options' => ['reads', 'FastApiReadHandler', 'filterOptions'],
     'system.info'   => ['reads', 'FastApiReadHandler', 'systemInfo'],
 ];

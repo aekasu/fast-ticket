@@ -119,3 +119,23 @@ async def test_email_address_writes_are_admin_commands_with_only_what_was_sent()
     assert [r.status_code for r in (made, bad, changed, removed, denied)] == [202, 422, 202, 202, 403]
     rows = await _rows()
     assert json.loads(rows[1].payload) == {"email_id": 4, "no_autoresponse": True}
+
+
+@pytest.mark.asyncio
+async def test_filter_writes_validate_rules_and_the_fields_each_action_needs():
+    rule = {"what": "subject", "how": "contains", "val": "urgent"}
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        admin = _auth(is_admin=True)
+        ok = await ac.post("/api/v1/filters", json={"name": "Urgent", "rules": [rule], "actions": [
+            {"type": "pri", "priority_id": 3}, {"type": "reject"}]}, headers=admin)
+        no_rules = await ac.post("/api/v1/filters", json={"name": "x", "rules": []}, headers=admin)
+        bad_how = await ac.post("/api/v1/filters", json={"name": "x", "rules": [{**rule, "how": "sounds like"}]}, headers=admin)
+        missing = await ac.post("/api/v1/filters", json={"name": "x", "rules": [rule], "actions": [{"type": "dept"}]}, headers=admin)
+        stray = await ac.post("/api/v1/filters", json={"name": "x", "rules": [rule], "actions": [{"type": "reject", "dept_id": 1}]}, headers=admin)
+        patched = await ac.patch("/api/v1/filters/3", json={"is_active": False}, headers=admin)
+        denied = await ac.patch("/api/v1/filters/3", json={"is_active": False}, headers=_auth(["ticket.edit"]))
+    assert [r.status_code for r in (ok, no_rules, bad_how, missing, stray, patched, denied)] == [202, 422, 422, 422, 422, 202, 403]
+    rows = await _rows()
+    created = json.loads(rows[0].payload)
+    assert created["actions"] == [{"type": "pri", "priority": 3}, {"type": "reject"}]      # osTicket's own key for the priority
+    assert json.loads(rows[1].payload) == {"filter_id": 3, "is_active": False}                   # no rules / actions: kept as stored

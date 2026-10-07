@@ -1364,6 +1364,40 @@ async def list_email_accounts(session: AsyncSession, email_id: int) -> list:
     return list((await session.execute(_sql(sql), {"email_id": email_id})).mappings().all())
 
 
+_FILTER_COLUMNS = """
+    f.id, f.name, f.execorder, f.isactive AS is_active, f.target, f.email_id, e.email AS email_address, f.match_all_rules,
+    f.stop_onmatch, f.notes, f.created, f.updated,
+    (SELECT COUNT(*) FROM ost_filter_rule r WHERE r.filter_id = f.id) AS rule_count
+"""
+_FILTER_FROM = "FROM ost_filter f LEFT JOIN ost_email e ON e.email_id = f.email_id WHERE UPPER(f.name) <> 'SYSTEM BAN LIST'"
+
+
+async def list_filters(session: AsyncSession, limit: int = 50, offset: int = 0) -> list:
+    """Ticket filters (Admin Panel), without the system ban list (it has its own page)."""
+    sql = f"SELECT {_FILTER_COLUMNS} {_FILTER_FROM} ORDER BY f.execorder ASC, f.name ASC LIMIT :limit OFFSET :offset"
+    return list((await session.execute(_sql(sql), {"limit": limit, "offset": offset})).mappings().all())
+
+
+async def count_filters(session: AsyncSession) -> int:
+    return int((await session.execute(_sql(f"SELECT COUNT(*) {_FILTER_FROM}"))).scalar() or 0)
+
+
+async def get_filter(session: AsyncSession, filter_id: int) -> dict | None:
+    sql = f"SELECT {_FILTER_COLUMNS} {_FILTER_FROM} AND f.id = :filter_id"
+    row = (await session.execute(_sql(sql), {"filter_id": filter_id})).mappings().one_or_none()
+    return dict(row) if row else None
+
+
+async def list_filter_rules(session: AsyncSession, filter_id: int) -> list:
+    sql = "SELECT r.id, r.what, r.how, r.val FROM ost_filter_rule r WHERE r.filter_id = :filter_id ORDER BY r.id"
+    return list((await session.execute(_sql(sql), {"filter_id": filter_id})).mappings().all())
+
+
+async def list_filter_actions(session: AsyncSession, filter_id: int) -> list:
+    sql = "SELECT a.id, a.sort, a.type, a.configuration FROM ost_filter_action a WHERE a.filter_id = :filter_id ORDER BY a.sort, a.id"
+    return list((await session.execute(_sql(sql), {"filter_id": filter_id})).mappings().all())
+
+
 async def get_staff_profile(session: AsyncSession, staff_id: int) -> dict | None:
     """The agent's own profile: their ``ost_staff`` row and their per-agent settings (``ost_config`` ``staff.<id>``)."""
     sql = """

@@ -1692,3 +1692,38 @@ def test_email_address_lifecycle_and_the_default_ones_are_protected(bridge, uniq
     bridge.refuses("DELETE", f"/api/v1/emails/{default['id']}", None, because="cannot be deleted")
     bridge.command("DELETE", f"/api/v1/emails/{eid}")
     assert bridge.get(f"/api/v1/emails/{eid}").status_code == 404
+
+
+def test_ticket_filter_lifecycle_rules_and_actions(bridge, uniq):
+    opts = bridge.read("/api/v1/filters/options")
+    assert any(f["key"] == "name" for g in opts["matches"] for f in g["fields"])
+    assert {a["type"] for a in opts["actions"]} >= {"dept", "pri", "reject", "email"} and len(opts["match_types"]) == 8
+
+    fid = bridge.create("/api/v1/filters", {
+        "name": f"e2e f{uniq[:20]}", "execorder": 50, "target": "Web", "notes": "n",
+        "rules": [{"what": "name", "how": "contains", "val": f"zz{uniq}"}, {"what": "email", "how": "ends", "val": "@example.org"}],
+        "actions": [{"type": "pri", "priority_id": 3}, {"type": "dept", "dept_id": 1}]},
+        cleanup="/api/v1/filters/{id}")
+    got = bridge.read(f"/api/v1/filters/{fid}")
+    assert (got["name"], got["execorder"], got["target"], got["is_active"], got["match_all_rules"], got["notes"]) == (f"e2e f{uniq[:20]}", 50, "Web", True, False, "n")
+    assert [(r["what"], r["how"], r["val"]) for r in got["rules"]] == [("name", "contains", f"zz{uniq}"), ("email", "ends", "@example.org")]
+    assert [(a["type"], a["priority_id"], a["dept_id"]) for a in got["actions"]] == [("pri", 3, None), ("dept", None, 1)]
+    assert any(f["id"] == fid for f in bridge.read("/api/v1/filters?page_size=200")["items"])
+    assert all(f["name"] != "SYSTEM BAN LIST" for f in bridge.read("/api/v1/filters?page_size=200")["items"])
+
+    bridge.command("PATCH", f"/api/v1/filters/{fid}", {"is_active": False, "match_all_rules": True})   # rules and actions kept
+    after = bridge.read(f"/api/v1/filters/{fid}")
+    assert (after["is_active"], after["match_all_rules"], after["name"], len(after["rules"]), len(after["actions"])) == (False, True, got["name"], 2, 2)
+
+    bridge.command("PATCH", f"/api/v1/filters/{fid}", {"rules": [{"what": "email", "how": "equal", "val": "someone@gmail.com"}], "actions": [{"type": "reject"}]})
+    replaced = bridge.read(f"/api/v1/filters/{fid}")
+    assert [(r["what"], r["val"]) for r in replaced["rules"]] == [("email", "someone@gmail.com")] and [a["type"] for a in replaced["actions"]] == ["reject"]
+    assert replaced["is_active"] is False                                                             # the flags survived the replace
+
+    bridge.refuses("PATCH", f"/api/v1/filters/{fid}", {"rules": [{"what": "name", "how": "match", "val": "(unclosed"}]}, because="regex")
+    bridge.refuses("PATCH", f"/api/v1/filters/{fid}", {"actions": [{"type": "dept", "dept_id": 999999}]}, because="active department")
+    bridge.refuses("POST", "/api/v1/filters", {"name": got["name"], "rules": [{"what": "name", "how": "equal", "val": "x"}]}, because="already in use")
+    ban = bridge.read("/api/v1/banlist?page_size=1")                                                   # the ban list filter is not reachable here
+    assert bridge.get("/api/v1/filters/1").status_code == 404 and ban is not None
+    bridge.command("DELETE", f"/api/v1/filters/{fid}")
+    assert bridge.get(f"/api/v1/filters/{fid}").status_code == 404

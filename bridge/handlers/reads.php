@@ -215,5 +215,26 @@ class FastApiReadHandler {
             'table' => ['columns' => array_map('strval', $table['columns']), 'rows' => $rows],
         ];
     }
+
+    /**
+     * What osTicket's filter form offers (Admin Panel): the fields a rule can match, grouped as the form groups them.
+     * Administrators only.
+     */
+    public static function filterOptions($params, $staff) {
+        global $thisstaff;
+        if (!$thisstaff || !$thisstaff->isAdmin()) {
+            throw new FastApiReadRefused(404, 'not_found', 'No such page.');
+        }
+        require_once INCLUDE_DIR . 'class.filter.php';
+        $groups = [];
+        foreach (Filter::getSupportedMatches() as $group => $matches) {
+            $fields = [];
+            foreach ($matches as $key => $label) {
+                $fields[] = ['key' => (string) $key, 'label' => (string) $label];
+            }
+            $groups[] = ['group' => (string) $group, 'fields' => $fields];
+        }
+        return ['matches' => $groups];
+    }
 }
 }
