@@ -1,6 +1,6 @@
 # Next steps — handoff
 
-Last updated 2026-10-04 (end of session). Branch: `feat/bridge-worker-and-portability` (stay on it; the user does not
+Last updated 2026-10-07 (end of session). Branch: `feat/bridge-worker-and-portability` (stay on it; the user does not
 want more branches). Overwrite this file when the direction changes; delete finished items. A fresh session starts here
 (see `CLAUDE.md` → "Starting a session").
 
@@ -59,10 +59,22 @@ below based on what the UI needs.
 
 ## Frontend requests (from `../fast-ticket-frontend/notes/BACKEND_REQUESTS.md`)
 
-The frontend keeps a list of what its screens need. Met so far (2026-10-05): typed `/auth/me` and login schemas, 429 with
-`Retry-After` and `detail`, priority-sort tie-break (most recently updated first), `format` on thread entries,
-`est_due_date` / `is_overdue` / `last_activity` on tickets (sort `last_activity`), `GET /roles`, `GET /permissions`,
-referral list/remove, task collaborators, task thread-entry edit/resend. Timestamps now carry a `Z` (2026-10-05). Every change the frontend must adopt is logged in `notes/CHANGES_FOR_FRONTEND.md` (keep adding to it). Search/sort/totals/counts on the user, organization, KB and task lists are done (2026-10-05, see the log). Global search by requester and the reply signature enum are done. Typed custom answers are done. Canned-response expansion is done (bridge read mode). Done 2026-10-07: priority tie-break on `last_activity`, task "Completed", newlines kept in messages. **Still open from the frontend's list (not started, need a decision/cost call):** ticket statuses list + initial status/attachments on create, KB/FAQ attachments, `custom_fields` on list items, Link/un-merge tickets, dashboard report and self-service profile, roles CRUD, extra columns on admin lists, and the Admin Panel pages with no endpoint. Ticket create now takes osTicket's staff-form fields (2026-10-05).
+**Everything in the frontend's list has an endpoint now** (2026-10-07; every change is in `notes/CHANGES_FOR_FRONTEND.md`,
+newest first — the frontend should `npm run api:pull` and adopt them): priority tie-break by last activity, "Completed"
+tasks, line breaks in messages, `GET /ticket-statuses`, status and files on ticket create, status on reply/note, link /
+unlink / un-merge + `GET /tickets/{id}/related`, roles CRUD, extra admin-list columns, `GET/PATCH /profile` +
+`POST /profile/password`, `?fields=` custom columns on lists, system logs + info, `GET /dashboard/report`, FAQ and canned
+attachments, API keys, site pages, custom lists (+ list-field answers), the eight settings pages, email template sets,
+email addresses, ticket filters, schedules, read-only plugins.
+
+**Not done, by decision or cost** (all in `KNOWN_LIMITS.md` where they are limits): mailbox / SMTP account setup and the
+email diagnostic (credentials, OAuth, live connections); plugin install / enable (AGENTS.md: not exposed); company
+profile, logos and the default storage backend in settings; manual queue sort; ticket-status create/edit/delete (a
+custom status is a list item osTicket manages itself: the list is read-only here); a list's per-item property fields;
+CSV export of the dashboard report (the frontend builds it from `table`).
+
+Verified at the end of this session: `make test` 911, `make test-docker` 911, `make test-e2e` 96 on a rebuilt stack
+(oracle included), `make doctor` 0 failed. Security review of the session's code: nothing at high confidence.
 
 ## Direction, in order
 
