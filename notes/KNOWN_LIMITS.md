@@ -4,7 +4,7 @@ Things fast-ticket does not do yet, or does only partly, that someone relying on
 This is a **live list, not a changelog**: when a limit is fixed its entry is *deleted* (git history keeps
 it) and the commit that fixes it says so. Rules for keeping it honest are in `AGENTS.md` → "Known limits".
 
-Last reviewed: 2026-10-07 (entries this session touched only; not a full review) (not a full review: this session removed the referral entry, narrowed the thread-entry, any-role, forms, custom-answer and compatibility entries it touched, and added the timestamp-timezone, directory and teams/forms entries; the rest were last checked on 2026-10-04 and not re-run). Verified at the end: `make test-e2e` 66 passed.
+Last reviewed: 2026-10-07 (partial review: this session added the settings, email-address, attachment-on-KB and custom-list entries and narrowed the custom-list and upload ones; the rest were last checked on 2026-10-04 and not re-run). Verified at the end: `make test-e2e` 96 passed.
 
 Each entry: what is true today · what it means for you · what will resolve it (a phase from the plan, or
 "by design" if it is a deliberate trade-off).
