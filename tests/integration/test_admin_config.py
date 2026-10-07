@@ -46,3 +46,21 @@ async def test_page_writes_validate_the_type_and_send_only_what_changed():
     rows = await _rows()
     assert [r.command_type for r in rows] == ["page.create", "page.update", "page.delete"]
     assert json.loads(rows[1].payload) == {"page_id": 9, "is_active": False}
+
+
+@pytest.mark.asyncio
+async def test_custom_list_and_item_writes_are_queued_with_only_what_was_sent():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        admin = _auth(is_admin=True)
+        made = await ac.post("/api/v1/lists", json={"name": "Colours", "sort_mode": "SortCol"}, headers=admin)
+        bad_mode = await ac.post("/api/v1/lists", json={"name": "Colours", "sort_mode": "Random"}, headers=admin)
+        renamed = await ac.patch("/api/v1/lists/3", json={"notes": "n"}, headers=admin)
+        item = await ac.post("/api/v1/lists/3/items", json={"value": "Red", "abbrev": "R"}, headers=admin)
+        edited = await ac.patch("/api/v1/lists/3/items/7", json={"is_enabled": False}, headers=admin)
+        removed = await ac.delete("/api/v1/lists/3/items/7", headers=admin)
+        dropped = await ac.delete("/api/v1/lists/3", headers=admin)
+    assert [r.status_code for r in (made, bad_mode, renamed, item, edited, removed, dropped)] == [202, 422, 202, 202, 202, 202, 202]
+    rows = await _rows()
+    assert [r.command_type for r in rows] == ["list.create", "list.update", "list.item.create", "list.item.update", "list.item.delete", "list.delete"]
+    assert json.loads(rows[1].payload) == {"list_id": 3, "notes": "n"}
+    assert json.loads(rows[3].payload) == {"list_id": 3, "item_id": 7, "is_enabled": False}

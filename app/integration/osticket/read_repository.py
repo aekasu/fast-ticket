@@ -1237,6 +1237,47 @@ async def get_page(session: AsyncSession, page_id: int) -> dict | None:
     return dict(row) if row else None
 
 
+_LIST_COLUMNS = """
+    l.id, l.name, l.name_plural, l.sort_mode, l.notes, l.masks, l.type, l.created, l.updated,
+    (SELECT COUNT(*) FROM ost_list_items i WHERE i.list_id = l.id) AS item_count
+"""
+
+
+async def list_custom_lists(session: AsyncSession, limit: int = 50, offset: int = 0) -> list:
+    """Custom lists (Admin Panel), including the ones osTicket manages itself (ticket statuses)."""
+    sql = f"SELECT {_LIST_COLUMNS} FROM ost_list l ORDER BY l.name ASC LIMIT :limit OFFSET :offset"
+    return list((await session.execute(_sql(sql), {"limit": limit, "offset": offset})).mappings().all())
+
+
+async def count_custom_lists(session: AsyncSession) -> int:
+    return int((await session.execute(_sql("SELECT COUNT(*) FROM ost_list"))).scalar() or 0)
+
+
+async def get_custom_list(session: AsyncSession, list_id: int) -> dict | None:
+    sql = f"SELECT {_LIST_COLUMNS} FROM ost_list l WHERE l.id = :list_id"
+    row = (await session.execute(_sql(sql), {"list_id": list_id})).mappings().one_or_none()
+    return dict(row) if row else None
+
+
+async def list_custom_list_items(session: AsyncSession, list_id: int, limit: int = 100, offset: int = 0) -> list:
+    """The items of a list, in the list's own sort mode (Alpha, reversed, or the manual order)."""
+    sql = """
+        SELECT i.id, i.value, i.extra AS abbrev, i.sort, i.status
+        FROM ost_list_items i JOIN ost_list l ON l.id = i.list_id
+        WHERE i.list_id = :list_id
+        ORDER BY CASE l.sort_mode WHEN 'SortCol' THEN i.sort END ASC,
+                 CASE l.sort_mode WHEN 'Alpha' THEN i.value END ASC,
+                 CASE l.sort_mode WHEN '-Alpha' THEN i.value END DESC, i.id ASC
+        LIMIT :limit OFFSET :offset
+    """
+    return list((await session.execute(_sql(sql), {"list_id": list_id, "limit": limit, "offset": offset})).mappings().all())
+
+
+async def count_custom_list_items(session: AsyncSession, list_id: int) -> int:
+    sql = "SELECT COUNT(*) FROM ost_list_items WHERE list_id = :list_id"
+    return int((await session.execute(_sql(sql), {"list_id": list_id})).scalar() or 0)
+
+
 async def get_staff_profile(session: AsyncSession, staff_id: int) -> dict | None:
     """The agent's own profile: their ``ost_staff`` row and their per-agent settings (``ost_config`` ``staff.<id>``)."""
     sql = """

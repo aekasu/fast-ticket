@@ -6,6 +6,12 @@ After a backend change run `npm run api:pull && npm run api:types`, read the sna
 list below and remove the met entries from `BACKEND_REQUESTS.md`. This file is the backend's side of that handshake;
 delete an entry once the frontend has adopted it.
 
+## 2026-10-07 — custom lists (Admin Panel, admin only) and custom-list answers
+
+- `GET /lists`, `GET /lists/{id}` (`{id, name, name_plural, sort_mode: Alpha|-Alpha|SortCol, notes, item_count, handled_by, is_editable, allow_add, is_deletable}`), `POST /lists`, `PATCH /lists/{id}`, `DELETE /lists/{id}` (refused while a form field uses it). A list osTicket manages itself (ticket statuses: `handled_by` set) is read-only here.
+- Items: `GET /lists/{id}/items` (in the list's own sort mode; `{id, value, abbrev, sort, is_enabled, is_internal}`), `POST /lists/{id}/items {value, abbrev?, sort?, is_enabled?}`, `PATCH /lists/{id}/items/{item_id}` (partial), `DELETE /lists/{id}/items/{item_id}` (un-links the item, as osTicket does; internal items cannot be disabled or deleted).
+- A custom-list form field (`list-<id>`) takes the **item id** as its answer (a list of ids if it is multiple-select), on tickets, tasks, users and organizations, and `GET .../form` options list the enabled items. **Do:** a list-field picker can now be filled from `/lists/{id}/items` and written back.
+
 ## 2026-10-07 — API keys and site pages (Admin Panel, admin only)
 
 - `GET /api-keys`, `GET /api-keys/{id}`, `POST /api-keys {ip_address, is_active?, can_create_tickets?, can_exec_cron?, notes?}`, `PATCH /api-keys/{id}` (flags and notes; the address is fixed), `DELETE /api-keys/{id}`. These are **osTicket's** HTTP-API keys, not this API's login; the key is shown to administrators, as osTicket's page does.

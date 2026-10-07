@@ -1582,3 +1582,58 @@ def test_page_lifecycle_and_pages_in_use_are_protected(bridge, uniq):
     assert all(p["type"] in ("landing", "offline", "thank-you", "other") for p in bridge.read("/api/v1/pages?page_size=200")["items"])
     bridge.command("DELETE", f"/api/v1/pages/{pid}")
     assert bridge.get(f"/api/v1/pages/{pid}").status_code == 404
+
+
+def test_custom_list_and_items_lifecycle(bridge, uniq):
+    lid = bridge.create("/api/v1/lists", {"name": f"e2e list {uniq}", "name_plural": f"e2e lists {uniq}", "sort_mode": "SortCol", "notes": "n"},
+                        cleanup="/api/v1/lists/{id}")
+    got = bridge.read(f"/api/v1/lists/{lid}")
+    assert (got["name"], got["sort_mode"], got["notes"], got["item_count"], got["handled_by"]) == (f"e2e list {uniq}", "SortCol", "n", 0, None)
+    assert got["is_editable"] and got["allow_add"] and got["is_deletable"]
+
+    bridge.command("PATCH", f"/api/v1/lists/{lid}", {"notes": "changed"})                       # name and sort mode preserved
+    got = bridge.read(f"/api/v1/lists/{lid}")
+    assert (got["name"], got["name_plural"], got["sort_mode"], got["notes"]) == (f"e2e list {uniq}", f"e2e lists {uniq}", "SortCol", "changed")
+
+    red = bridge.create(f"/api/v1/lists/{lid}/items", {"value": "Red", "abbrev": "R", "sort": 2})
+    blue = bridge.create(f"/api/v1/lists/{lid}/items", {"value": "Blue", "sort": 1, "is_enabled": False})
+    items = bridge.read(f"/api/v1/lists/{lid}/items")
+    assert items["total"] == 2 and [i["value"] for i in items["items"]] == ["Blue", "Red"]       # the manual order
+    by_value = {i["value"]: i for i in items["items"]}
+    assert (by_value["Red"]["abbrev"], by_value["Red"]["is_enabled"], by_value["Blue"]["is_enabled"]) == ("R", True, False)
+    bridge.refuses("POST", f"/api/v1/lists/{lid}/items", {"value": "Red"}, because="already has")
+
+    bridge.command("PATCH", f"/api/v1/lists/{lid}/items/{blue}", {"is_enabled": True, "sort": 3})
+    bridge.command("PATCH", f"/api/v1/lists/{lid}/items/{red}", {"value": "Crimson"})            # abbreviation and sort kept
+    after = {i["id"]: i for i in bridge.read(f"/api/v1/lists/{lid}/items")["items"]}
+    assert (after[red]["value"], after[red]["abbrev"], after[red]["sort"]) == ("Crimson", "R", 2)
+    assert (after[blue]["is_enabled"], after[blue]["sort"]) == (True, 3)
+    bridge.command("DELETE", f"/api/v1/lists/{lid}/items/{red}")
+    assert [i["value"] for i in bridge.read(f"/api/v1/lists/{lid}/items")["items"]] == ["Blue"]
+    bridge.refuses("DELETE", f"/api/v1/lists/{lid}/items/{red}", None, because="not found")
+
+    statuses = next(l for l in bridge.read("/api/v1/lists?page_size=200")["items"] if l["handled_by"] == "ticket-status")
+    assert not statuses["is_editable"] and not statuses["is_deletable"]
+    bridge.refuses("PATCH", f"/api/v1/lists/{statuses['id']}", {"notes": "x"}, because="managed by osTicket")
+    bridge.command("DELETE", f"/api/v1/lists/{lid}")
+    assert bridge.get(f"/api/v1/lists/{lid}").status_code == 404
+
+
+def test_a_custom_list_field_takes_item_ids_as_answers(bridge, uniq):
+    lid = bridge.create("/api/v1/lists", {"name": f"e2e answers {uniq}", "sort_mode": "SortCol"}, cleanup="/api/v1/lists/{id}")
+    red = bridge.create(f"/api/v1/lists/{lid}/items", {"value": "Red", "sort": 1})
+    blue = bridge.create(f"/api/v1/lists/{lid}/items", {"value": "Blue", "sort": 2})
+    name = f"e2elist{uniq[:6]}"
+    fid = bridge.command("POST", "/api/v1/forms/1/fields", {"label": "E2E list", "type": f"list-{lid}", "name": name})["result"]["field_id"]
+    bridge._cleanups.append(("DELETE", f"/api/v1/forms/1/fields/{fid}?delete_data=true"))
+    bridge._cleanups.append(("DELETE", f"/api/v1/lists/{lid}"))     # runs after the field is gone (newest first)
+
+    uid = bridge.create("/api/v1/users", {"name": "E2E List User", "email": _email(uniq, "lst"), "custom_fields": {name: red}},
+                        cleanup="/api/v1/users/{id}")
+    answer = _answers(bridge.read(f"/api/v1/users/{uid}"))[name]
+    assert (answer["kind"], [(c["key"], c["label"]) for c in answer["choices"]]) == ("choices", [(str(red), "Red")])
+    bridge.command("PATCH", f"/api/v1/users/{uid}", {"custom_fields": {name: blue}})
+    assert [c["label"] for c in _answers(bridge.read(f"/api/v1/users/{uid}"))[name]["choices"]] == ["Blue"]
+    bridge.refuses("PATCH", f"/api/v1/users/{uid}", {"custom_fields": {name: 999999}}, because="not a valid value")
+    bridge.command("PATCH", f"/api/v1/users/{uid}", {"custom_fields": {name: ""}})
+    assert _answers(bridge.read(f"/api/v1/users/{uid}"))[name]["choices"] in ([], None)
