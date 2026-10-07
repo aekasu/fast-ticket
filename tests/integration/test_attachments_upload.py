@@ -85,3 +85,15 @@ async def test_attachment_limits_are_open_to_any_agent():
     body = ok.json()
     assert body["max_file_bytes"] == min(1048576, settings.ATTACHMENT_MAX_FILE_BYTES)
     assert (body["osticket_max_file_bytes"], body["max_files"]) == (1048576, settings.ATTACHMENT_MAX_FILES)
+
+
+@pytest.mark.asyncio
+async def test_a_new_ticket_carries_files_on_its_first_message():
+    body = {"subject": "s", "message": "see attached", "email": "a@b.example", "name": "A", "attachments": [FILE]}
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        ok = await ac.post("/api/v1/tickets/", json=body, headers=_auth(["ticket.create"]))
+    assert ok.status_code == 202
+    (row,) = await _rows()
+    payload = json.loads(row.payload)
+    assert payload["attachments"] == [{"name": "report.pdf", "type": "application/pdf", "file_data": FILE["data"]}]
+    assert "phone" not in payload and "user_id" not in payload        # unset fields are still left out

@@ -320,3 +320,13 @@ async def test_sla_settings_are_queued_and_validated():
         agent = await ac.patch("/api/v1/slas/3", json={"transient": True}, headers=_auth(["faq.manage"]))
     assert (ok.status_code, huge.status_code, neg.status_code, agent.status_code) == (202, 422, 422, 403)
     assert json.loads((await _inbox_rows())[0].payload) == {"sla_id": 3, **body}
+
+
+@pytest.mark.asyncio
+async def test_list_ticket_statuses_is_open_to_any_agent():
+    rows = [{"id": 1, "name": "Open", "state": "open"}, {"id": 3, "name": "Closed", "state": "closed"}]
+    with patch("app.modules.lookups.service.repo.list_ticket_statuses", new=AsyncMock(return_value=rows)):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            resp = await ac.get("/api/v1/ticket-statuses", headers=_auth())
+    assert resp.status_code == 200
+    assert resp.json()["statuses"] == rows

@@ -13,6 +13,7 @@ from app.core.db import get_session
 from app.core.security import require_admin, require_staff
 from app.modules.lookups import service
 from app.modules.lookups.models import (
+    TicketStatusListResponse,
     CommandResponse,
     TopicCreate,
     TopicUpdate,
@@ -147,6 +148,15 @@ async def list_priorities(
 ):
     """Ticket priorities — osTicket offers them to every agent (``Priority::getPriorities``)."""
     return await service.list_priorities(session, page=page, page_size=page_size)
+
+@router.get("/ticket-statuses", response_model=TicketStatusListResponse, summary="List ticket statuses")
+async def list_ticket_statuses(
+    current_user: dict = require_staff(),
+    session: AsyncSession = Depends(get_session),
+):
+    """The enabled ticket statuses, as osTicket offers them to every agent on its ticket forms."""
+    return await service.list_ticket_statuses(session)
+
 
 @router.get("/priorities/{priority_id}", response_model=PriorityDetail, summary="Get priority")
 async def get_priority(

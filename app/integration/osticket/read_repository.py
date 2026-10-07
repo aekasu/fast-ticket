@@ -1025,6 +1025,18 @@ async def list_priorities(session: AsyncSession, limit: int = 50, offset: int = 
     return list(result.mappings().all())
 
 
+async def list_ticket_statuses(session: AsyncSession, limit: int = 50, offset: int = 0) -> list:
+    """Enabled ticket statuses (``TicketStatusList::getStatuses``: ``mode`` bit 1 is "enabled"), in osTicket's order."""
+    sql = """
+        SELECT s.id, s.name, s.state
+        FROM ost_ticket_status s
+        WHERE s.mode & 1 = 1
+        ORDER BY s.sort ASC, s.id ASC LIMIT :limit OFFSET :offset
+    """
+    result = await session.execute(_sql(sql), {"limit": limit, "offset": offset})
+    return list(result.mappings().all())
+
+
 async def get_priority(session: AsyncSession, priority_id: int) -> dict | None:
     sql = """
         SELECT

@@ -182,7 +182,7 @@ class TicketListResponse(BaseModel):
 # ── Write request bodies ───────────────────────────────────────────────────────
 
 
-class TicketCreate(BaseModel):
+class TicketCreate(WithAttachments):
     """osTicket's staff "Open a New Ticket" form. The requester is an existing user (``user_id``) or a name and
     email (an unknown email makes a new user). Nothing is emailed unless ``notify`` asks for it."""
 

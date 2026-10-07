@@ -139,6 +139,16 @@ class PriorityListItem(BaseModel):
     urgency: int
     is_public: bool
 
+class TicketStatusItem(BaseModel):
+    id: int
+    name: str
+    state: str = Field(description="open | closed | archived | deleted; the New Ticket form offers the open ones")
+
+
+class TicketStatusListResponse(BaseModel):
+    statuses: list[TicketStatusItem]
+
+
 class PriorityListResponse(BaseModel):
     items: list[PriorityListItem]
     total: Optional[int] = None

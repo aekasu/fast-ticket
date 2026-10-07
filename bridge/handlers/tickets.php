@@ -151,8 +151,13 @@ class FastApiTicketHandler {
             $vars['slaId'] = (int) $payload['sla_id'];
         }
         if (!empty($payload['status_id'])) {
-            if (!TicketStatus::lookup((int) $payload['status_id'])) {
+            $status = TicketStatus::lookup((int) $payload['status_id']);
+            if (!$status) {
                 throw new Exception('Ticket status not found: ' . $payload['status_id']);
+            }
+            // the staff form offers the enabled open statuses only
+            if (!$status->isEnabled() || $status->getState() !== 'open') {
+                throw new Exception("Ticket status '" . $status->getName() . "' cannot be chosen for a new ticket (enabled open statuses only).");
             }
             $vars['statusId'] = (int) $payload['status_id'];
         }
@@ -186,6 +191,19 @@ class FastApiTicketHandler {
         }
         if ($note !== '') {
             $vars['note'] = $note;
+        }
+
+        // Files on the first message: Ticket::open() reads them from the message field's upload widget, which takes
+        // them from the form data under 'attach:<field id>' as file id => name (as the browser form posts them).
+        $uploads = FastApiAttachments::upload((array) ($payload['attachments'] ?? []));
+        if ($uploads) {
+            $messageField = TicketForm::getNewInstance()->getField('message');
+            $vars['attach:' . $messageField->get('id')] = array_column($uploads, 'name', 'id');
+            // the widget keeps only files "uploaded in this session" (osTicket's ajax upload marks them so)
+            $_SESSION = $_SESSION ?? [];
+            foreach ($uploads as $u) {
+                $_SESSION[':uploadedFiles'][$u['id']] = $u['name'];
+            }
         }
 
         // Custom fields are read from the same vars by their variable names (topic forms included).

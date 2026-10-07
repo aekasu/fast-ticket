@@ -7,6 +7,8 @@ from app.integration.osticket import read_repository as repo
 from app.modules.lookups.topic_visibility import visible_topics
 from app.integration.osticket.commands_service import dispatch_command
 from app.modules.lookups.models import (
+    TicketStatusItem,
+    TicketStatusListResponse,
     CommandResponse,
     TopicCreate,
     TopicUpdate,
@@ -281,6 +283,11 @@ async def list_priorities(
         page=page,
         page_size=page_size,
     )
+
+async def list_ticket_statuses(session: AsyncSession) -> TicketStatusListResponse:
+    rows = await repo.list_ticket_statuses(session, limit=200, offset=0)
+    return TicketStatusListResponse(statuses=[TicketStatusItem(id=r["id"], name=r["name"], state=r["state"]) for r in rows])
+
 
 async def get_priority(session: AsyncSession, priority_id: int) -> PriorityDetail | None:
     row = await repo.get_priority(session, priority_id)

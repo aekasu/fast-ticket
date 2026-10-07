@@ -45,6 +45,7 @@ UNSCOPED_BY_DESIGN = {
     "get_help_topic_sort_mode": "an instance setting (how help topics are ordered), not agent or ticket data",
     "get_agent_name_format": "an instance setting (how agent names are written), not agent or ticket data",
     "list_priorities": "osTicket offers every priority to every agent (Priority::getPriorities)",
+    "list_ticket_statuses": "reference data: osTicket offers the enabled statuses to every agent (TicketStatusList::getStatuses)",
     # Knowledge base: osTicket applies no permission to viewing FAQs.
     "get_category": "knowledge base (no read permission in osTicket)", "list_categories": "knowledge base", "count_categories": "knowledge base", "count_faqs": "knowledge base",
     "get_faq": "knowledge base", "list_faqs": "knowledge base",

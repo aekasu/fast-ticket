@@ -171,3 +171,26 @@ def test_files_sent_with_a_task_update_or_note_are_stored_and_download_intact(br
         assert len(entry["attachments"]) == 1
         got = bridge.get(f"{url}/attachments/{entry['attachments'][0]['id']}")
         assert got.status_code == 200 and got.content == expected
+
+
+def test_a_new_ticket_takes_files_on_its_first_message_and_an_open_status(bridge, uniq):
+    _sweep_uploaded(bridge, f"e2e-new-{uniq}%")
+    statuses = {s["name"]: s for s in bridge.read("/api/v1/ticket-statuses")["statuses"]}
+    assert statuses["Open"]["state"] == "open" and statuses["Closed"]["state"] == "closed"
+    body = f"first message file {uniq}".encode()
+    tid = bridge.create("/api/v1/tickets/", {
+        "subject": f"e2e new with file {uniq}", "message": "m", "email": f"new.{uniq}@{DELIVERABLE_DOMAIN}", "name": "New",
+        "dept_id": 1, "topic_id": 1, "status_id": statuses["Open"]["id"],
+        "attachments": [{"name": f"e2e-new-{uniq}.txt", "content_type": "text/plain", "data": _b64(body)}]})
+    detail = bridge.read(f"/api/v1/tickets/{tid}")
+    bridge._cleanups.append(("DELETE", f"/api/v1/users/{detail['user_id']}"))
+    bridge._cleanups.append(("DELETE", f"/api/v1/tickets/{tid}"))
+    first = detail["thread"][0]
+    (att,) = first["attachments"]
+    assert att["name"] == f"e2e-new-{uniq}.txt" and att["size"] == len(body)
+    got = bridge.get(f"/api/v1/tickets/{tid}/attachments/{att['id']}")
+    assert got.status_code == 200 and got.content == body
+    # only an enabled open status can be chosen for a new ticket
+    bridge.refuses("POST", "/api/v1/tickets/", {
+        "subject": f"e2e closed status {uniq}", "message": "m", "email": f"new2.{uniq}@{DELIVERABLE_DOMAIN}", "name": "New",
+        "dept_id": 1, "topic_id": 1, "status_id": statuses["Closed"]["id"]}, because="cannot be chosen")

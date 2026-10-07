@@ -6,6 +6,15 @@ After a backend change run `npm run api:pull && npm run api:types`, read the sna
 list below and remove the met entries from `BACKEND_REQUESTS.md`. This file is the backend's side of that handshake;
 delete an entry once the frontend has adopted it.
 
+## 2026-10-07 — ticket statuses and files on a new ticket
+
+- `GET /ticket-statuses` (any agent): `{statuses:[{id, name, state}]}`, the enabled statuses in osTicket's order. The New
+  Ticket form offers those with `state == "open"` (osTicket's staff form does the same); `status_id` on `POST /tickets/`
+  is refused with osTicket's wording for a closed or disabled status.
+- `POST /tickets/` takes `attachments: [{name, content_type?, data}]` (base64, same caps as replies, see
+  `GET /settings/attachments`): the files land on the ticket's first message. **Do:** add the file picker to the New
+  Ticket screen and the status select; drop the "status and attachments are not offered" note.
+
 ## 2026-10-07 — three small fixes from BACKEND_REQUESTS.md
 
 - `sort=priority` now breaks ties by `last_activity` (osTicket's `lastupdate`), not the row's `updated`: the first page

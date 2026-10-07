@@ -164,9 +164,9 @@ app.add_middleware(SlowAPIMiddleware)
 app.add_middleware(
     BodySizeLimitMiddleware,
     max_bytes=settings.MAX_REQUEST_BYTES,
-    # the routes that take files (a reply or a note on a ticket or a task) carry a larger body
+    # the routes that take files (a new ticket, or a reply or a note on a ticket or a task) carry a larger body
     upload_max_bytes=upload_request_limit(),
-    upload_paths=r"^/api/v1/((tickets|tasks)/\d+/(reply|note)|users/import)$",
+    upload_paths=r"^/api/v1/(tickets/?|(tickets|tasks)/\d+/(reply|note)|users/import)$",
 )
 
 # CORS (added last so it is outermost: 413/429 responses still carry the CORS headers)
