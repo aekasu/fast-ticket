@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.integration.osticket import read_repository as repo
 from app.integration.osticket.commands_service import dispatch_command
 from app.modules.kb.models import (
+    Attachment,
     CommandResponse,
     CategoryCreate,
     CategoryUpdate,
@@ -163,7 +164,8 @@ async def get_faq(session: AsyncSession, faq_id: int) -> FAQDetail | None:
     row = await repo.get_faq(session, faq_id)
     if not row:
         return None
-    return FAQDetail(**row)
+    files = await repo.get_faq_attachments(session, faq_id)
+    return FAQDetail(**row, attachments=[_attachment(f) for f in files])
 
 
 async def create_faq(
@@ -177,7 +179,7 @@ async def create_faq(
         command_type="kb.faq.create",
         aggregate_type="kb_faq",
         aggregate_id="",
-        payload=body.model_dump(exclude_none=True),
+        payload={k: v for k, v in body.command_payload().items() if v is not None},
         requested_by_staff_id=staff_id,
         idempotency_key=idempotency_key,
     )
@@ -195,7 +197,7 @@ async def update_faq(
         command_type="kb.faq.update",
         aggregate_type="kb_faq",
         aggregate_id=str(faq_id),
-        payload={"faq_id": faq_id, **body.model_dump(exclude_none=True)},
+        payload={"faq_id": faq_id, **{k: v for k, v in body.command_payload().items() if v is not None}},
         requested_by_staff_id=staff_id,
         idempotency_key=idempotency_key,
     )
@@ -217,6 +219,10 @@ async def delete_faq(
         idempotency_key=idempotency_key,
     )
     return _cmd_resp(cmd, idempotency_key)
+
+
+def _attachment(row) -> Attachment:
+    return Attachment(**{k: row[k] for k in ("id", "name", "size", "content_type", "inline")})
 
 
 # ── Canned Responses ──────────────────────────────────────────────────────────
@@ -262,7 +268,21 @@ async def get_canned(session: AsyncSession, canned_id: int, *, access) -> Canned
     row = await repo.get_canned(session, canned_id, access=access, manage=_manages_canned(access))
     if not row:
         return None
-    return CannedDetail(**row)
+    files = await repo.get_canned_attachments(session, canned_id, access=access, manage=_manages_canned(access))
+    return CannedDetail(**row, attachments=[_attachment(f) for f in files])
+
+
+async def faq_attachment(session: AsyncSession, faq_id: int, attachment_id: int) -> dict | None:
+    """The attachment's file row if it is attached to this FAQ, else None."""
+    rows = await repo.get_faq_attachments(session, faq_id, attachment_id=attachment_id)
+    return dict(rows[0]) if rows else None
+
+
+async def canned_attachment(session: AsyncSession, canned_id: int, attachment_id: int, *, access) -> dict | None:
+    """As ``faq_attachment``, for a canned response the agent may see."""
+    rows = await repo.get_canned_attachments(
+        session, canned_id, access=access, manage=_manages_canned(access), attachment_id=attachment_id)
+    return dict(rows[0]) if rows else None
 
 
 async def create_canned(
@@ -276,7 +296,7 @@ async def create_canned(
         command_type="kb.canned.create",
         aggregate_type="kb_canned",
         aggregate_id="",
-        payload=body.model_dump(exclude_none=True),
+        payload={k: v for k, v in body.command_payload().items() if v is not None},
         requested_by_staff_id=staff_id,
         idempotency_key=idempotency_key,
     )
@@ -294,7 +314,7 @@ async def update_canned(
         command_type="kb.canned.update",
         aggregate_type="kb_canned",
         aggregate_id=str(canned_id),
-        payload={"canned_id": canned_id, **body.model_dump(exclude_none=True)},
+        payload={"canned_id": canned_id, **{k: v for k, v in body.command_payload().items() if v is not None}},
         requested_by_staff_id=staff_id,
         idempotency_key=idempotency_key,
     )

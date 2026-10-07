@@ -427,6 +427,35 @@ async def get_task_attachments(
     return list((await session.execute(_sql(sql), params)).mappings().all())
 
 
+_KB_ATTACHMENTS_SQL = """
+    SELECT a.id, COALESCE(NULLIF(a.name, ''), f.name) AS name, f.size, f.type AS content_type,
+           a.inline > 0 AS inline, f.id AS file_id, f.bk AS backend
+    FROM ost_attachment a
+    JOIN ost_file f ON f.id = a.file_id
+    WHERE a.type = '{kind}' AND a.object_id = :object_id AND a.inline = 0   -- separate files; inline images ride in the text
+      {visible} {only}
+    ORDER BY a.id
+"""
+
+
+async def get_faq_attachments(session: AsyncSession, faq_id: int, *, attachment_id: int | None = None) -> list:
+    """Files attached to a FAQ (the knowledge base is open to every agent, as osTicket's)."""
+    sql = _KB_ATTACHMENTS_SQL.format(kind="F", visible="", only="AND a.id = :attachment_id" if attachment_id else "")
+    params = {"object_id": faq_id, **({"attachment_id": attachment_id} if attachment_id else {})}
+    return list((await session.execute(_sql(sql), params)).mappings().all())
+
+
+async def get_canned_attachments(
+    session: AsyncSession, canned_id: int, *, access: "Scope", manage: bool, attachment_id: int | None = None
+) -> list:
+    """Files attached to a canned response the agent may see (the picker's or the management page's rule)."""
+    visible = ("AND EXISTS (SELECT 1 FROM ost_canned_response c WHERE c.canned_id = :object_id AND "
+               + canned_visibility(access, manage=manage) + ")")
+    sql = _KB_ATTACHMENTS_SQL.format(kind="C", visible=visible, only="AND a.id = :attachment_id" if attachment_id else "")
+    params = {"object_id": canned_id, **({"attachment_id": attachment_id} if attachment_id else {})}
+    return list((await session.execute(_sql(sql), params)).mappings().all())
+
+
 async def iter_file_chunks(session: AsyncSession, file_id: int):
     """The bytes of a file kept in osTicket's database (backend ``D``), chunk by chunk. Called only with a file id
     that a scoped attachment read returned."""

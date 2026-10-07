@@ -112,7 +112,7 @@ async def test_an_authentication_failure_carries_them_too():
 async def test_a_413_from_an_inner_middleware_carries_them():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as client:
         resp = await client.post(
-            "/api/v1/canned", content=b"x" * (settings.MAX_REQUEST_BYTES + 1),
+            "/api/v1/kb/categories", content=b"x" * (settings.MAX_REQUEST_BYTES + 1),
             headers={"Authorization": f"Bearer {_token()}", "Content-Type": "application/json"},
         )
     assert resp.status_code == 413

@@ -287,6 +287,36 @@ if (!class_exists('FastApiAttachments')) {
  */
 class FastApiAttachments {
 
+    /**
+     * The file set an attachment-holding record (FAQ, canned response) should end up with: its current separate
+     * (non-inline) files, minus the attachment ids to remove, plus the new uploads — as file id => name, what
+     * GenericAttachments::keepOnlyFileIds() takes. Null when the payload asks for no change.
+     */
+    static function keepSet($attachments, array $payload) {
+        $uploads = FastApiAttachments::upload((array) ($payload['attachments'] ?? []));
+        $remove = array_map('intval', (array) ($payload['remove_attachment_ids'] ?? []));
+        if (!$uploads && !$remove) {
+            return null;
+        }
+        $keep = [];
+        $present = [];
+        foreach ($attachments->getSeparates() as $a) {
+            $present[] = (int) $a->id;
+            if (!in_array((int) $a->id, $remove, true)) {
+                $keep[(int) $a->file_id] = (string) $a->getFilename();
+            }
+        }
+        foreach ($remove as $id) {
+            if (!in_array($id, $present, true)) {
+                throw new Exception("Attachment {$id} is not attached to this record.");
+            }
+        }
+        foreach ($uploads as $u) {
+            $keep[(int) $u['id']] = $u['name'];
+        }
+        return $keep;
+    }
+
     static function upload(array $files) {
         $out = [];
         if (!$files) {

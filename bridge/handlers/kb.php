@@ -110,6 +110,10 @@ class FastApiKbHandler {
             'topics' => array(),
         );
         $faq = FAQ::create();
+        $uploads = FastApiAttachments::upload((array) ($payload['attachments'] ?? []));
+        if ($uploads) {
+            $vars['files'] = array_column($uploads, 'name', 'id');   // FAQ::update() keeps exactly these files
+        }
         self::saveFaq($faq, $vars, isset($payload['keywords']) ? $payload['keywords'] : null);
         return array('faq_id' => $faq->getId(), 'question' => $faq->question);
     }
@@ -130,6 +134,10 @@ class FastApiKbHandler {
             'notes' => isset($payload['notes']) ? $payload['notes'] : $faq->notes,
             'topics' => $topics,
         );
+        $keep = FastApiAttachments::keepSet($faq->getAttachments(), $payload);
+        if ($keep !== null) {
+            $vars['files'] = $keep;
+        }
         // FAQ::update() blanks the deprecated keywords column, so always restore the wanted value.
         $keywords = isset($payload['keywords']) ? $payload['keywords'] : $stored_keywords;
         self::saveFaq($faq, $vars, $keywords);
@@ -177,6 +185,12 @@ class FastApiKbHandler {
             $canned->save();
         }
 
+        // scp/canned.php attaches the uploaded files after the record exists
+        $uploads = FastApiAttachments::upload((array) ($payload['attachments'] ?? []));
+        if ($uploads) {
+            $canned->attachments->keepOnlyFileIds(array_column($uploads, 'name', 'id'), false);
+        }
+
         return array('canned_id' => $canned->getId());
     }
 
@@ -202,9 +216,13 @@ class FastApiKbHandler {
         );
         $errors = array();
 
+        $keep = FastApiAttachments::keepSet($canned->attachments, $payload);
         if (!$canned->update($vars, $errors) || !empty($errors)) {
             $error_msg = !empty($errors) ? json_encode($errors) : 'Unknown error updating Canned Response.';
             throw new Exception("Failed to update Canned Response: " . $error_msg);
+        }
+        if ($keep !== null) {
+            $canned->attachments->keepOnlyFileIds($keep, false);
         }
 
         return array('canned_id' => $canned->getId());

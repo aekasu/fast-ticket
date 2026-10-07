@@ -194,3 +194,42 @@ def test_a_new_ticket_takes_files_on_its_first_message_and_an_open_status(bridge
     bridge.refuses("POST", "/api/v1/tickets/", {
         "subject": f"e2e closed status {uniq}", "message": "m", "email": f"new2.{uniq}@{DELIVERABLE_DOMAIN}", "name": "New",
         "dept_id": 1, "topic_id": 1, "status_id": statuses["Closed"]["id"]}, because="cannot be chosen")
+
+
+def test_faq_and_canned_response_files_are_uploaded_listed_downloaded_and_removed(bridge, uniq):
+    _sweep_uploaded(bridge, f"e2e-kb-{uniq}%")
+    cat = next(iter(bridge.read("/api/v1/kb/categories?page_size=1")["items"]))["id"]
+    one, two = f"first {uniq}".encode(), bytes(range(256))
+    faq = bridge.create("/api/v1/kb/faqs", {
+        "category_id": cat, "question": f"e2e kb files {uniq}", "answer": "see attached",
+        "attachments": [{"name": f"e2e-kb-{uniq}.txt", "content_type": "text/plain", "data": _b64(one)}]},
+        cleanup="/api/v1/kb/faqs/{id}")
+    got = bridge.read(f"/api/v1/kb/faqs/{faq}")
+    (att,) = got["attachments"]
+    assert (att["name"], att["size"], att["content_type"]) == (f"e2e-kb-{uniq}.txt", len(one), "text/plain")
+    download = bridge.get(f"/api/v1/kb/faqs/{faq}/attachments/{att['id']}")
+    assert download.status_code == 200 and download.content == one
+    assert bridge.get(f"/api/v1/kb/faqs/{faq}/attachments/99999999").status_code == 404
+
+    # a PATCH without files keeps them; one with files adds; removal is by attachment id
+    bridge.command("PATCH", f"/api/v1/kb/faqs/{faq}", {"notes": "edited"})
+    assert [a["id"] for a in bridge.read(f"/api/v1/kb/faqs/{faq}")["attachments"]] == [att["id"]]
+    bridge.command("PATCH", f"/api/v1/kb/faqs/{faq}", {"attachments": [{"name": f"e2e-kb-{uniq}.bin", "data": _b64(two)}]})
+    names = {a["name"]: a for a in bridge.read(f"/api/v1/kb/faqs/{faq}")["attachments"]}
+    assert set(names) == {f"e2e-kb-{uniq}.txt", f"e2e-kb-{uniq}.bin"}
+    assert bridge.get(f"/api/v1/kb/faqs/{faq}/attachments/{names[f'e2e-kb-{uniq}.bin']['id']}").content == two
+    bridge.command("PATCH", f"/api/v1/kb/faqs/{faq}", {"remove_attachment_ids": [att["id"]]})
+    assert [a["name"] for a in bridge.read(f"/api/v1/kb/faqs/{faq}")["attachments"]] == [f"e2e-kb-{uniq}.bin"]
+    bridge.refuses("PATCH", f"/api/v1/kb/faqs/{faq}", {"remove_attachment_ids": [att["id"]]}, because="not attached")
+
+    canned = bridge.create("/api/v1/canned", {
+        "title": f"e2e kb canned {uniq}", "response": "hello",
+        "attachments": [{"name": f"e2e-kb-{uniq}-c.txt", "content_type": "text/plain", "data": _b64(one)}]},
+        cleanup="/api/v1/canned/{id}")
+    detail = bridge.read(f"/api/v1/canned/{canned}")
+    (catt,) = detail["attachments"]
+    assert bridge.get(f"/api/v1/canned/{canned}/attachments/{catt['id']}").content == one
+    assert bridge.get(f"/api/v1/canned/{canned}/attachments/{att['id']}").status_code == 404      # a FAQ's file is not its
+    bridge.command("PATCH", f"/api/v1/canned/{canned}", {"remove_attachment_ids": [catt["id"]], "title": f"e2e kb canned {uniq} b"})
+    after = bridge.read(f"/api/v1/canned/{canned}")
+    assert after["attachments"] == [] and after["title"] == f"e2e kb canned {uniq} b" and after["response"] == "hello"

@@ -6,6 +6,11 @@ After a backend change run `npm run api:pull && npm run api:types`, read the sna
 list below and remove the met entries from `BACKEND_REQUESTS.md`. This file is the backend's side of that handshake;
 delete an entry once the frontend has adopted it.
 
+## 2026-10-07 — knowledge-base and canned-response attachments
+
+- `FAQDetail` and `CannedDetail` carry `attachments: [{id, name, size, content_type, inline}]` (separate files; inline images stay in the text). Download: `GET /kb/faqs/{faq_id}/attachments/{attachment_id}` (any agent) and `GET /canned/{canned_id}/attachments/{attachment_id}` (an agent who may see the response: 404 otherwise). Always sent as a download.
+- `POST/PATCH /kb/faqs` (`faq.manage`) and `POST/PATCH /canned` (`canned.manage`) take `attachments: [{name, content_type?, data}]` (base64, the same caps as replies, `GET /settings/attachments`) to add files; PATCH also takes `remove_attachment_ids` (the ids from the record; an id that is not on it is refused). A PATCH with neither keeps the files. **Do:** show the files on the FAQ and canned screens, add the picker and the remove action.
+
 ## 2026-10-07 — the Dashboard activity report
 
 - `GET /dashboard/report?start=YYYY-MM-DD&period=until_today|one_week|two_weeks|one_month|one_quarter&group=department|topic|agent` (any agent) → `{start, period, group, plot:{days[], series:[{event, counts[]}]}, table:{columns[], rows[][]}}`: osTicket's own report class run as the agent, so which departments, topics and agents the rows cover is osTicket's rule (an agent sees their departments; "agent" shows themselves, plus the agents they manage or all with `stats.agents`). Table cells are strings as osTicket prints them (hours with one decimal). `start` omitted = a month ago. No CSV export route: build it from `table`.

@@ -10,6 +10,7 @@ Permissions:
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.attachments import file_response
 from app.core.db import get_session
 from app.core.security import require_perm, require_staff
 from app.modules.kb import service
@@ -106,6 +107,23 @@ async def get_faq(
         raise HTTPException(status_code=404, detail="FAQ not found")
     return faq
 
+@router.get(
+    "/kb/faqs/{faq_id}/attachments/{attachment_id}",
+    summary="Download a file attached to a FAQ",
+    responses={200: {"content": {"application/octet-stream": {}}}},
+)
+async def download_faq_attachment(
+    faq_id: int,
+    attachment_id: int,
+    current_user: dict = require_staff(),
+    session: AsyncSession = Depends(get_session),
+):
+    row = await service.faq_attachment(session, faq_id, attachment_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Attachment not found.")
+    return await file_response(row, staff_id=current_user["staff_id"], object_type="F", object_id=faq_id)
+
+
 @router.post("/kb/faqs", response_model=CommandResponse, status_code=202, summary="Create FAQ")
 async def create_faq(
     body: FAQCreate,
@@ -161,6 +179,23 @@ async def get_canned(
     if not canned:
         raise HTTPException(status_code=404, detail="Canned response not found")
     return canned
+
+@router.get(
+    "/canned/{canned_id}/attachments/{attachment_id}",
+    summary="Download a file attached to a canned response",
+    responses={200: {"content": {"application/octet-stream": {}}}},
+)
+async def download_canned_attachment(
+    canned_id: int,
+    attachment_id: int,
+    current_user: dict = require_staff(),
+    session: AsyncSession = Depends(get_session),
+):
+    row = await service.canned_attachment(session, canned_id, attachment_id, access=current_user["access"])
+    if row is None:
+        raise HTTPException(status_code=404, detail="Attachment not found.")
+    return await file_response(row, staff_id=current_user["staff_id"], object_type="C", object_id=canned_id)
+
 
 @router.post("/canned", response_model=CommandResponse, status_code=202, summary="Create canned response")
 async def create_canned(

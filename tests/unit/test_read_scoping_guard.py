@@ -39,6 +39,7 @@ UNSCOPED_BY_DESIGN = {
     "get_department": "Admin Panel (department detail)",
     "get_priority": "Admin Panel (priority detail)",
     "get_role": "Admin Panel (role detail)",
+    "get_faq_attachments": "the knowledge base is open to every agent (osTicket applies no permission to FAQs)",
     "list_logs": "Admin Panel (system logs)",
     "count_logs": "Admin Panel (system logs)",
     "get_log": "Admin Panel (system logs)",

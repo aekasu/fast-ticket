@@ -64,13 +64,17 @@ class FastApiReadHandler {
         global $thisstaff;
         $type = (string) ($params['object_type'] ?? '');
         $attachment = Attachment::lookup((int) ($params['attachment_id'] ?? 0));
-        $entry = ($attachment && $attachment->type === 'H') ? ThreadEntry::lookup((int) $attachment->object_id) : null;
-        $thread = $entry ? $entry->getThread() : null;
-        $object = $thread ? $thread->getObject() : null;
-        if (!in_array($type, ['T', 'A'], true) || !$object || $thread->getObjectType() !== $type
-                || (int) $thread->getObjectId() !== (int) ($params['object_id'] ?? 0)
-                || !$object->checkStaffPerm($thisstaff)) {
-            throw new FastApiReadRefused(404, 'not_found', 'No such attachment.');
+        if (in_array($type, ['F', 'C'], true)) {
+            self::requireKbAttachment($type, $attachment, (int) ($params['object_id'] ?? 0));
+        } else {
+            $entry = ($attachment && $attachment->type === 'H') ? ThreadEntry::lookup((int) $attachment->object_id) : null;
+            $thread = $entry ? $entry->getThread() : null;
+            $object = $thread ? $thread->getObject() : null;
+            if (!in_array($type, ['T', 'A'], true) || !$object || $thread->getObjectType() !== $type
+                    || (int) $thread->getObjectId() !== (int) ($params['object_id'] ?? 0)
+                    || !$object->checkStaffPerm($thisstaff)) {
+                throw new FastApiReadRefused(404, 'not_found', 'No such attachment.');
+            }
         }
         $file = $attachment->getFile();
         if (!$file) {
@@ -88,6 +92,35 @@ class FastApiReadHandler {
         }
         $file->sendData(false);
         return null;
+    }
+
+    /**
+     * A file attached to a FAQ ('F': any agent may read the knowledge base) or to a canned response ('C': the reply
+     * picker's rule, ``Canned::getCannedResponses`` — enabled and global or of one of the agent's departments — or the
+     * management page's, ``canned.manage`` in the response's department).
+     */
+    private static function requireKbAttachment($type, $attachment, $object_id) {
+        global $thisstaff;
+        if (!$attachment || $attachment->type !== $type || (int) $attachment->object_id !== $object_id || $attachment->inline) {
+            throw new FastApiReadRefused(404, 'not_found', 'No such attachment.');
+        }
+        if ($type === 'F') {
+            if (!FAQ::lookup($object_id)) {
+                throw new FastApiReadRefused(404, 'not_found', 'No such attachment.');
+            }
+            return;
+        }
+        require_once INCLUDE_DIR . 'class.canned.php';
+        $canned = Canned::lookup($object_id);
+        if (!$canned) {
+            throw new FastApiReadRefused(404, 'not_found', 'No such attachment.');
+        }
+        $dept = (int) $canned->getDeptId();
+        $manages = $dept ? ($thisstaff->getRole($dept) && $thisstaff->getRole($dept)->hasPerm(Canned::PERM_MANAGE)) : $thisstaff->hasPerm(Canned::PERM_MANAGE, false);
+        $picks = $canned->isEnabled() && (!$dept || in_array($dept, $thisstaff->getDepts()));
+        if (!$manages && !$picks) {
+            throw new FastApiReadRefused(404, 'not_found', 'No such attachment.');
+        }
     }
 
     /**

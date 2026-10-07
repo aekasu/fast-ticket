@@ -5,7 +5,8 @@ from typing import Optional
 from pydantic import BaseModel, Field
 
 from app.core.timezone import Instant
-from app.modules.tickets.models import CommandResponse
+from app.core.uploads import WithAttachments
+from app.modules.tickets.models import Attachment, CommandResponse
 
 __all__ = ["CommandResponse"]
 
@@ -63,8 +64,9 @@ class FAQDetail(FAQListItem):
     answer: str = ""
     keywords: str = ""
     notes: str = ""
+    attachments: list[Attachment] = Field(default=[], description="Download: GET /kb/faqs/{id}/attachments/{attachment id}")
 
-class FAQCreate(BaseModel):
+class FAQCreate(WithAttachments):
     category_id: int = Field(gt=0)
     question: str = Field(min_length=1, max_length=255)
     answer: str = Field(min_length=1)
@@ -72,13 +74,14 @@ class FAQCreate(BaseModel):
     keywords: str = ""
     notes: str = ""
 
-class FAQUpdate(BaseModel):
+class FAQUpdate(WithAttachments):
     category_id: Optional[int] = Field(default=None, gt=0)
     question: Optional[str] = Field(default=None, min_length=1, max_length=255)
     answer: Optional[str] = Field(default=None, min_length=1)
     is_published: Optional[bool] = None
     keywords: Optional[str] = None
     notes: Optional[str] = None
+    remove_attachment_ids: Optional[list[int]] = Field(default=None, max_length=50, description="Attachment ids (as listed on the FAQ) to remove")
 
 
 # ── Canned Responses ──────────────────────────────────────────────────────────
@@ -100,17 +103,19 @@ class CannedListResponse(BaseModel):
 class CannedDetail(CannedListItem):
     response: str = ""
     notes: str = ""
+    attachments: list[Attachment] = Field(default=[], description="Download: GET /canned/{id}/attachments/{attachment id}")
 
-class CannedCreate(BaseModel):
+class CannedCreate(WithAttachments):
     title: str = Field(min_length=1, max_length=255)
     response: str = Field(min_length=1)
     is_enabled: bool = True
     dept_id: int = 0
     notes: str = ""
 
-class CannedUpdate(BaseModel):
+class CannedUpdate(WithAttachments):
     title: Optional[str] = Field(default=None, min_length=1, max_length=255)
     response: Optional[str] = Field(default=None, min_length=1)
     is_enabled: Optional[bool] = None
     dept_id: Optional[int] = None
     notes: Optional[str] = None
+    remove_attachment_ids: Optional[list[int]] = Field(default=None, max_length=50, description="Attachment ids (as listed on the response) to remove")

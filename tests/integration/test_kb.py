@@ -151,7 +151,8 @@ async def test_list_faqs_returns_200():
 
 @pytest.mark.asyncio
 async def test_get_faq_returns_detail():
-    with patch("app.modules.kb.service.repo.get_faq", new=AsyncMock(return_value=MOCK_FAQ)):
+    with patch("app.modules.kb.service.repo.get_faq", new=AsyncMock(return_value=MOCK_FAQ)), \
+         patch("app.modules.kb.service.repo.get_faq_attachments", new=AsyncMock(return_value=[])):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             resp = await ac.get("/api/v1/kb/faqs/1", headers=_auth())
     assert resp.status_code == 200
@@ -214,7 +215,8 @@ async def test_list_canned_returns_200():
 
 @pytest.mark.asyncio
 async def test_get_canned_returns_detail():
-    with patch("app.modules.kb.service.repo.get_canned", new=AsyncMock(return_value=MOCK_CANNED)):
+    with patch("app.modules.kb.service.repo.get_canned", new=AsyncMock(return_value=MOCK_CANNED)), \
+         patch("app.modules.kb.service.repo.get_canned_attachments", new=AsyncMock(return_value=[])):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             resp = await ac.get("/api/v1/canned/1", headers=_auth(["canned.manage"]))
     assert resp.status_code == 200

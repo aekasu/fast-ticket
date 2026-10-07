@@ -97,3 +97,23 @@ async def test_a_new_ticket_carries_files_on_its_first_message():
     payload = json.loads(row.payload)
     assert payload["attachments"] == [{"name": "report.pdf", "type": "application/pdf", "file_data": FILE["data"]}]
     assert "phone" not in payload and "user_id" not in payload        # unset fields are still left out
+
+
+@pytest.mark.asyncio
+async def test_faq_and_canned_writes_carry_files_and_removals_into_the_payload():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        faq = await ac.post("/api/v1/kb/faqs", json={"category_id": 1, "question": "q", "answer": "a", "attachments": [FILE]},
+                            headers=_auth(["faq.manage"]))
+        faq_up = await ac.patch("/api/v1/kb/faqs/3", json={"remove_attachment_ids": [9], "attachments": [FILE]},
+                                headers=_auth(["faq.manage"]))
+        canned = await ac.post("/api/v1/canned", json={"title": "Greeting", "response": "hi", "attachments": [FILE]},
+                               headers=_auth(["canned.manage"]))
+        canned_up = await ac.patch("/api/v1/canned/4", json={"title": "Renamed"}, headers=_auth(["canned.manage"]))
+        denied = await ac.post("/api/v1/kb/faqs", json={"category_id": 1, "question": "q", "answer": "a", "attachments": [FILE]},
+                               headers=_auth(["canned.manage"]))
+    assert (faq.status_code, faq_up.status_code, canned.status_code, canned_up.status_code, denied.status_code) == (202, 202, 202, 202, 403)
+    rows = [json.loads(r.payload) for r in await _rows()]
+    want = [{"name": "report.pdf", "type": "application/pdf", "file_data": FILE["data"]}]
+    assert rows[0]["attachments"] == want and rows[2]["attachments"] == want
+    assert rows[1]["remove_attachment_ids"] == [9] and rows[1]["attachments"] == want
+    assert rows[3] == {"canned_id": 4, "title": "Renamed"}                      # nothing added when nothing is attached
