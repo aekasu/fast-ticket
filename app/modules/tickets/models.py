@@ -11,6 +11,7 @@ from typing import Literal, Optional
 from pydantic import BaseModel, Field, model_validator
 
 from app.core.timezone import Instant, UtcInput
+from app.core.message_text import MessageText
 from app.core.uploads import WithAttachments
 from app.core.custom_fields import CustomFieldAnswer, CustomFields
 
@@ -186,7 +187,7 @@ class TicketCreate(BaseModel):
     email (an unknown email makes a new user). Nothing is emailed unless ``notify`` asks for it."""
 
     subject: str = Field(min_length=1, max_length=255)
-    message: str = Field(min_length=1)
+    message: MessageText = Field(min_length=1)
     user_id: Optional[int] = Field(default=None, gt=0, description="An existing user as the requester")
     email: Optional[str] = Field(default=None, max_length=255)
     name: Optional[str] = Field(default=None, max_length=255)
@@ -202,8 +203,8 @@ class TicketCreate(BaseModel):
     assign_agent_id: Optional[int] = Field(default=None, gt=0, description="Assign to this agent (needs ticket.assign)")
     assign_team_id: Optional[int] = Field(default=None, gt=0, description="Assign to this team (needs ticket.assign)")
     status_id: Optional[int] = Field(default=None, gt=0, description="Initial ticket status; default: the help topic's or the system's")
-    response: Optional[str] = Field(default=None, max_length=100000, description="A first reply to the requester (needs ticket.reply)")
-    note: Optional[str] = Field(default=None, max_length=100000, description="An internal note (when the ticket is not assigned)")
+    response: Optional[MessageText] = Field(default=None, max_length=100000, description="A first reply to the requester (needs ticket.reply)")
+    note: Optional[MessageText] = Field(default=None, max_length=100000, description="An internal note (when the ticket is not assigned)")
     signature: Literal["none", "mine", "dept"] = Field(default="none", description="Signature on the emailed first reply")
     notify: Literal["none", "user", "all"] = Field(
         default="none", description="Email the new-ticket notice: nobody (default), the requester, or the requester and collaborators")
@@ -219,7 +220,7 @@ class TicketCreate(BaseModel):
 
 
 class TicketReply(WithAttachments):
-    message: str = Field(min_length=1)
+    message: MessageText = Field(min_length=1)
     signature: Literal["none", "mine", "dept"] = Field(
         default="none",
         description="Signature appended to the outgoing email (osTicket's reply form): none, the agent's own, or the "
@@ -228,7 +229,7 @@ class TicketReply(WithAttachments):
 
 class TicketNote(WithAttachments):
     title: str = ""
-    message: str = Field(min_length=1)
+    message: MessageText = Field(min_length=1)
 
 
 class TicketClose(BaseModel):
@@ -328,7 +329,7 @@ class TicketCollaboratorUpdate(BaseModel):
 class TicketEntryEdit(BaseModel):
     """Edit a thread entry. osTicket writes a new entry and hides the old one, so the id changes."""
 
-    body: str = Field(min_length=1, max_length=100000)
+    body: MessageText = Field(min_length=1, max_length=100000)
     title: Optional[str] = Field(default=None, max_length=255)
     resend: bool = Field(default=False, description="Replies only: email the edited reply again.")
     signature: Literal["none", "mine", "theirs", "dept"] = "none"

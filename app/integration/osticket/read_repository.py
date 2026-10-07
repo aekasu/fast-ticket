@@ -216,7 +216,7 @@ def _queue_condition(queue: str, access: "Scope") -> str:
 _TICKET_SORTS = {   # the columns of osTicket's ticket queue; priority sorts by urgency (ascending = most urgent first)
     "updated": ["t.updated"], "created": ["t.created"], "due_date": ["t.duedate"], "number": ["t.number"],
     "last_activity": ["t.lastupdate"],
-    "subject": ["c.subject"], "status": ["ts.name"], "dept": ["d.name"], "priority": ["pr.priority_urgency", "t.updated DESC"],   # ties: most recently updated first, as osTicket's default queue
+    "subject": ["c.subject"], "status": ["ts.name"], "dept": ["d.name"], "priority": ["pr.priority_urgency", "t.lastupdate DESC"],   # ties: last activity first, as osTicket's default queue
     "assignee": ["s.firstname", "s.lastname"], "requester": ["u.name"],
 }
 
@@ -1657,7 +1657,7 @@ _TASK_SELECT = """
         -- osTicket has no task status table: a task is open while flags bit 0x1 is set.
         -- Ids are synthetic (1 = open, 2 = closed) so the API model keeps its shape.
         IF(t.flags & 1, 1, 2)                AS status_id,
-        IF(t.flags & 1, 'Open', 'Closed')    AS status_name,
+        IF(t.flags & 1, 'Open', 'Completed') AS status_name,
         IF(t.flags & 1, 'open', 'closed')    AS status_state,
         d.id                             AS dept_id,
         d.name                           AS dept_name,

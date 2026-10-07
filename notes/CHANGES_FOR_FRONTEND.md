@@ -6,6 +6,15 @@ After a backend change run `npm run api:pull && npm run api:types`, read the sna
 list below and remove the met entries from `BACKEND_REQUESTS.md`. This file is the backend's side of that handshake;
 delete an entry once the frontend has adopted it.
 
+## 2026-10-07 — three small fixes from BACKEND_REQUESTS.md
+
+- `sort=priority` now breaks ties by `last_activity` (osTicket's `lastupdate`), not the row's `updated`: the first page
+  matches osTicket's default queue. **Do:** re-enable the `test.fixme` for the exact order.
+- A closed task's `status_name` is `Completed` (osTicket's word); `status_id` 2 / `status_state` `closed` are unchanged.
+  **Do:** drop the frontend's rename.
+- A plain-text `message` / `note` / `response` / entry `body` with newlines (and no HTML tags of its own) is stored with
+  `<br>` for each line break; a body that already carries markup is stored as sent. **Do:** nothing, line breaks now survive.
+
 ## 2026-10-05 — canned responses with the ticket's variables filled in: `GET /tickets/{id}/canned/{canned_id}`
 
 **New.** Returns `{id, title, response, format, files}`: the canned response as osTicket's own reply form would insert

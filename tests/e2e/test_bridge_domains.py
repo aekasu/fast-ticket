@@ -1122,12 +1122,12 @@ def test_ticket_and_task_lists_search_sort_count_and_queues_agree(bridge, uniq):
     assert asc == desc[::-1] and set(asc) == {first, second}
     for column in ("priority", "assignee", "requester", "status", "dept", "subject", "created", "due_date", "updated"):
         assert bridge.get(f"/api/v1/tickets/?q={uniq}&sort={column}").status_code == 200, column
-    # priority ties break by most recently updated first (osTicket's "Priority + Most Recently Updated"), either direction
+    # priority ties break by last activity first (osTicket's "Priority + Most Recently Updated" is its `lastupdate`), either direction
     for direction in ("false", "true"):
         rows = bridge.read(f"/api/v1/tickets/?sort=priority&descending={direction}&page_size=100")["items"]
         for prev, nxt in zip(rows, rows[1:]):
             if prev["priority_id"] == nxt["priority_id"]:
-                assert prev["updated"] >= nxt["updated"], (prev["ticket_id"], nxt["ticket_id"])
+                assert (prev["last_activity"] or "") >= (nxt["last_activity"] or ""), (prev["ticket_id"], nxt["ticket_id"])
 
     # osTicket's own due date / overdue / last-updated, and the body format of a thread entry
     item = bridge.read(f"/api/v1/tickets/{first}")

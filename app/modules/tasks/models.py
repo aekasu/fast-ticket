@@ -5,6 +5,7 @@ from typing import Literal, Optional
 from pydantic import BaseModel, Field, model_validator
 
 from app.core.timezone import Instant, UtcInput
+from app.core.message_text import MessageText
 from app.core.uploads import WithAttachments
 from app.core.custom_fields import CustomFieldAnswer, CustomFields
 
@@ -122,7 +123,7 @@ class TaskTransfer(BaseModel):
 class TaskReply(WithAttachments):
     """An update posted to the task's collaborators."""
 
-    message: str = Field(min_length=1, max_length=100000)
+    message: MessageText = Field(min_length=1, max_length=100000)
 
 
 class TaskClose(BaseModel):
