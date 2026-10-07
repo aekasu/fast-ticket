@@ -6,6 +6,10 @@ After a backend change run `npm run api:pull && npm run api:types`, read the sna
 list below and remove the met entries from `BACKEND_REQUESTS.md`. This file is the backend's side of that handshake;
 delete an entry once the frontend has adopted it.
 
+## 2026-10-07 — custom answers as list columns: `?fields=`
+
+- `GET /tickets/`, `/tasks/`, `/users`, `/orgs` take `?fields=name1,name2` (variable names, at most 20; see `GET /forms/for/{kind}`): every row then carries `custom_fields` with just those answers (typed, as on the detail reads), an empty list when the row has none, and `null` when `fields` was not asked. One extra query per page, not one per row; tickets and tasks are scoped as the list is. An invalid name list is a 422. **Do:** show custom columns from it and drop the "one request per row" workaround.
+
 ## 2026-10-07 — My Profile (self-service)
 
 - `GET /profile` (any agent): their own profile: `username, firstname, lastname, email, phone, phone_ext, mobile, signature, timezone, lang, max_page_size (0 = system), auto_refresh_rate (minutes, 0 = off), default_signature_type, default_paper_size, onvacation`, and the per-agent settings `datetime_format, default_from_name, thread_view_order, default_ticket_queue_id, reply_redirect, img_att_view, editor_spacing` (empty = the system default).

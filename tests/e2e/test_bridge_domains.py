@@ -990,6 +990,14 @@ def test_ticket_custom_fields_from_a_help_topic_form(bridge, uniq):
     assert (got["urgent"]["kind"], got["urgent"]["bool_value"]) == ("bool", True)
     assert (got["asset"]["kind"], got["asset"]["choices"], got["asset"]["bool_value"]) == ("text", None, None)
 
+    # the same answers as list columns: only the named fields, on every row, none unless asked
+    listed = bridge.read(f"/api/v1/tickets/?q={uniq}&fields=asset,kind")["items"]
+    assert [t["ticket_id"] for t in listed] == [tk]
+    assert {a["name"]: a["value"] for a in listed[0]["custom_fields"]}["asset"] == "A-100"
+    assert {a["name"] for a in listed[0]["custom_fields"]} == {"asset", "kind"}
+    assert bridge.read(f"/api/v1/tickets/?q={uniq}")["items"][0]["custom_fields"] is None
+    assert bridge.get("/api/v1/tickets/?fields=bad%20name").status_code == 422
+
     url = f"/api/v1/tickets/{tk}"
     bridge.command("PATCH", url, {"custom_fields": {"asset": "A-200", "kind": "b", "urgent": False, "memo": ""}})
     got = _answers(bridge.read(url))
@@ -1031,6 +1039,8 @@ def test_user_organization_and_task_custom_fields(bridge, uniq):
     assert _answers(bridge.read(f"/api/v1/users/{uid}"))[name]["value"] == "u1"
     bridge.command("PATCH", f"/api/v1/users/{uid}", {"custom_fields": {name: "u2"}})
     assert _answers(bridge.read(f"/api/v1/users/{uid}"))[name]["value"] == "u2"
+    listed = bridge.read(f"/api/v1/users?q=E2E CF User&fields={name}")["items"]
+    assert [a["value"] for u in listed if u["id"] == uid for a in u["custom_fields"]] == ["u2"]
     bridge.refuses("PATCH", f"/api/v1/users/{uid}", {"custom_fields": {"nope": "x"}}, because="no 'nope' field")
     got = bridge.read(f"/api/v1/users/{uid}")
     assert "phone" not in _answers(got) and "notes" not in _answers(got)       # built-ins live at the top level
@@ -1040,6 +1050,8 @@ def test_user_organization_and_task_custom_fields(bridge, uniq):
     bridge.command("PATCH", f"/api/v1/orgs/{oid}", {"custom_fields": {name: "o2"}, "address": "kept"})
     got = bridge.read(f"/api/v1/orgs/{oid}")
     assert _answers(got)[name]["value"] == "o2" and got["address"] == "kept"
+    listed = bridge.read(f"/api/v1/orgs?q=e2e-cf-org-{uniq}&fields={name}")["items"]
+    assert [a["value"] for o in listed if o["id"] == oid for a in o["custom_fields"]] == ["o2"]
 
     tid = bridge.create("/api/v1/tasks/", {"title": f"e2e cf task {uniq}", "description": "d", "dept_id": 1,
                                            "custom_fields": {name: "t1"}}, cleanup="/api/v1/tasks/{id}")
@@ -1047,6 +1059,8 @@ def test_user_organization_and_task_custom_fields(bridge, uniq):
     bridge.command("PATCH", f"/api/v1/tasks/{tid}", {"custom_fields": {name: "t2"}})
     got = bridge.read(f"/api/v1/tasks/{tid}")
     assert _answers(got)[name]["value"] == "t2" and got["title"] == f"e2e cf task {uniq}"
+    listed = bridge.read(f"/api/v1/tasks/?q={uniq}&fields={name}")["items"]
+    assert [a["value"] for t in listed if t["task_id"] == tid for a in t["custom_fields"]] == ["t2"]
     bridge.refuses("POST", "/api/v1/tasks/", {"title": "x", "description": "d", "custom_fields": {"title": "clash"}},
                    because="built-in field")
 

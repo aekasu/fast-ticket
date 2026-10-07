@@ -53,6 +53,7 @@ class TaskListItem(BaseModel):
     updated: Instant
     closed: Optional[Instant] = None
     due_date: Optional[Instant] = None
+    custom_fields: Optional[list[CustomFieldAnswer]] = Field(default=None, description="Only when the request asks `?fields=name,...`")
 
 
 class TaskDetail(TaskListItem):

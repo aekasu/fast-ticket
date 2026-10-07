@@ -462,6 +462,42 @@ async def get_ticket_custom_fields(session: AsyncSession, ticket_id: int, *, acc
     return list(result.mappings().all())
 
 
+async def get_list_custom_fields(
+    session: AsyncSession, *, access: "Scope", object_type: str = "U",
+    object_ids: list[int] | None = None, names: list[str] | None = None,
+) -> list:
+    """The answers to the named fields for the rows of one list page.
+
+    ``object_ids`` come from the page the caller already scoped; tickets and tasks are checked again here with the
+    list rule, so a stale id cannot leak. Users and organizations are directories (no scoping, as their lists)."""
+    from sqlalchemy import bindparam
+
+    ids = [int(i) for i in object_ids or []]
+    if not ids or not names:
+        return []
+    if object_type == "T":
+        scope = ("AND EXISTS (SELECT 1 FROM ost_ticket t JOIN ost_ticket_status ts ON ts.id = t.status_id "
+                 "WHERE t.ticket_id = fe.object_id AND " + ticket_visibility(access, detail=False) + ")")
+    elif object_type == "A":
+        scope = "AND EXISTS (SELECT 1 FROM ost_task t WHERE t.id = fe.object_id AND " + task_visibility(access, detail=False) + ")"
+    else:
+        scope = ""
+    sql = """
+        SELECT fe.object_id, ff.name, ff.label, ff.type, ev.value, ev.value_id, ff.configuration
+        FROM ost_form_entry fe
+        JOIN ost_form_entry_values ev ON ev.entry_id = fe.id
+        JOIN ost_form_field ff ON ff.id = ev.field_id
+        WHERE fe.object_type = :object_type AND fe.object_id IN ({ids})
+          AND (ff.flags & 1) > 0 AND (ff.flags & 4096) > 0
+          AND ff.name IN :names
+          {scope}
+        ORDER BY fe.object_id, fe.sort, ff.sort, ff.id
+    """.replace("{ids}", ",".join(str(i) for i in ids)).replace("{scope}", scope)
+    stmt = _sql(sql).bindparams(bindparam("names", expanding=True))
+    result = await session.execute(stmt, {"object_type": object_type, "names": names})
+    return list(result.mappings().all())
+
+
 async def get_ticket_collaborators(session: AsyncSession, ticket_id: int, *, access: "Scope") -> list:
     """Return collaborators for a ticket (nothing if the agent may not open it)."""
     sql = """

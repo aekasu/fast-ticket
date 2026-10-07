@@ -18,6 +18,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.attachments import file_response
+from app.core.custom_fields import custom_fields_query
 from app.core.db import get_session
 from app.core.security import require_perm, require_staff
 from app.modules.agents.models import AssigneeOptions
@@ -59,6 +60,7 @@ async def list_tasks(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200),
     current_user: dict = require_staff(),
+    field_names: list[str] | None = Depends(custom_fields_query),
     session: AsyncSession = Depends(get_session),
 ):
     """The tasks the agent may see: open and assigned to them or their team, tasks of their tickets,
@@ -76,6 +78,7 @@ async def list_tasks(
         descending=descending,
         page=page,
         page_size=page_size,
+        field_names=field_names,
     )
 
 

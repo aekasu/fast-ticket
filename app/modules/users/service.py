@@ -3,7 +3,8 @@
 import logging
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.custom_fields import BUILT_IN_FIELDS, CustomFieldAnswer, answer_from_row
+from app.core.custom_fields import BUILT_IN_FIELDS, CustomFieldAnswer, answer_from_row, attach_custom_fields
+from app.core.scope import UNRESTRICTED
 from app.integration.osticket import read_repository as repo
 from app.integration.osticket.commands_service import dispatch_command
 from app.modules.users.models import (
@@ -52,19 +53,24 @@ async def list_organizations(
     q: str | None = None,
     sort: str = "name",
     descending: bool = False,
+    field_names: list[str] | None = None,
 ) -> OrganizationListResponse:
     page_size = min(page_size, 200)
     offset = (page - 1) * page_size
     rows = await repo.list_organizations(
         session, q=q, sort=sort, descending=descending, limit=page_size, offset=offset)
+    items = [
+        OrganizationListItem(
+            id=row["id"], name=row["name"], user_count=int(row.get("user_count") or 0),
+            created=row["created"], updated=row["updated"],
+        )
+        for row in rows
+    ]
+    if field_names:
+        answers = await repo.get_list_custom_fields(session, access=UNRESTRICTED, object_type="O", object_ids=[i.id for i in items], names=field_names)
+        attach_custom_fields(items, "id", answers, "O")
     return OrganizationListResponse(
-        items=[
-            OrganizationListItem(
-                id=row["id"], name=row["name"], user_count=int(row.get("user_count") or 0),
-                created=row["created"], updated=row["updated"],
-            )
-            for row in rows
-        ],
+        items=items,
         total=await repo.count_organizations(session, q=q),
         page=page,
         page_size=page_size,
@@ -161,13 +167,13 @@ async def list_users(
     q: str | None = None,
     sort: str = "name",
     descending: bool = False,
+    field_names: list[str] | None = None,
 ) -> UserListResponse:
     page_size = min(page_size, 200)
     offset = (page - 1) * page_size
     rows = await repo.list_users(
         session, org_id=org_id, q=q, sort=sort, descending=descending, limit=page_size, offset=offset)
-    return UserListResponse(
-        items=[
+    items = [
             UserListItem(
                 id=row["id"],
                 name=row["name"],
@@ -181,7 +187,12 @@ async def list_users(
                 updated=row["updated"],
             )
             for row in rows
-        ],
+    ]
+    if field_names:
+        answers = await repo.get_list_custom_fields(session, access=UNRESTRICTED, object_type="U", object_ids=[i.id for i in items], names=field_names)
+        attach_custom_fields(items, "id", answers, "U")
+    return UserListResponse(
+        items=items,
         total=await repo.count_users(session, org_id=org_id, q=q),
         page=page,
         page_size=page_size,

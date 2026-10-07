@@ -20,6 +20,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.attachments import file_response
+from app.core.custom_fields import custom_fields_query
 from app.core.db import get_session
 from app.core.security import require_perm, require_staff
 from app.modules.agents.models import AssigneeOptions
@@ -82,6 +83,7 @@ async def list_tickets(
     page: int = Query(default=1, ge=1, description="Page number (1-indexed)"),
     page_size: int = Query(default=50, ge=1, le=200, description="Rows per page"),
     current_user: dict = require_staff(),
+    field_names: list[str] | None = Depends(custom_fields_query),
     session: AsyncSession = Depends(get_session),
 ):
     """Return a paginated, filtered list of the tickets the agent may see.
@@ -107,6 +109,7 @@ async def list_tickets(
         descending=descending,
         page=page,
         page_size=page_size,
+        field_names=field_names,
     )
 
 

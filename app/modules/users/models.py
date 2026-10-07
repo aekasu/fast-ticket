@@ -24,6 +24,7 @@ class OrganizationListItem(BaseModel):
     user_count: int = Field(default=0, description="Members (osTicket's Users column)")
     created: Instant
     updated: Instant
+    custom_fields: Optional[list[CustomFieldAnswer]] = Field(default=None, description="Only when the request asks `?fields=name,...`")
 
 class OrganizationListResponse(BaseModel):
     items: list[OrganizationListItem]
@@ -124,6 +125,7 @@ class UserListItem(BaseModel):
     ticket_count: int = Field(default=0, description="All of the user's tickets, as osTicket's directory counts them")
     created: Instant
     updated: Instant
+    custom_fields: Optional[list[CustomFieldAnswer]] = Field(default=None, description="Only when the request asks `?fields=name,...`")
 
 class UserListResponse(BaseModel):
     items: list[UserListItem]

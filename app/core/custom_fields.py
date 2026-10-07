@@ -10,8 +10,10 @@ fields the key in ``value_id`` with the JSON label map in ``value``.
 """
 
 import json
+import re
 from typing import Annotated, Literal, Optional, Union
 
+from fastapi import HTTPException, Query
 from pydantic import BaseModel, Field, StringConstraints
 
 CustomFieldName = Annotated[str, StringConstraints(pattern=r"^[A-Za-z_-][A-Za-z0-9_-]*$", max_length=64)]
@@ -84,9 +86,46 @@ def answer_from_row(row: dict) -> CustomFieldAnswer:
 
 
 # fields every object type already exposes as top-level properties; left out of ``custom_fields`` on reads
+MAX_COLUMN_FIELDS = 20
+
+
+def parse_field_names(fields: str | None) -> list[str] | None:
+    """``?fields=a,b`` → the variable names a list should carry the answers of (None when not asked)."""
+    if not fields:
+        return None
+    names = [n.strip() for n in fields.split(",") if n.strip()]
+    if len(names) > MAX_COLUMN_FIELDS or not all(re.fullmatch(r"[A-Za-z_-][A-Za-z0-9_-]{0,63}", n) for n in names):
+        raise ValueError(f"fields: at most {MAX_COLUMN_FIELDS} variable names, letters, digits, '_' and '-'")
+    return list(dict.fromkeys(names))
+
+
 BUILT_IN_FIELDS = {
     "T": {"subject", "message", "priority"},
     "U": {"name", "email", "phone", "notes"},
     "O": {"name", "address", "phone", "website", "notes"},
     "A": {"title", "description"},
 }
+
+
+def custom_fields_query(
+    fields: str | None = Query(
+        default=None, max_length=1500,
+        description="Comma-separated custom-field variable names to include on every row as `custom_fields` "
+                    f"(at most {MAX_COLUMN_FIELDS}); see GET /forms/for/{{kind}} for the names"),
+) -> list[str] | None:
+    """FastAPI dependency for ``?fields=``: the validated names, or None."""
+    try:
+        return parse_field_names(fields)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
+def attach_custom_fields(items: list, id_attr: str, rows, object_type: str) -> None:
+    """Set ``item.custom_fields`` on every list item from the batch of answer rows (an empty list when none)."""
+    skip = BUILT_IN_FIELDS[object_type]
+    grouped: dict[int, list[CustomFieldAnswer]] = {}
+    for row in map(dict, rows):
+        if row["name"] not in skip:
+            grouped.setdefault(int(row["object_id"]), []).append(answer_from_row(row))
+    for item in items:
+        item.custom_fields = grouped.get(int(getattr(item, id_attr)), [])

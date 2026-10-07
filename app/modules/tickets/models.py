@@ -79,6 +79,7 @@ class TicketListItem(BaseModel):
     is_overdue: bool = Field(default=False, description="osTicket's overdue flag (what the Overdue queue lists)")
     last_activity: Optional[Instant] = Field(
         default=None, description="osTicket's 'Last Updated' (lastupdate): moves on a message or a response")
+    custom_fields: Optional[list[CustomFieldAnswer]] = Field(default=None, description="Only when the request asks `?fields=name,...`")
 
 
 class Attachment(BaseModel):

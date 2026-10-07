@@ -4,7 +4,7 @@ import logging
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.custom_fields import BUILT_IN_FIELDS, CustomFieldAnswer, answer_from_row
+from app.core.custom_fields import BUILT_IN_FIELDS, CustomFieldAnswer, answer_from_row, attach_custom_fields
 from app.core.attachments import group_by_entry
 from app.integration.osticket import read_repository as repo
 from app.modules.agents import service as agents_service
@@ -131,6 +131,7 @@ async def list_tasks(
     descending: bool = True,
     page: int = 1,
     page_size: int = 50,
+    field_names: list[str] | None = None,
 ) -> TaskListResponse:
     page_size = min(page_size, 200)
     offset = (page - 1) * page_size
@@ -138,8 +139,12 @@ async def list_tasks(
                    ticket_id=ticket_id, q=q, queue=queue)
     rows = await repo.list_tasks(session, access=access, **filters, sort=sort, descending=descending, limit=page_size, offset=offset)
     total = await repo.count_tasks(session, access=access, **filters)
+    items = [_row_to_list_item(dict(r)) for r in rows]
+    if field_names:
+        answers = await repo.get_list_custom_fields(session, access=access, object_type="A", object_ids=[i.task_id for i in items], names=field_names)
+        attach_custom_fields(items, "task_id", answers, "A")
     return TaskListResponse(
-        items=[_row_to_list_item(dict(r)) for r in rows],
+        items=items,
         total=total,
         page=page,
         page_size=page_size,
@@ -175,7 +180,7 @@ async def get_task(session: AsyncSession, task_id: int, *, access) -> TaskDetail
     collab_rows = await repo.get_task_collaborators(session, task_id, access=access)
     item = _row_to_list_item(row)
     return TaskDetail(
-        **item.model_dump(),
+        **item.model_dump(exclude={"custom_fields"}),
         thread=[_row_to_thread_entry(dict(r), files.get(int(r['id']))) for r in thread_rows],
         collaborators=[_row_to_collaborator(dict(r)) for r in collab_rows],
         custom_fields=_custom_answers(custom_rows, "A"),
