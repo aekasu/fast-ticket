@@ -88,3 +88,20 @@ async def test_settings_pages_are_admin_only_and_queue_only_what_was_sent():
     rows = await _rows()
     assert json.loads(rows[0].payload) == {"section": "system", "values": {"autolock_minutes": 5, "enable_avatars": True}}
     assert json.loads(rows[1].payload) == {"section": "kb", "values": {}}
+
+
+@pytest.mark.asyncio
+async def test_email_template_writes_are_queued_and_unknown_messages_are_404():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        admin = _auth(is_admin=True)
+        made = await ac.post("/api/v1/email-templates", json={"name": "Mine", "copy_from_id": 1}, headers=admin)
+        renamed = await ac.patch("/api/v1/email-templates/2", json={"is_active": False}, headers=admin)
+        text = await ac.put("/api/v1/email-templates/2/messages/ticket.autoresp", json={"subject": "s", "body": "<p>b</p>"}, headers=admin)
+        unknown = await ac.put("/api/v1/email-templates/2/messages/not.a.message", json={"subject": "s", "body": "b"}, headers=admin)
+        empty = await ac.put("/api/v1/email-templates/2/messages/ticket.autoresp", json={"subject": "", "body": "b"}, headers=admin)
+        dropped = await ac.delete("/api/v1/email-templates/2", headers=admin)
+    assert [r.status_code for r in (made, renamed, text, unknown, empty, dropped)] == [202, 202, 202, 404, 422, 202]
+    rows = await _rows()
+    assert [r.command_type for r in rows] == ["emailtemplate.create", "emailtemplate.update", "emailtemplate.message.update", "emailtemplate.delete"]
+    assert json.loads(rows[1].payload) == {"set_id": 2, "is_active": False}
+    assert json.loads(rows[2].payload) == {"set_id": 2, "code_name": "ticket.autoresp", "subject": "s", "body": "<p>b</p>"}

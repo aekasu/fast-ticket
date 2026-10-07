@@ -6,6 +6,11 @@ After a backend change run `npm run api:pull && npm run api:types`, read the sna
 list below and remove the met entries from `BACKEND_REQUESTS.md`. This file is the backend's side of that handshake;
 delete an entry once the frontend has adopted it.
 
+## 2026-10-07 — email template sets and their messages (Admin Panel, admin only)
+
+- `GET /email-templates` → `{items:[{id, name, lang, notes, is_active, in_use, message_count, created, updated}], total, ...}`; `GET /email-templates/{id}` adds `messages[]` for all 19 messages osTicket knows (`code_name`, `name`, `group`, `description`, `defined`, `subject`, `updated`; `defined=false` means the set has no copy yet and osTicket uses its built-in text). `GET /email-templates/{id}/messages/{code_name}` adds the `body`.
+- `POST /email-templates {name, notes?, is_active?, lang?, copy_from_id?}` (a copy of another set's messages, or empty), `PATCH /email-templates/{id}`, `DELETE /email-templates/{id}`; the default set and a department's are `in_use`: not disabled or deleted. `PUT /email-templates/{id}/messages/{code_name} {subject, body}` sets a message (adds the copy when the set has none).
+
 ## 2026-10-07 — Admin Panel settings pages (admin only)
 
 - `GET /settings/{section}` and `PATCH /settings/{section}` (202, partial) for `system`, `tickets`, `tasks`, `agents`, `users`, `kb`, `emails` and `pages` (landing / offline / thank-you page ids). The body is osTicket's own keys, flat and typed: numbers, text, booleans (checkboxes and the 1/0 switches such as `isonline` and the `*_alert_active` flags) and, for `system`, `secondary_langs` as a list of codes. `tickets` carries the auto-response, notice and alert switches that osTicket keeps on that page.

@@ -1284,6 +1284,43 @@ async def get_core_config(session: AsyncSession) -> dict:
     return {key: value for key, value in rows}
 
 
+_TEMPLATE_SET_COLUMNS = """
+    g.tpl_id AS id, g.name, g.lang, g.notes, g.isactive AS is_active, g.created, g.updated,
+    -- EmailTemplateGroup::isInUse(): a department uses it, or it is the default set
+    ((SELECT COUNT(*) FROM ost_department d WHERE d.tpl_id = g.tpl_id) > 0
+     OR g.tpl_id = (SELECT CAST(c.value AS UNSIGNED) FROM ost_config c WHERE c.namespace = 'core' AND c.`key` = 'default_template_id')) AS in_use,
+    (SELECT COUNT(*) FROM ost_email_template t WHERE t.tpl_id = g.tpl_id) AS message_count
+"""
+
+
+async def list_template_sets(session: AsyncSession, limit: int = 50, offset: int = 0) -> list:
+    """Email template sets (Admin Panel)."""
+    sql = f"SELECT {_TEMPLATE_SET_COLUMNS} FROM ost_email_template_group g ORDER BY g.name ASC LIMIT :limit OFFSET :offset"
+    return list((await session.execute(_sql(sql), {"limit": limit, "offset": offset})).mappings().all())
+
+
+async def count_template_sets(session: AsyncSession) -> int:
+    return int((await session.execute(_sql("SELECT COUNT(*) FROM ost_email_template_group"))).scalar() or 0)
+
+
+async def get_template_set(session: AsyncSession, set_id: int) -> dict | None:
+    sql = f"SELECT {_TEMPLATE_SET_COLUMNS} FROM ost_email_template_group g WHERE g.tpl_id = :set_id"
+    row = (await session.execute(_sql(sql), {"set_id": set_id})).mappings().one_or_none()
+    return dict(row) if row else None
+
+
+async def list_template_messages(session: AsyncSession, set_id: int) -> list:
+    """The messages a set has its own copy of (code name, subject, update time; no body)."""
+    sql = "SELECT t.code_name, t.subject, t.updated FROM ost_email_template t WHERE t.tpl_id = :set_id ORDER BY t.code_name"
+    return list((await session.execute(_sql(sql), {"set_id": set_id})).mappings().all())
+
+
+async def get_template_message(session: AsyncSession, set_id: int, code_name: str = "") -> dict | None:
+    sql = "SELECT t.code_name, t.subject, t.body, t.updated FROM ost_email_template t WHERE t.tpl_id = :set_id AND t.code_name = :code_name"
+    row = (await session.execute(_sql(sql), {"set_id": set_id, "code_name": code_name})).mappings().one_or_none()
+    return dict(row) if row else None
+
+
 async def get_staff_profile(session: AsyncSession, staff_id: int) -> dict | None:
     """The agent's own profile: their ``ost_staff`` row and their per-agent settings (``ost_config`` ``staff.<id>``)."""
     sql = """

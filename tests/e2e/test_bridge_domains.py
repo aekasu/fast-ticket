@@ -1637,3 +1637,37 @@ def test_a_custom_list_field_takes_item_ids_as_answers(bridge, uniq):
     bridge.refuses("PATCH", f"/api/v1/users/{uid}", {"custom_fields": {name: 999999}}, because="not a valid value")
     bridge.command("PATCH", f"/api/v1/users/{uid}", {"custom_fields": {name: ""}})
     assert _answers(bridge.read(f"/api/v1/users/{uid}"))[name]["choices"] in ([], None)
+
+
+def test_email_template_set_lifecycle_and_messages(bridge, uniq):
+    default = next(s for s in bridge.read("/api/v1/email-templates?page_size=200")["items"] if s["in_use"])
+    full = bridge.read(f"/api/v1/email-templates/{default['id']}")
+    assert full["message_count"] == 19 and all(m["defined"] for m in full["messages"])
+
+    sid = bridge.create("/api/v1/email-templates", {"name": f"e2e{uniq[:20]}", "notes": "empty"}, cleanup="/api/v1/email-templates/{id}")
+    empty = bridge.read(f"/api/v1/email-templates/{sid}")
+    assert (empty["name"], empty["is_active"], empty["in_use"], empty["message_count"]) == (f"e2e{uniq[:20]}", True, False, 0)
+    assert len(empty["messages"]) == 19 and not any(m["defined"] for m in empty["messages"])
+
+    done = bridge.command("PUT", f"/api/v1/email-templates/{sid}/messages/ticket.autoresp", {"subject": "Hello %{ticket.number}", "body": "<p>Text</p>"})
+    assert done["result"]["created"] is True                                     # the set had no copy: it is added
+    msg = bridge.read(f"/api/v1/email-templates/{sid}/messages/ticket.autoresp")
+    assert (msg["defined"], msg["subject"], msg["name"]) == (True, "Hello %{ticket.number}", "New Ticket Auto-response") and "Text" in msg["body"]
+    done = bridge.command("PUT", f"/api/v1/email-templates/{sid}/messages/ticket.autoresp", {"subject": "Changed", "body": "<p>Again</p>"})
+    assert done["result"]["created"] is False
+    assert bridge.read(f"/api/v1/email-templates/{sid}")["message_count"] == 1
+    assert bridge.get(f"/api/v1/email-templates/{sid}/messages/not.a.message").status_code == 404
+
+    bridge.command("PATCH", f"/api/v1/email-templates/{sid}", {"notes": "changed"})            # name and status kept
+    after = bridge.read(f"/api/v1/email-templates/{sid}")
+    assert (after["name"], after["notes"], after["is_active"]) == (f"e2e{uniq[:20]}", "changed", True)
+    bridge.command("PATCH", f"/api/v1/email-templates/{sid}", {"is_active": False})
+    assert bridge.read(f"/api/v1/email-templates/{sid}")["is_active"] is False
+    bridge.refuses("PATCH", f"/api/v1/email-templates/{default['id']}", {"is_active": False}, because="in-use")
+    bridge.refuses("DELETE", f"/api/v1/email-templates/{default['id']}", None, because="in use")
+    bridge.refuses("POST", "/api/v1/email-templates", {"name": f"e2e{uniq[:20]}"}, because="already exists")
+
+    copy = bridge.create("/api/v1/email-templates", {"name": f"e2c{uniq[:20]}", "copy_from_id": default["id"]}, cleanup="/api/v1/email-templates/{id}")
+    assert bridge.read(f"/api/v1/email-templates/{copy}")["message_count"] == 19
+    bridge.command("DELETE", f"/api/v1/email-templates/{sid}")
+    assert bridge.get(f"/api/v1/email-templates/{sid}").status_code == 404
