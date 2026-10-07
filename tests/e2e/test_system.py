@@ -66,3 +66,9 @@ def test_the_dashboard_report_is_scoped_by_osticket_to_the_agent(bridge, uniq):
     assert names <= all_names and len(names) <= 1
     agents = httpx.get(f"{BASE_URL}/api/v1/dashboard/report?start=2020-01-01&period=one_quarter&group=agent", headers=headers).json()
     assert all(r[0] == "Dash Board" for r in agents["table"]["rows"])
+
+
+def test_installed_plugins_are_listed_read_only(bridge):
+    plugins = bridge.read("/api/v1/plugins")["plugins"]
+    ours = next(p for p in plugins if "FastAPI" in p["name"])
+    assert ours["is_active"] is True and ours["instances"] and ours["installed"]

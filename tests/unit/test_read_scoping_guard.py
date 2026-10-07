@@ -39,6 +39,8 @@ UNSCOPED_BY_DESIGN = {
     "get_department": "Admin Panel (department detail)",
     "get_priority": "Admin Panel (priority detail)",
     "get_role": "Admin Panel (role detail)",
+    "list_plugins": "Admin Panel (plugins, read-only)",
+    "list_plugin_instances": "Admin Panel (plugins, read-only)",
     "list_schedules": "Admin Panel (schedules)",
     "count_schedules": "Admin Panel (schedules)",
     "get_schedule": "Admin Panel (schedules)",

@@ -6,6 +6,10 @@ After a backend change run `npm run api:pull && npm run api:types`, read the sna
 list below and remove the met entries from `BACKEND_REQUESTS.md`. This file is the backend's side of that handshake;
 delete an entry once the frontend has adopted it.
 
+## 2026-10-07 — plugins (read-only)
+
+- `GET /plugins` (admin): `{plugins:[{id, name, version, install_path, is_phar, is_active, installed, instances:[{id, name, is_enabled}]}]}`. Installing, enabling and configuring a plugin runs its code and is not exposed.
+
 ## 2026-10-07 — schedules (Admin Panel, admin only)
 
 - `GET /schedules`, `GET /schedules/{id}` (`type: business_hours|holidays`, `timezone` (empty = floating), `description`, `holiday_schedule_ids` for business hours, and `entries[]` with osTicket's own sentence in `description`), `POST /schedules {name, type, timezone?, description?, copy_from_id?, holiday_schedule_ids?}` (a copy must be the same type), `PATCH /schedules/{id}` (partial; the type is fixed), `DELETE /schedules/{id}` (refused while an SLA plan, a department, the system settings or a business-hours schedule uses it).

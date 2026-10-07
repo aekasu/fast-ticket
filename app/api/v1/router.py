@@ -22,6 +22,7 @@ from app.modules.emailtemplates.router import router as emailtemplates_router
 from app.modules.emails.router import router as emails_router
 from app.modules.filters.router import router as filters_router
 from app.modules.schedules.router import router as schedules_router
+from app.modules.plugins.router import router as plugins_router
 from app.modules.roles.router import router as roles_router
 from app.modules.settings.router import router as settings_router
 from app.modules.tickets.router import router as tickets_router
@@ -109,6 +110,7 @@ async def websocket_endpoint(ws: WebSocket):
 
 # ── Roles and permission keys ────────────────────────────────────────────────
 v1_router.include_router(roles_router)
+v1_router.include_router(plugins_router)
 v1_router.include_router(schedules_router)
 v1_router.include_router(filters_router)
 v1_router.include_router(emails_router)

@@ -1430,6 +1430,17 @@ async def list_schedule_entries(session: AsyncSession, schedule_id: int) -> list
     return list((await session.execute(_sql(sql), {"schedule_id": schedule_id})).mappings().all())
 
 
+async def list_plugins(session: AsyncSession) -> list:
+    """Installed plugins (Admin Panel, read-only)."""
+    sql = "SELECT p.id, p.name, p.version, p.install_path, p.isphar, p.isactive, p.installed FROM ost_plugin p ORDER BY p.name"
+    return list((await session.execute(_sql(sql))).mappings().all())
+
+
+async def list_plugin_instances(session: AsyncSession) -> list:
+    sql = "SELECT i.id, i.plugin_id, i.name, i.flags FROM ost_plugin_instance i ORDER BY i.plugin_id, i.id"
+    return list((await session.execute(_sql(sql))).mappings().all())
+
+
 async def get_staff_profile(session: AsyncSession, staff_id: int) -> dict | None:
     """The agent's own profile: their ``ost_staff`` row and their per-agent settings (``ost_config`` ``staff.<id>``)."""
     sql = """
