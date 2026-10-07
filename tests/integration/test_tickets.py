@@ -843,3 +843,42 @@ async def test_canned_render_asks_the_bridge_only_after_the_agent_may_use_both()
     assert bridged.await_args_list[0].args == ("canned.render", 5, {"ticket_id": 9, "canned_id": 3, "plain": True})
     assert bridged.await_count == 2                      # the two refused requests never reached the bridge
     assert canned.await_args.kwargs["manage"] is False   # the reply picker's rule, not the management page's
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("url,body,perm,command", [
+    ("/1/link", {"child_ids": [2, 3]}, "ticket.link", "ticket.link"),
+    ("/1/unlink", None, "ticket.link", "ticket.unlink"),
+    ("/1/unmerge", None, "ticket.merge", "ticket.unmerge"),
+])
+async def test_link_unlink_and_unmerge_queue_commands(url, body, perm, command):
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        resp = await ac.post(TICKETS_URL + url, json=body, headers=_auth([perm]))
+    assert resp.status_code == 202
+    (row,) = await _inbox_rows()
+    assert row.command_type == command and row.aggregate_id == "1" and row.requested_by_staff_id == 5
+    assert json.loads(row.payload)["ticket_id"] == 1
+
+
+@pytest.mark.asyncio
+async def test_link_needs_children():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        resp = await ac.post(TICKETS_URL + "/1/link", json={"child_ids": []}, headers=_auth(["ticket.link"]))
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_related_tickets_reads_the_family():
+    family = [
+        {"ticket_id": 1, "number": "A1", "subject": "p", "ticket_pid": None, "flags": 0x10, "status_name": "Open"},
+        {"ticket_id": 2, "number": "A2", "subject": "c", "ticket_pid": 1, "flags": 0x8, "status_name": "Open"},
+    ]
+    with patch("app.modules.tickets.service.repo.get_ticket_family", new=AsyncMock(return_value=family)):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            parent = await ac.get(TICKETS_URL + "/1/related", headers=_auth())
+            child = await ac.get(TICKETS_URL + "/2/related", headers=_auth())
+            missing = await ac.get(TICKETS_URL + "/9/related", headers=_auth())
+    assert parent.json()["relation"] == "linked" and parent.json()["is_parent"] is True
+    assert [c["ticket_id"] for c in parent.json()["children"]] == [2]
+    assert child.json()["parent"]["ticket_id"] == 1 and child.json()["is_parent"] is False
+    assert missing.status_code == 404

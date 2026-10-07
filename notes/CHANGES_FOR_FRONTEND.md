@@ -6,6 +6,13 @@ After a backend change run `npm run api:pull && npm run api:types`, read the sna
 list below and remove the met entries from `BACKEND_REQUESTS.md`. This file is the backend's side of that handshake;
 delete an entry once the frontend has adopted it.
 
+## 2026-10-07 — link / unlink / un-merge, the related-tickets read, and a status on a reply or note
+
+- `GET /tickets/{id}/related` (any agent who can open the ticket): `{relation: none|linked|merged, merge_type: visual|combine|separate|null, is_parent, parent, children[]}`; each related ticket is `{ticket_id, number, subject, status_name}`. A related ticket the agent may not open is left out.
+- `POST /tickets/{id}/link {child_ids}` (`ticket.link`): osTicket's Link Tickets (threads stay apart, nothing is closed). A merged ticket cannot be linked, nor a ticket already linked elsewhere (osTicket's refusals are shown as worded).
+- `POST /tickets/{id}/unlink` (`ticket.link`): from a parent every child is released, from a child only itself. `POST /tickets/{id}/unmerge` (`ticket.merge`): the same for a merge; children keep the status the merge gave them (osTicket does not reopen them). Each refuses a ticket of the other kind.
+- `POST /tickets/{id}/reply` and `/note` take `status_id` (osTicket's Ticket Status select, from `GET /ticket-statuses`). Closing needs `ticket.close`, deleting `ticket.delete`; an archived status is refused. **Do:** add Link / Unlink / Un-merge to the More menu, a Related Tickets panel, and the status select on the reply and note boxes.
+
 ## 2026-10-07 — ticket statuses and files on a new ticket
 
 - `GET /ticket-statuses` (any agent): `{statuses:[{id, name, state}]}`, the enabled statuses in osTicket's order. The New

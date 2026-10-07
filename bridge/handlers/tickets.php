@@ -45,6 +45,35 @@ class FastApiTicketHandler {
         }
     }
 
+    /**
+     * The status a reply or note may also set (osTicket's "Ticket Status" select). Ticket::setStatus() returns false
+     * silently when the agent may not (closing needs ticket.close, deleting ticket.delete), after the entry is posted,
+     * so check first.
+     */
+    private static function statusChoice(Ticket $ticket, $status_id) {
+        if (empty($status_id)) {
+            return null;
+        }
+        $status = TicketStatus::lookup((int) $status_id);
+        if (!$status || !$status->isEnabled()) {
+            throw new Exception('Ticket status not found: ' . $status_id);
+        }
+        if ($status->getId() === $ticket->getStatusId()) {
+            return $status->getId();
+        }
+        switch ($status->getState()) {
+            case 'closed':
+                self::requirePerm($ticket, Ticket::PERM_CLOSE, 'close');
+                break;
+            case 'deleted':
+                self::requirePerm($ticket, Ticket::PERM_DELETE, 'delete');
+                break;
+            case 'archived':
+                throw new Exception("Ticket status '" . $status->getName() . "' cannot be set from a reply or note.");
+        }
+        return $status->getId();
+    }
+
     private static function requireStaff($staff_id) {
         $staff = Staff::lookup((int) $staff_id);
         if (!$staff) {
@@ -247,6 +276,7 @@ class FastApiTicketHandler {
             // osTicket's signature choices are none | mine | dept
             'signature' => in_array($signature, ['none', 'mine', 'dept'], true) ? $signature : 'none',
             'files'     => FastApiAttachments::upload((array) ($payload['attachments'] ?? [])),
+            'reply_status_id' => self::statusChoice($ticket, $payload['status_id'] ?? null),
         ];
         $errors = [];
         // claim=false: a reply through the API must not silently assign the ticket.
@@ -267,6 +297,7 @@ class FastApiTicketHandler {
         $errors = [];
         $entry = $ticket->postNote([
             'note' => $message, 'title' => (string) ($payload['title'] ?? ''),
+            'note_status_id' => self::statusChoice($ticket, $payload['status_id'] ?? null),
             'files' => FastApiAttachments::upload((array) ($payload['attachments'] ?? [])),
         ], $errors, $thisstaff, true);
         if (!$entry || $errors) {
@@ -723,5 +754,74 @@ class FastApiTicketHandler {
             throw new Exception('Tickets were not merged (check that none is already part of another merge).');
         }
         return ['ticket_id' => $parent->getId(), 'merged_child_ids' => $children];
+    }
+
+    /**
+     * Link tickets (osTicket's "Link Tickets": the same dialog and Ticket::merge() as merging, with title 'link' and
+     * combine = 2). The threads stay apart and nothing is closed. Ticket::merge() returns false for a link although
+     * manageMerge() did the work, so the result is checked on the tickets.
+     */
+    public static function link($payload, $staff_id) {
+        $parent = self::requireTicket($payload['ticket_id'] ?? 0);
+        self::requirePerm($parent, Ticket::PERM_LINK, 'link');
+        $children = array_values(array_unique(array_map('intval', (array) ($payload['child_ids'] ?? []))));
+        if (!$children) {
+            throw new Exception("At least one ticket to link ('child_ids') is required.");
+        }
+        $notMerged = function (Ticket $t) {
+            if ($t->getMergeType() !== 'visual' && $t->isMerged()) {
+                throw new Exception("Ticket #{$t->getNumber()} is part of a merge. Merged Tickets cannot be linked.");
+            }
+        };
+        $notMerged($parent);
+        if ($parent->isChild()) {
+            throw new Exception("Ticket #{$parent->getNumber()} is already linked to another ticket as a child.");
+        }
+        $numbers = [$parent->getNumber()];
+        foreach ($children as $child_id) {
+            if ($child_id === (int) $parent->getId()) {
+                throw new Exception('A ticket cannot be linked to itself.');
+            }
+            $child = self::requireTicket($child_id);
+            self::requirePerm($child, Ticket::PERM_LINK, 'link');
+            $notMerged($child);
+            if ($child->isParent() || ($child->isChild() && $child->getPid() != $parent->getId())) {
+                throw new Exception("Ticket #{$child->getNumber()} is already linked to other tickets.");
+            }
+            $numbers[] = $child->getNumber();
+        }
+        Ticket::merge(['tids' => $numbers, 'title' => 'link', 'combine' => 2]);
+        foreach ($children as $child_id) {
+            $child = Ticket::lookup($child_id);
+            if (!$child || (int) $child->getPid() !== (int) $parent->getId()) {
+                throw new Exception("Ticket #{$child_id} was not linked.");
+            }
+        }
+        return ['ticket_id' => $parent->getId(), 'linked_child_ids' => $children];
+    }
+
+    /** Remove a link: from a parent every child is released, from a child only itself (osTicket's Ticket::unlink()). */
+    public static function unlink($payload, $staff_id) {
+        $ticket = self::requireTicket($payload['ticket_id'] ?? 0);
+        self::requirePerm($ticket, Ticket::PERM_LINK, 'unlink');
+        if (!$ticket->isMerged() || $ticket->getMergeType() !== 'visual') {
+            throw new Exception('Ticket is not linked to another ticket.');
+        }
+        $ticket->unlink();
+        return ['ticket_id' => $ticket->getId()];
+    }
+
+    /**
+     * Undo a merge (the merge dialog's unlink: Ticket::unlink()). Children stay in the status the merge gave them;
+     * osTicket does not reopen them.
+     */
+    public static function unmerge($payload, $staff_id) {
+        $ticket = self::requireTicket($payload['ticket_id'] ?? 0);
+        self::requirePerm($ticket, Ticket::PERM_MERGE, 'un-merge');
+        if (!$ticket->isMerged() || $ticket->getMergeType() === 'visual') {
+            throw new Exception('Ticket is not part of a merge.');
+        }
+        $ticket->unlink();
+        return ['ticket_id' => $ticket->getId()];
     }
 }

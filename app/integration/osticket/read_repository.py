@@ -484,6 +484,23 @@ async def get_ticket_collaborators(session: AsyncSession, ticket_id: int, *, acc
     return list(result.mappings().all())
 
 
+async def get_ticket_family(session: AsyncSession, ticket_id: int, *, access: "Scope") -> list:
+    """The ticket, its parent and its children (link / merge), each only if the agent may open it."""
+    sql = """
+        SELECT t.ticket_id, t.number, COALESCE(c.subject, '') AS subject, t.ticket_pid, t.flags, ts.name AS status_name
+        FROM ost_ticket t
+        JOIN ost_ticket_status ts ON ts.id = t.status_id
+        LEFT JOIN ost_ticket__cdata c ON c.ticket_id = t.ticket_id
+        WHERE (t.ticket_id = :ticket_id
+               OR t.ticket_id = (SELECT p.ticket_pid FROM ost_ticket p WHERE p.ticket_id = :ticket_id)
+               OR t.ticket_pid = :ticket_id)
+          AND {visible}
+        ORDER BY t.sort ASC, t.ticket_id ASC
+    """.replace("{visible}", ticket_visibility(access, detail=True))
+    result = await session.execute(_sql(sql), {"ticket_id": ticket_id})
+    return list(result.mappings().all())
+
+
 async def get_ticket_referrals(session: AsyncSession, ticket_id: int, *, access: "Scope") -> list:
     """The ticket's referrals (agent, team or department; nothing if the agent may not open the ticket)."""
     sql = """

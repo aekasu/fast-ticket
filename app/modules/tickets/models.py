@@ -147,6 +147,24 @@ class ReferralList(BaseModel):
     referrals: list[Referral]
 
 
+class RelatedTicket(BaseModel):
+    ticket_id: int
+    number: str
+    subject: str
+    status_name: str
+
+
+class TicketRelations(BaseModel):
+    """osTicket's linked / merged tickets. Tickets the agent may not open are left out."""
+
+    relation: Literal["none", "linked", "merged"]
+    merge_type: Optional[Literal["visual", "combine", "separate"]] = Field(
+        default=None, description="visual = linked; combine / separate = merged (threads shown together / apart)")
+    is_parent: bool
+    parent: Optional[RelatedTicket] = None
+    children: list[RelatedTicket] = []
+
+
 class TicketDetail(TicketListItem):
     """Full ticket including thread and collaborators."""
 
@@ -225,11 +243,15 @@ class TicketReply(WithAttachments):
         default="none",
         description="Signature appended to the outgoing email (osTicket's reply form): none, the agent's own, or the "
                     "department's. It does not change the stored thread, only the email.")
+    status_id: Optional[int] = Field(
+        default=None, gt=0, description="Also set the ticket's status (osTicket's Ticket Status select); closing needs ticket.close")
 
 
 class TicketNote(WithAttachments):
     title: str = ""
     message: MessageText = Field(min_length=1)
+    status_id: Optional[int] = Field(
+        default=None, gt=0, description="Also set the ticket's status (osTicket's Ticket Status select); closing needs ticket.close")
 
 
 class TicketClose(BaseModel):
@@ -261,6 +283,10 @@ class TicketChangeOwner(BaseModel):
 
 class TicketMerge(BaseModel):
     child_ids: list[int] = Field(min_length=1)
+
+
+class TicketLink(BaseModel):
+    child_ids: list[int] = Field(min_length=1, max_length=100)
 
 
 class TicketCollaboratorAdd(BaseModel):

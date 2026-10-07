@@ -28,6 +28,9 @@ from app.modules.tickets.models import (
     CollaboratorList,
     CannedRendered,
     Referral,
+    RelatedTicket,
+    TicketLink,
+    TicketRelations,
     ReferralList,
     TicketCollaboratorAdd,
     TicketEntryEdit,
@@ -262,6 +265,28 @@ async def list_referrals(session: AsyncSession, ticket_id: int, *, access) -> Re
             for r in map(dict, rows)
             if r["object_type"] in _REFEREE_TYPES
         ]
+    )
+
+
+async def get_relations(session: AsyncSession, ticket_id: int, *, access) -> TicketRelations | None:
+    """Linked / merged tickets of this one, or None if it does not exist or ``access`` may not open it."""
+    rows = [dict(r) for r in await repo.get_ticket_family(session, ticket_id, access=access)]
+    me = next((r for r in rows if r["ticket_id"] == ticket_id), None)
+    if me is None:
+        return None
+    is_parent = bool(me["flags"] & 0x10)
+    if not is_parent and not me["ticket_pid"]:
+        return TicketRelations(relation="none", is_parent=False)
+    # a child's flags hold the merge type of its parent's group (osTicket sets both together)
+    merge_type = "combine" if me["flags"] & 0x1 else "separate" if me["flags"] & 0x2 else "visual"
+    related = lambda r: RelatedTicket(  # noqa: E731
+        ticket_id=r["ticket_id"], number=r["number"], subject=r["subject"], status_name=r["status_name"])
+    return TicketRelations(
+        relation="linked" if merge_type == "visual" else "merged",
+        merge_type=merge_type,
+        is_parent=is_parent,
+        parent=next((related(r) for r in rows if r["ticket_id"] == me["ticket_pid"]), None),
+        children=[related(r) for r in rows if r["ticket_pid"] == ticket_id],
     )
 
 
@@ -555,6 +580,28 @@ async def merge_tickets(
         requested_by_staff_id=staff_id,
         idempotency_key=idempotency_key,
     )
+    return _make_cmd_response(cmd, idempotency_key)
+
+
+async def link_tickets(session, ticket_id, body: TicketLink, staff_id, idempotency_key) -> CommandResponse:
+    cmd = await dispatch_command(
+        session=session, command_type="ticket.link", aggregate_type="ticket", aggregate_id=str(ticket_id),
+        payload={"ticket_id": ticket_id, **body.model_dump()},
+        requested_by_staff_id=staff_id, idempotency_key=idempotency_key)
+    return _make_cmd_response(cmd, idempotency_key)
+
+
+async def unlink_ticket(session, ticket_id, staff_id, idempotency_key) -> CommandResponse:
+    cmd = await dispatch_command(
+        session=session, command_type="ticket.unlink", aggregate_type="ticket", aggregate_id=str(ticket_id),
+        payload={"ticket_id": ticket_id}, requested_by_staff_id=staff_id, idempotency_key=idempotency_key)
+    return _make_cmd_response(cmd, idempotency_key)
+
+
+async def unmerge_ticket(session, ticket_id, staff_id, idempotency_key) -> CommandResponse:
+    cmd = await dispatch_command(
+        session=session, command_type="ticket.unmerge", aggregate_type="ticket", aggregate_id=str(ticket_id),
+        payload={"ticket_id": ticket_id}, requested_by_staff_id=staff_id, idempotency_key=idempotency_key)
     return _make_cmd_response(cmd, idempotency_key)
 
 

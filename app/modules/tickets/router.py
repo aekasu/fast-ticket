@@ -36,6 +36,8 @@ from app.modules.tickets.models import (
     CollaboratorList,
     CannedRendered,
     ReferralList,
+    TicketLink,
+    TicketRelations,
     TicketCollaboratorAdd,
     TicketEntryEdit,
     TicketEntryResend,
@@ -224,6 +226,22 @@ async def list_referrals(
     session: AsyncSession = Depends(get_session),
 ):
     result = await service.list_referrals(session, ticket_id, access=current_user["access"])
+    if result is None:
+        raise HTTPException(status_code=404, detail=f"Ticket {ticket_id} not found.")
+    return result
+
+
+@router.get(
+    "/{ticket_id}/related",
+    response_model=TicketRelations,
+    summary="The tickets linked to or merged with this one",
+)
+async def get_related(
+    ticket_id: int,
+    current_user: dict = require_staff(),
+    session: AsyncSession = Depends(get_session),
+):
+    result = await service.get_relations(session, ticket_id, access=current_user["access"])
     if result is None:
         raise HTTPException(status_code=404, detail=f"Ticket {ticket_id} not found.")
     return result
@@ -517,6 +535,52 @@ async def merge_tickets(
     return await service.merge_tickets(
         session, ticket_id, body, current_user["staff_id"], idempotency_key
     )
+
+
+@router.post(
+    "/{ticket_id}/link",
+    response_model=CommandResponse,
+    status_code=202,
+    summary="Link tickets to this one (threads stay apart, nothing is closed)",
+)
+async def link_tickets(
+    ticket_id: int,
+    body: TicketLink,
+    current_user: dict = require_perm("ticket.link"),
+    session: AsyncSession = Depends(get_session),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    return await service.link_tickets(session, ticket_id, body, current_user["staff_id"], idempotency_key)
+
+
+@router.post(
+    "/{ticket_id}/unlink",
+    response_model=CommandResponse,
+    status_code=202,
+    summary="Remove a link (from a parent: all children; from a child: itself)",
+)
+async def unlink_ticket(
+    ticket_id: int,
+    current_user: dict = require_perm("ticket.link"),
+    session: AsyncSession = Depends(get_session),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    return await service.unlink_ticket(session, ticket_id, current_user["staff_id"], idempotency_key)
+
+
+@router.post(
+    "/{ticket_id}/unmerge",
+    response_model=CommandResponse,
+    status_code=202,
+    summary="Undo a merge (from a parent: all children; from a child: itself)",
+)
+async def unmerge_ticket(
+    ticket_id: int,
+    current_user: dict = require_perm("ticket.merge"),
+    session: AsyncSession = Depends(get_session),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    return await service.unmerge_ticket(session, ticket_id, current_user["staff_id"], idempotency_key)
 
 
 @router.post(

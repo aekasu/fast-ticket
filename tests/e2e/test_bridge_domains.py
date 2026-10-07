@@ -1166,6 +1166,45 @@ def test_ticket_merge_combines_children_into_the_parent_and_closes_them(bridge, 
     bridge.command("POST", f"/api/v1/tickets/{parent}/merge", {"child_ids": [child]})
     assert bridge.read(f"/api/v1/tickets/{child}")["status"]["state"] == "closed"
     assert bridge.read(f"/api/v1/tickets/{parent}")["status"]["state"] == "open"
+    related = bridge.read(f"/api/v1/tickets/{parent}/related")
+    assert (related["relation"], related["merge_type"], related["is_parent"]) == ("merged", "combine", True)
+    assert [c["ticket_id"] for c in related["children"]] == [child]
+    assert bridge.read(f"/api/v1/tickets/{child}/related")["parent"]["ticket_id"] == parent
+
+    # a merge is undone through un-merge, not unlink
+    bridge.refuses("POST", f"/api/v1/tickets/{parent}/unlink", None, because="not linked")
+    bridge.command("POST", f"/api/v1/tickets/{parent}/unmerge")
+    assert bridge.read(f"/api/v1/tickets/{parent}/related")["relation"] == "none"
+    assert bridge.read(f"/api/v1/tickets/{child}/related")["relation"] == "none"
+
+
+def test_tickets_can_be_linked_and_unlinked_without_closing_anything(bridge, uniq):
+    parent = _new_ticket(bridge, uniq, {}, "lp")
+    one, two = _new_ticket(bridge, uniq, {}, "l1"), _new_ticket(bridge, uniq, {}, "l2")
+    bridge.command("POST", f"/api/v1/tickets/{parent}/link", {"child_ids": [one, two]})
+    rel = bridge.read(f"/api/v1/tickets/{parent}/related")
+    assert (rel["relation"], rel["merge_type"], rel["is_parent"]) == ("linked", "visual", True)
+    assert sorted(c["ticket_id"] for c in rel["children"]) == sorted([one, two])
+    assert all(bridge.read(f"/api/v1/tickets/{t}")["status"]["state"] == "open" for t in (parent, one, two))
+    assert bridge.read(f"/api/v1/tickets/{one}/related")["parent"]["ticket_id"] == parent
+    bridge.refuses("POST", f"/api/v1/tickets/{parent}/unmerge", None, because="not part of a merge")
+    bridge.refuses("POST", f"/api/v1/tickets/{one}/link", {"child_ids": [two]}, because="already linked")
+
+    bridge.command("POST", f"/api/v1/tickets/{one}/unlink")           # a child releases itself only
+    assert [c["ticket_id"] for c in bridge.read(f"/api/v1/tickets/{parent}/related")["children"]] == [two]
+    bridge.command("POST", f"/api/v1/tickets/{parent}/unlink")        # a parent releases every child
+    assert bridge.read(f"/api/v1/tickets/{parent}/related")["relation"] == "none"
+    assert bridge.read(f"/api/v1/tickets/{two}/related")["relation"] == "none"
+
+
+def test_a_reply_can_also_set_the_ticket_status(bridge, uniq):
+    tk = _new_ticket(bridge, uniq, {})
+    statuses = {s["name"]: s["id"] for s in bridge.read("/api/v1/ticket-statuses")["statuses"]}
+    bridge.command("POST", f"/api/v1/tickets/{tk}/reply", {"message": "fixed", "status_id": statuses["Resolved"]})
+    assert bridge.read(f"/api/v1/tickets/{tk}")["status"]["name"] == "Resolved"
+    bridge.command("POST", f"/api/v1/tickets/{tk}/note", {"message": "reopen", "status_id": statuses["Open"]})
+    assert bridge.read(f"/api/v1/tickets/{tk}")["status"]["name"] == "Open"
+    bridge.refuses("POST", f"/api/v1/tickets/{tk}/reply", {"message": "x", "status_id": 99999}, because="not found")
 
 
 def test_assigning_a_ticket_to_an_empty_team_is_refused_with_the_real_reason(bridge, uniq):
