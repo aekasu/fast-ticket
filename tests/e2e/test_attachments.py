@@ -316,3 +316,21 @@ def test_a_ticket_prints_to_pdf_and_exports_to_zip_with_its_files(bridge, uniq):
     for path in (f"/api/v1/tickets/{tid}/print", f"/api/v1/tickets/{tid}/zip", f"/api/v1/tasks/{task}/print"):
         assert httpx.get(f"{BASE_URL}{path}", headers=outsider).status_code == 404, path
         assert httpx.get(f"{BASE_URL}{path}").status_code == 401
+
+
+def test_files_sent_with_a_new_task_are_stored_on_its_description(bridge, uniq):
+    content = f"task file {uniq}".encode()
+    task = bridge.create("/api/v1/tasks/", {"title": f"e2e task files {uniq}", "description": "see the file", "dept_id": 1,
+                                            "attachments": [{"name": f"e2e-task-{uniq}.txt", "content_type": "text/plain", "data": _b64(content)}]},
+                         cleanup="/api/v1/tasks/{id}")
+    first = bridge.read(f"/api/v1/tasks/{task}")["thread"][0]
+    (attached,) = first["attachments"]
+    assert attached["name"] == f"e2e-task-{uniq}.txt" and attached["size"] == len(content)
+    assert bridge.get(f"/api/v1/tasks/{task}/attachments/{attached['id']}").content == content
+
+    # osTicket's size limit applies, and nothing is created
+    limits = bridge.read("/api/v1/settings/attachments")
+    before = bridge.read(f"/api/v1/tasks/?q=e2e task files {uniq}")["total"]
+    bridge.refuses("POST", "/api/v1/tasks/", {"title": f"e2e task files {uniq} big", "description": "d", "dept_id": 1, "attachments": [
+        {"name": "big.bin", "data": _b64(b"x" * (limits["osticket_max_file_bytes"] + 1))}]}, because="too large")
+    assert bridge.read(f"/api/v1/tasks/?q=e2e task files {uniq}")["total"] == before

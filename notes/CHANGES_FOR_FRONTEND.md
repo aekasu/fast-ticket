@@ -6,6 +6,10 @@ After a backend change run `npm run api:pull && npm run api:types`, read the sna
 list below and remove the met entries from `BACKEND_REQUESTS.md`. This file is the backend's side of that handshake;
 delete an entry once the frontend has adopted it.
 
+## 2026-10-08 — files on a new task
+
+- `POST /tasks/` takes `attachments: [{name, content_type?, data (base64)}]` like a ticket's first message: the files are stored on the task's description (its first thread entry) and listed there. Same caps as every upload (`GET /settings/attachments`); osTicket's own size limit refuses the whole create with its wording.
+
 ## 2026-10-08 — ticket statuses: create, edit, enable/disable, delete (Admin Panel, admin only)
 
 - `GET /ticket-statuses/manage` → `{items:[...]}` every status, enabled or not; `GET /ticket-statuses/{id}`. An item: `{id, name, state: open|closed|archived|deleted, description, sort, is_enabled, is_internal, is_default, allow_reopen, reopen_status_id, ticket_count, is_deletable}`. `GET /ticket-statuses` stays the agents' list of enabled statuses (`{statuses:[{id,name,state}]}`) and is unchanged.

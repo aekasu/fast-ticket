@@ -481,3 +481,21 @@ async def test_task_collaborators_are_listed_scoped_and_added_by_command():
     rows = await _inbox_rows()
     assert [r.command_type for r in rows] == ["task.collaborator.add"]
     assert json.loads(rows[0].payload) == {"task_id": 5, "user_id": 7}
+
+
+@pytest.mark.asyncio
+async def test_a_new_task_can_carry_files_in_its_command_payload():
+    import base64
+    data = base64.b64encode(b"hello").decode()
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        ok = await ac.post("/api/v1/tasks/", json={"title": "t", "description": "d", "attachments": [
+            {"name": "a.txt", "content_type": "text/plain", "data": data}]}, headers=_auth(["task.create"]))
+        bad = await ac.post("/api/v1/tasks/", json={"title": "t", "description": "d", "attachments": [{"name": "a/b", "data": data}]},
+                            headers=_auth(["task.create"]))
+        plain = await ac.post("/api/v1/tasks/", json={"title": "t2", "description": "d"}, headers=_auth(["task.create"]))
+    assert (ok.status_code, bad.status_code, plain.status_code) == (202, 422, 202)
+    async with TestingSessionLocal() as s:
+        rows = (await s.execute(select(IntegrationInbox).order_by(IntegrationInbox.id))).scalars().all()
+    first, second = (json.loads(r.payload) for r in rows)
+    assert first["attachments"] == [{"name": "a.txt", "type": "text/plain", "file_data": data}]
+    assert "attachments" not in second and None not in second.values()      # nothing absent is sent as null

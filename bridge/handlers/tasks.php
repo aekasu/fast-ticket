@@ -98,6 +98,7 @@ class FastApiTaskHandler {
         $vars['default_formdata']  = $form->getClean();
         $vars['internal_formdata'] = $iform->getClean();
         $vars['description']       = $form->getField('description')->getClean();
+        $vars['files']             = FastApiAttachments::upload((array) ($payload['attachments'] ?? []));   // on the description
         $vars['staffId']           = $thisstaff->getId();
         $vars['poster']            = $thisstaff;
         $vars['ip_address']        = '127.0.0.1';

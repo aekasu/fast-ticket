@@ -209,7 +209,7 @@ async def create_task(
         command_type="task.create",
         aggregate_type="task",
         aggregate_id="",
-        payload=body.model_dump(exclude_none=True),
+        payload={k: v for k, v in body.command_payload().items() if v is not None},
         requested_by_staff_id=staff_id,
         idempotency_key=idempotency_key,
     )

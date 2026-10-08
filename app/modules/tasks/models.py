@@ -84,7 +84,7 @@ class TaskListResponse(BaseModel):
 # ── Write request bodies ───────────────────────────────────────────────────────
 
 
-class TaskCreate(BaseModel):
+class TaskCreate(WithAttachments):
     title: str = Field(min_length=1, max_length=255)
     # osTicket's default task form requires a description; without one the bridge could only
     # answer "Description is a required field" after the command had been queued.
