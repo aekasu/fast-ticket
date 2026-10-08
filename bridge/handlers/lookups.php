@@ -365,3 +365,190 @@ class FastApiPriorityHandler {
         return ['priority_id' => (int) $id];
     }
 }
+
+/**
+ * Ticket statuses: the Admin Panel's Manage > Lists > Ticket Statuses (scp/lists.php and
+ * include/ajax.forms.php addListItem / saveListItem / disableItems / deleteItems). A status is a row of the
+ * "ticket-status" list handler: its name, its state (open, closed, archived, deleted), and properties kept as JSON
+ * (description, allowreopen, reopenstatus). osTicket's own refusals stand: an internal status (a built-in one or the
+ * system default) keeps its name and state and cannot be disabled or deleted, and a status with tickets cannot be
+ * deleted.
+ */
+class FastApiTicketStatusHandler {
+
+    private static function statusList() {
+        require_once INCLUDE_DIR . 'class.list.php';
+        $list = DynamicList::lookup(['type' => 'ticket-status']);
+        if (!$list) {
+            throw new Exception('The ticket status list is missing.');
+        }
+        return CustomListHandler::forList($list);
+    }
+
+    private static function requireStatus($list, $status_id) {
+        $status = $list->getItem((int) $status_id);
+        if (!$status) {
+            throw new Exception("Ticket status not found: {$status_id}");
+        }
+        return $status;
+    }
+
+    private static function errorText(array $errors) {
+        $out = [];
+        foreach ($errors as $k => $v) {
+            $out[] = (is_string($k) ? "{$k}: " : '') . (is_array($v) ? implode(', ', $v) : $v);
+        }
+        return implode('; ', $out);
+    }
+
+    private static function properties($status) {
+        $raw = $status ? $status->get('properties') : '';
+        $data = is_string($raw) && $raw !== '' ? json_decode($raw, true) : (is_array($raw) ? $raw : []);
+        return is_array($data) ? $data : [];
+    }
+
+    /** The values osTicket's configuration form takes: the stored ones overlaid with what the request sent. */
+    private static function configuration($status, $payload) {
+        $stored = self::properties($status);
+        // an edited description is kept under its form field's id, a seeded one under "description"
+        $description = $stored['description'] ?? '';
+        // (the list's form, not the status's own: building that one early would freeze its values before the update)
+        if ($status && ($form = self::statusList()->getForm())) {
+            foreach ($form->getFields() as $field) {
+                if ($field->get('name') === 'description' && array_key_exists($field->get('id'), $stored)) {
+                    $description = $stored[$field->get('id')];
+                }
+            }
+        }
+        $state = $payload['state'] ?? ($status ? $status->getState() : 'open');
+        $vars = [
+            'state' => $state,
+            'description' => (string) (array_key_exists('description', $payload) ? $payload['description'] : $description),
+        ];
+        $allow = array_key_exists('allow_reopen', $payload) ? !empty($payload['allow_reopen']) : !empty($stored['allowreopen']);
+        if ($allow) {                                   // a checkbox is stored when it is posted
+            $vars['allowreopen'] = 'on';
+        }
+        $vars['reopenstatus'] = (int) (array_key_exists('reopen_status_id', $payload)
+            ? $payload['reopen_status_id'] : ($stored['reopenstatus'] ?? 0));
+        return $vars;
+    }
+
+    private static function checkReopenStatus($vars) {
+        if (!empty($vars['reopenstatus'])) {
+            $target = TicketStatus::lookup((int) $vars['reopenstatus']);
+            if (!$target || $target->getState() !== 'open' || !$target->isEnabled()) {
+                throw new Exception('The reopen status must be an enabled open status.');
+            }
+        }
+    }
+
+    private static function nameTaken($name, $except_id = 0) {
+        foreach (TicketStatus::objects()->filter(['name' => $name]) as $other) {
+            if ((int) $other->getId() !== (int) $except_id) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public static function create($payload, $staff_id) {
+        $list = self::statusList();
+        $name = trim((string) ($payload['name'] ?? ''));
+        if ($name === '') {
+            throw new Exception("A ticket status 'name' is required.");
+        }
+        if (self::nameTaken($name)) {
+            throw new Exception("There is already a ticket status '{$name}'.");
+        }
+        $vars = self::configuration(null, $payload);
+        self::checkReopenStatus($vars);
+        $max = 0;
+        foreach (TicketStatus::objects() as $other) {
+            $max = max($max, (int) $other->getSortOrder());
+        }
+        $errors = [];
+        $status = $list->addItem(['name' => $name, 'sort' => (int) ($payload['sort'] ?? $max + 1)], $errors);
+        if (!$status) {
+            throw new Exception('Ticket status was not created: ' . self::errorText($errors ?: ['unknown error']));
+        }
+        if (!$status->setConfiguration($vars, $errors) || $errors || !$status->getId()) {
+            throw new Exception('Ticket status was not created: ' . self::errorText($errors ?: ['not stored']));
+        }
+        if (array_key_exists('is_enabled', $payload) && !$payload['is_enabled']) {
+            $status->disable();
+            $status->save();
+        }
+        return ['status_id' => $status->getId()];
+    }
+
+    public static function update($payload, $staff_id) {
+        $list = self::statusList();
+        $status = self::requireStatus($list, $payload['status_id'] ?? 0);
+        $internal = $status->isInternal();
+        $fields = [];
+        if (array_key_exists('name', $payload)) {
+            $name = trim((string) $payload['name']);
+            if ($name === '') {
+                throw new Exception("A ticket status 'name' is required.");
+            }
+            if ($name !== $status->getName(false)) {
+                if ($internal) {
+                    throw new Exception('This is an internal status: its name cannot change.');
+                }
+                if (self::nameTaken($name, $status->getId())) {
+                    throw new Exception("There is already a ticket status '{$name}'.");
+                }
+                $fields['name'] = $name;
+            }
+        }
+        if (array_key_exists('sort', $payload)) {
+            $fields['sort'] = (int) $payload['sort'];
+        }
+        if ($internal && array_key_exists('state', $payload) && $payload['state'] !== $status->getState()) {
+            throw new Exception('This is an internal status: its state cannot change.');
+        }
+        $vars = self::configuration($status, $payload);
+        self::checkReopenStatus($vars);
+        if (!empty($vars['reopenstatus']) && (int) $vars['reopenstatus'] === (int) $status->getId()) {
+            throw new Exception('A status cannot reopen into itself.');
+        }
+        $errors = [];
+        if ($fields && (!$status->update($fields, $errors) || $errors)) {
+            throw new Exception('Ticket status was not updated: ' . self::errorText($errors ?: ['unknown error']));
+        }
+        if (!$status->setConfiguration($vars, $errors) || $errors) {
+            throw new Exception('Ticket status was not updated: ' . self::errorText($errors ?: ['unknown error']));
+        }
+        if (array_key_exists('is_enabled', $payload)) {
+            if ($payload['is_enabled']) {
+                if (!$status->isEnableable()) {          // (enable() itself returns nothing useful)
+                    throw new Exception('This status cannot be enabled: it has no state.');
+                }
+                $status->enable();
+            } elseif ($status->isEnabled()) {
+                if (!$status->isDisableable()) {
+                    throw new Exception('This is an internal status or the system default: it cannot be disabled.');
+                }
+                $status->disable();
+            }
+            $status->save();
+        }
+        return ['status_id' => $status->getId()];
+    }
+
+    public static function delete($payload, $staff_id) {
+        $list = self::statusList();
+        $status = self::requireStatus($list, $payload['status_id'] ?? 0);
+        if (!$status->isDeletable()) {
+            throw new Exception($status->isInternal()
+                ? 'This is an internal status or the system default: it cannot be deleted.'
+                : 'This status has tickets: it cannot be deleted.');
+        }
+        $id = $status->getId();
+        if (!$status->delete()) {
+            throw new Exception('Ticket status was not deleted.');
+        }
+        return ['status_id' => $id];
+    }
+}

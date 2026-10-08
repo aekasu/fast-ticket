@@ -144,6 +144,9 @@ return [
     'priority.create'         => ['lookups', 'FastApiPriorityHandler', 'create', 'priority.created', 'admin'],
     'priority.update'         => ['lookups', 'FastApiPriorityHandler', 'update', 'priority.updated', 'admin'],
     'priority.delete'         => ['lookups', 'FastApiPriorityHandler', 'delete', 'priority.deleted', 'admin'],
+    'ticket_status.create'    => ['lookups', 'FastApiTicketStatusHandler', 'create', 'ticket_status.created', 'admin'],
+    'ticket_status.update'    => ['lookups', 'FastApiTicketStatusHandler', 'update', 'ticket_status.updated', 'admin'],
+    'ticket_status.delete'    => ['lookups', 'FastApiTicketStatusHandler', 'delete', 'ticket_status.deleted', 'admin'],
 
     'form.create'             => ['forms', 'FastApiFormHandler', 'create', 'form.created', 'admin'],
     'form.update'             => ['forms', 'FastApiFormHandler', 'update', 'form.updated', 'admin'],

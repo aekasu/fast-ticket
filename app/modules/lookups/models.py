@@ -148,6 +148,47 @@ class TicketStatusItem(BaseModel):
     state: str = Field(description="open | closed | archived | deleted; the New Ticket form offers the open ones")
 
 
+TicketState = Literal["open", "closed", "archived", "deleted"]
+
+
+class TicketStatusDetail(TicketStatusItem):
+    """A ticket status as the Admin Panel's Ticket Statuses page holds it."""
+
+    description: str = ""
+    sort: int = 0
+    is_enabled: bool
+    is_internal: bool = Field(description="A built-in status or the system default: its name and state are fixed, and it cannot be disabled or deleted")
+    is_default: bool = Field(description="The status new tickets start in (Settings > Tickets)")
+    allow_reopen: bool = Field(default=False, description="A closed status: end users may reopen their ticket")
+    reopen_status_id: Optional[int] = Field(default=None, description="The open status a reopened ticket gets; none = the system default")
+    ticket_count: int = 0
+    is_deletable: bool = Field(description="Not internal and no ticket has it")
+
+
+class TicketStatusAdminList(BaseModel):
+    items: list[TicketStatusDetail]
+
+
+class TicketStatusCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=60)
+    state: TicketState
+    description: str = Field(default="", max_length=100)
+    sort: Optional[int] = Field(default=None, ge=0, le=65535, description="Default: after the others")
+    allow_reopen: bool = False
+    reopen_status_id: Optional[int] = Field(default=None, ge=0)
+    is_enabled: bool = True
+
+
+class TicketStatusUpdate(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=60)
+    state: Optional[TicketState] = None
+    description: Optional[str] = Field(default=None, max_length=100)
+    sort: Optional[int] = Field(default=None, ge=0, le=65535)
+    allow_reopen: Optional[bool] = None
+    reopen_status_id: Optional[int] = Field(default=None, ge=0)
+    is_enabled: Optional[bool] = None
+
+
 class TicketStatusListResponse(BaseModel):
     statuses: list[TicketStatusItem]
 

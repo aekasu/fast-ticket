@@ -1473,6 +1473,32 @@ async def list_ticket_statuses(session: AsyncSession, limit: int = 50, offset: i
     return list(result.mappings().all())
 
 
+_TICKET_STATUS_DETAIL_SQL = """
+    SELECT s.id, s.name, s.state, s.mode, s.sort, COALESCE(s.properties, '') AS properties,
+           (SELECT COUNT(*) FROM ost_ticket t WHERE t.status_id = s.id) AS ticket_count,
+           -- osTicket keeps an edited description under its form field's id (the seeded ones under "description")
+           (SELECT ff.id FROM ost_form_field ff JOIN ost_form fo ON fo.id = ff.form_id
+              JOIN ost_list l ON fo.type = CONCAT('L', l.id)
+             WHERE l.type = 'ticket-status' AND ff.name = 'description' LIMIT 1) AS description_field_id
+    FROM ost_ticket_status s
+    {where}
+    ORDER BY s.sort ASC, s.id ASC
+"""
+
+
+async def list_ticket_status_details(session: AsyncSession, limit: int = 50, offset: int = 0) -> list:
+    """Every ticket status, enabled or not, as the Admin Panel's Ticket Statuses list shows it (``mode`` bit 1 is
+    enabled, bit 2 internal; ``properties`` is osTicket's JSON of description, allowreopen, reopenstatus)."""
+    sql = _TICKET_STATUS_DETAIL_SQL.format(where="") + " LIMIT :limit OFFSET :offset"
+    return list((await session.execute(_sql(sql), {"limit": limit, "offset": offset})).mappings().all())
+
+
+async def get_ticket_status_detail(session: AsyncSession, status_id: int) -> dict | None:
+    sql = _TICKET_STATUS_DETAIL_SQL.format(where="WHERE s.id = :status_id")
+    row = (await session.execute(_sql(sql), {"status_id": status_id})).mappings().first()
+    return dict(row) if row else None
+
+
 async def get_priority(session: AsyncSession, priority_id: int) -> dict | None:
     sql = """
         SELECT

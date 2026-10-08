@@ -60,7 +60,7 @@ Decided per agent, on the server (`visibility.py`); a client never needs to filt
 | `user`, `org` | agents with `user.dir` |
 | `kb.faq`, `kb.category` | every agent |
 | `kb.canned` | agents whose role grants `canned.manage` |
-| everything else (`staff`, `dept`, `team`, `form`, `banlist`, topics, SLAs, priorities, and the Admin Panel's `role`, `apikey`, `page`, `list`, `settings`, `emailtemplate`, `email`, `filter`, `schedule`, `log`, any unknown kind) | administrators only. A ticket's `ticket.linked` / `.unlinked` / `.unmerged` follow the ticket rule. `profile.*` events (an agent's own profile and password) are about `staff` and reach administrators only, not the agent |
+| everything else (`staff`, `dept`, `team`, `form`, `banlist`, topics, SLAs, priorities, and the Admin Panel's `role`, `apikey`, `page`, `list`, `settings`, `emailtemplate`, `email`, `filter`, `schedule`, `ticket_status`, `log`, any unknown kind) | administrators only. A ticket's `ticket.linked` / `.unlinked` / `.unmerged` follow the ticket rule. `profile.*` events (an agent's own profile and password) are about `staff` and reach administrators only, not the agent |
 | `*.deleted` of a ticket or task | administrators only (the row is gone, so no one can be checked against it) |
 
 Consequences: an agent who can open a ticket only through a referral is not told about it; an agent is not told when a

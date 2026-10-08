@@ -13,7 +13,11 @@ from app.core.db import get_session
 from app.core.security import require_admin, require_staff
 from app.modules.lookups import service
 from app.modules.lookups.models import (
+    TicketStatusAdminList,
+    TicketStatusCreate,
+    TicketStatusDetail,
     TicketStatusListResponse,
+    TicketStatusUpdate,
     CommandResponse,
     TopicCreate,
     TopicUpdate,
@@ -156,6 +160,59 @@ async def list_ticket_statuses(
 ):
     """The enabled ticket statuses, as osTicket offers them to every agent on its ticket forms."""
     return await service.list_ticket_statuses(session)
+
+
+@router.get("/ticket-statuses/manage", response_model=TicketStatusAdminList, summary="Every ticket status, as the Admin Panel lists them")
+async def manage_ticket_statuses(
+    current_user: dict = require_admin(),   # Admin Panel > Manage > Lists > Ticket Statuses (admin.inc.php -> isAdmin())
+    session: AsyncSession = Depends(get_session),
+):
+    """Enabled and disabled statuses with their description, reopen settings, ticket counts and whether each is internal
+    or deletable. ``GET /ticket-statuses`` is the agents' list of enabled statuses."""
+    return await service.list_ticket_status_details(session)
+
+
+@router.get("/ticket-statuses/{status_id}", response_model=TicketStatusDetail, summary="Get a ticket status")
+async def get_ticket_status(
+    status_id: int,
+    current_user: dict = require_admin(),
+    session: AsyncSession = Depends(get_session),
+):
+    found = await service.get_ticket_status(session, status_id)
+    if found is None:
+        raise HTTPException(status_code=404, detail="Ticket status not found")
+    return found
+
+
+@router.post("/ticket-statuses", response_model=CommandResponse, status_code=202, summary="Create a ticket status")
+async def create_ticket_status(
+    body: TicketStatusCreate,
+    current_user: dict = require_admin(),
+    session: AsyncSession = Depends(get_session),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    return await service.create_ticket_status(session, body, current_user["staff_id"], idempotency_key)
+
+
+@router.patch("/ticket-statuses/{status_id}", response_model=CommandResponse, status_code=202, summary="Update a ticket status")
+async def update_ticket_status(
+    status_id: int,
+    body: TicketStatusUpdate,
+    current_user: dict = require_admin(),
+    session: AsyncSession = Depends(get_session),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    return await service.update_ticket_status(session, status_id, body, current_user["staff_id"], idempotency_key)
+
+
+@router.delete("/ticket-statuses/{status_id}", response_model=CommandResponse, status_code=202, summary="Delete a ticket status")
+async def delete_ticket_status(
+    status_id: int,
+    current_user: dict = require_admin(),
+    session: AsyncSession = Depends(get_session),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    return await service.delete_ticket_status(session, status_id, current_user["staff_id"], idempotency_key)
 
 
 @router.get("/priorities/{priority_id}", response_model=PriorityDetail, summary="Get priority")

@@ -28,7 +28,7 @@ POLICY = {
 
     # ── Admin Panel objects ────────────────────────────────────────────────
     **{f"{m} {p}": "admin" for m, p in [
-        ("GET", "/api/v1/roles"), ("GET", "/api/v1/banlist"), ("POST", "/api/v1/banlist"), ("GET", "/api/v1/banlist/{ban_id}"),
+        ("GET", "/api/v1/roles"), ("GET", "/api/v1/ticket-statuses/manage"), ("GET", "/api/v1/ticket-statuses/{status_id}"), ("POST", "/api/v1/ticket-statuses"), ("PATCH", "/api/v1/ticket-statuses/{status_id}"), ("DELETE", "/api/v1/ticket-statuses/{status_id}"), ("GET", "/api/v1/banlist"), ("POST", "/api/v1/banlist"), ("GET", "/api/v1/banlist/{ban_id}"),
         ("PATCH", "/api/v1/banlist/{ban_id}"), ("DELETE", "/api/v1/banlist/{ban_id}"),
         ("POST", "/api/v1/departments"), ("GET", "/api/v1/departments/{dept_id}"),
         ("PATCH", "/api/v1/departments/{dept_id}"), ("DELETE", "/api/v1/departments/{dept_id}"),

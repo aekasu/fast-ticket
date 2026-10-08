@@ -1801,3 +1801,59 @@ def test_a_field_added_after_the_record_existed_is_listed_without_an_answer(brid
     assert [a["value"] for u in listed if u["id"] == uid for a in u["custom_fields"]] == [None]
     bridge.command("PATCH", f"/api/v1/users/{uid}", {"custom_fields": {name: "now answered"}})
     assert _answers(bridge.read(f"/api/v1/users/{uid}"))[name]["value"] == "now answered"
+
+
+def test_ticket_status_lifecycle_and_osticket_refusals(bridge, uniq):
+    name = f"e2e status {uniq}"
+    sid = bridge.create("/api/v1/ticket-statuses", {"name": name, "state": "closed", "description": "Parked for good",
+                                                    "allow_reopen": True, "reopen_status_id": 1}, cleanup="/api/v1/ticket-statuses/{id}")
+    url = f"/api/v1/ticket-statuses/{sid}"
+    got = bridge.read(url)
+    assert (got["name"], got["state"], got["description"], got["allow_reopen"], got["reopen_status_id"]) == (name, "closed", "Parked for good", True, 1)
+    assert (got["is_enabled"], got["is_internal"], got["is_default"], got["is_deletable"], got["ticket_count"]) == (True, False, False, True, 0)
+    assert any(s["id"] == sid for s in bridge.read("/api/v1/ticket-statuses")["statuses"])           # agents are offered it
+    assert any(s["id"] == sid for s in bridge.read("/api/v1/ticket-statuses/manage")["items"])
+
+    # a partial update keeps everything else
+    bridge.command("PATCH", url, {"description": "Parked, again"})
+    got = bridge.read(url)
+    assert (got["description"], got["state"], got["allow_reopen"], got["reopen_status_id"], got["name"]) == ("Parked, again", "closed", True, 1, name)
+    bridge.command("PATCH", url, {"name": name + " b", "allow_reopen": False})
+    got = bridge.read(url)
+    assert (got["name"], got["allow_reopen"], got["description"]) == (name + " b", False, "Parked, again")
+
+    # disabled: gone from the agents' list, still in the Admin Panel's; enabled again: back
+    bridge.command("PATCH", url, {"is_enabled": False})
+    assert bridge.read(url)["is_enabled"] is False
+    assert not any(s["id"] == sid for s in bridge.read("/api/v1/ticket-statuses")["statuses"])
+    bridge.command("PATCH", url, {"is_enabled": True})
+    assert any(s["id"] == sid for s in bridge.read("/api/v1/ticket-statuses")["statuses"])
+
+    # osTicket's rules
+    bridge.refuses("POST", "/api/v1/ticket-statuses", {"name": name + " b", "state": "open"}, because="already a ticket status")
+    bridge.refuses("PATCH", url, {"reopen_status_id": sid}, because="enabled open status")           # a closed status is no target
+    bridge.refuses("PATCH", url, {"reopen_status_id": 999999}, because="enabled open status")
+    bridge.refuses("PATCH", "/api/v1/ticket-statuses/999999", {"name": "x"}, because="not found")
+    internal = bridge.read("/api/v1/ticket-statuses/1")
+    assert internal["is_internal"] and not internal["is_deletable"]
+    bridge.refuses("PATCH", "/api/v1/ticket-statuses/1", {"name": "Opened"}, because="name cannot change")
+    bridge.refuses("PATCH", "/api/v1/ticket-statuses/1", {"state": "closed"}, because="state cannot change")
+    bridge.refuses("PATCH", "/api/v1/ticket-statuses/1", {"is_enabled": False}, because="cannot be disabled")
+    bridge.refuses("DELETE", "/api/v1/ticket-statuses/1", None, because="cannot be deleted")
+    assert bridge.read("/api/v1/ticket-statuses/1")["name"] == internal["name"]                          # nothing changed
+
+    # a status that tickets use cannot be deleted
+    open_sid = bridge.create("/api/v1/ticket-statuses", {"name": f"e2e open status {uniq}", "state": "open"},
+                             cleanup="/api/v1/ticket-statuses/{id}")
+    tk = bridge.create("/api/v1/tickets/", {"subject": f"e2e status use {uniq}", "message": "m", "email": _email(uniq, "st"),
+                                            "name": "St", "dept_id": 1, "topic_id": 1, "status_id": open_sid})
+    holder = bridge.read(f"/api/v1/tickets/{tk}")
+    bridge._cleanups.append(("DELETE", f"/api/v1/users/{holder['user_id']}"))
+    bridge._cleanups.append(("DELETE", f"/api/v1/tickets/{tk}"))
+    assert bridge.read(f"/api/v1/ticket-statuses/{open_sid}")["ticket_count"] == 1
+    bridge.refuses("DELETE", f"/api/v1/ticket-statuses/{open_sid}", None, because="has tickets")
+    bridge.command("PATCH", url, {"reopen_status_id": open_sid, "allow_reopen": True})
+    assert bridge.read(url)["reopen_status_id"] == open_sid
+
+    bridge.command("DELETE", url)
+    assert bridge.get(url).status_code == 404
