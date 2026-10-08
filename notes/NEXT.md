@@ -75,9 +75,15 @@ CSV export of the dashboard report (the frontend builds it from `table`).
 
 After that round the frontend adopted everything (its own `notes/BACKEND_REQUESTS.md` lists what is left). Since then:
 `GET /settings/options` (the drop-down choices of the settings pages, via the bridge read mode) is done. Verified:
-`make test` 913, `make test-docker` 913, `make test-e2e` 97 on a rebuilt stack (oracle included).
+`make test` 936, `make test-docker` 936, `make test-e2e` 102 on a rebuilt stack (oracle included).
 
-**Still open on the frontend's list:** company profile / logos in settings. Email diagnostic and mailbox/SMTP setup stay out by decision.
+**Breadth added 2026-10-08 at the user's request ("expand the breadth slightly, in depth, as general osTicket
+functionality"):** ticket and task Print (PDF), ticket Export to ZIP, CSV export of the ticket / task / user / organization
+lists (see `CHANGES_FOR_FRONTEND.md`). Candidates for the next round, none started: ticket-status create/edit/delete,
+staff password-reset email and CSV import, managing the extra forms on a ticket, custom queues (read-only; the query
+builder itself stays unexposed per AGENTS.md), exporting agents / department members. Company profile / logos in settings
+was judged not important for now (name, address and the like are a small form; the images are the fiddly half).
+Email diagnostic and mailbox/SMTP setup stay out by decision.
 
 **Unexplained e2e flakes (2026-10-08), not reproduced:** after the custom-fields change one full `make test-e2e` run
 failed 1 test (not captured) and another 2 (a 401 on a fresh agent's second request in `test_read_scoping`, and a
