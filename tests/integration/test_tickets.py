@@ -363,6 +363,24 @@ async def test_reply_queues_command():
 
 
 @pytest.mark.asyncio
+async def test_a_reply_can_carry_the_files_of_a_canned_response_the_agent_may_use():
+    usable = AsyncMock(return_value={"id": 3})
+    body = {"message": "hi", "canned_id": 3, "canned_attachment_ids": [11, 12]}
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        with patch("app.modules.tickets.service.repo.get_canned", new=usable):
+            ok = await ac.post(TICKETS_URL + "/42/reply", json=body, headers=_auth(["ticket.reply"]))
+        with patch("app.modules.tickets.service.repo.get_canned", new=AsyncMock(return_value=None)):
+            unusable = await ac.post(TICKETS_URL + "/42/reply", json=body, headers=_auth(["ticket.reply"]))
+        orphan = await ac.post(TICKETS_URL + "/42/reply", json={"message": "hi", "canned_attachment_ids": [11]},
+                               headers=_auth(["ticket.reply"]))
+        bad_id = await ac.post(TICKETS_URL + "/42/reply", json={**body, "canned_attachment_ids": [0]}, headers=_auth(["ticket.reply"]))
+    assert (ok.status_code, unusable.status_code, orphan.status_code, bad_id.status_code) == (202, 404, 422, 422)
+    assert usable.await_args.kwargs["manage"] is False
+    (row,) = await _inbox_rows()
+    assert json.loads(row.payload)["canned_attachment_ids"] == [11, 12] and json.loads(row.payload)["canned_id"] == 3
+
+
+@pytest.mark.asyncio
 async def test_add_note_queues_command():
     """POST /tickets/{id}/note queues a ticket.note command."""
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:

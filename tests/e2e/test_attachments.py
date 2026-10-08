@@ -233,3 +233,38 @@ def test_faq_and_canned_response_files_are_uploaded_listed_downloaded_and_remove
     bridge.command("PATCH", f"/api/v1/canned/{canned}", {"remove_attachment_ids": [catt["id"]], "title": f"e2e kb canned {uniq} b"})
     after = bridge.read(f"/api/v1/canned/{canned}")
     assert after["attachments"] == [] and after["title"] == f"e2e kb canned {uniq} b" and after["response"] == "hello"
+
+
+def test_a_canned_responses_files_can_be_attached_to_the_reply_it_fills(bridge, uniq):
+    content = f"canned file {uniq}".encode()
+    canned = bridge.create("/api/v1/canned", {
+        "title": f"e2e canned reply {uniq}", "response": "Hello %{ticket.name.first}",
+        "attachments": [{"name": f"e2e-canned-{uniq}.txt", "content_type": "text/plain", "data": _b64(content)}]},
+        cleanup="/api/v1/canned/{id}")
+    tid = bridge.create("/api/v1/tickets/", {"subject": f"e2e canned files {uniq}", "message": "m",
+                                             "email": f"cf.{uniq}@{DELIVERABLE_DOMAIN}", "name": "Canned", "dept_id": 1, "topic_id": 1})
+    holder = bridge.read(f"/api/v1/tickets/{tid}")
+    bridge._cleanups.append(("DELETE", f"/api/v1/users/{holder['user_id']}"))
+    bridge._cleanups.append(("DELETE", f"/api/v1/tickets/{tid}"))
+    url = f"/api/v1/tickets/{tid}"
+
+    rendered = bridge.read(f"{url}/canned/{canned}")
+    (file,) = rendered["files"]
+    assert file["name"] == f"e2e-canned-{uniq}.txt"
+
+    done = bridge.command("POST", f"{url}/reply", {"message": rendered["response"], "canned_id": canned,
+                                                   "canned_attachment_ids": [file["id"]]})
+    entry = next(e for e in bridge.read(url)["thread"] if e["id"] == done["result"]["entry_id"])
+    (attached,) = entry["attachments"]
+    assert attached["name"] == file["name"]
+    assert bridge.get(f"{url}/attachments/{attached['id']}").content == content       # the very same bytes
+
+    # a file that is not the response's is refused, and nothing is posted
+    before = len(bridge.read(url)["thread"])
+    bridge.refuses("POST", f"{url}/reply", {"message": "x", "canned_id": canned, "canned_attachment_ids": [999999999]},
+                   because="not attached")
+    assert len(bridge.read(url)["thread"]) == before
+    # ids without their response are a malformed request; a response the agent cannot use is a 404
+    assert bridge.client.post(f"{url}/reply", json={"message": "x", "canned_attachment_ids": [file["id"]]}).status_code == 422
+    assert bridge.client.post(f"{url}/reply", json={"message": "x", "canned_id": 999999999,
+                                                    "canned_attachment_ids": [file["id"]]}).status_code == 404

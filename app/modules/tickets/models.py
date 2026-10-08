@@ -246,6 +246,20 @@ class TicketReply(WithAttachments):
                     "department's. It does not change the stored thread, only the email.")
     status_id: Optional[int] = Field(
         default=None, gt=0, description="Also set the ticket's status (osTicket's Ticket Status select); closing needs ticket.close")
+    canned_id: Optional[int] = Field(
+        default=None, gt=0, description="The canned response this reply was filled from; required with canned_attachment_ids")
+    canned_attachment_ids: list[int] = Field(
+        default_factory=list, max_length=20,
+        description="Files of that canned response to attach to the reply: the `id`s of `files` in "
+                    "GET /tickets/{id}/canned/{canned_id}. osTicket's reply box attaches the picked response's files the same way.")
+
+    @model_validator(mode="after")
+    def _canned_files_need_their_response(self):
+        if self.canned_attachment_ids and self.canned_id is None:
+            raise ValueError("canned_attachment_ids needs canned_id")
+        if any(i <= 0 for i in self.canned_attachment_ids):
+            raise ValueError("canned_attachment_ids are positive file ids")
+        return self
 
 
 class TicketNote(WithAttachments):

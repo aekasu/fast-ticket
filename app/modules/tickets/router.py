@@ -284,7 +284,7 @@ async def reply_to_ticket(
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
     return await service.reply_to_ticket(
-        session, ticket_id, body, current_user["staff_id"], idempotency_key
+        session, ticket_id, body, current_user["staff_id"], idempotency_key, access=current_user["access"]
     )
 
 

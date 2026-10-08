@@ -77,8 +77,7 @@ After that round the frontend adopted everything (its own `notes/BACKEND_REQUEST
 `GET /settings/options` (the drop-down choices of the settings pages, via the bridge read mode) is done. Verified:
 `make test` 913, `make test-docker` 913, `make test-e2e` 97 on a rebuilt stack (oracle included).
 
-**Still open on the frontend's list, in the order I would take them:** attaching a canned response's files to the reply
-it fills, company profile / logos in settings. Email diagnostic and mailbox/SMTP setup stay out by decision.
+**Still open on the frontend's list:** company profile / logos in settings. Email diagnostic and mailbox/SMTP setup stay out by decision.
 
 **Unexplained e2e flakes (2026-10-08), not reproduced:** after the custom-fields change one full `make test-e2e` run
 failed 1 test (not captured) and another 2 (a 401 on a fresh agent's second request in `test_read_scoping`, and a

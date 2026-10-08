@@ -10,6 +10,8 @@ extracted from the request header (may be None if the client didn't supply one).
 import logging
 from datetime import timezone
 
+from fastapi import HTTPException
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.custom_fields import BUILT_IN_FIELDS, CustomFieldAnswer, answer_from_row, attach_custom_fields
@@ -322,7 +324,14 @@ async def reply_to_ticket(
     body: TicketReply,
     staff_id: int,
     idempotency_key: str | None,
+    *,
+    access=None,
 ) -> CommandResponse:
+    # files of a canned response only from one the agent may use (the reply picker's rule); the bridge checks that
+    # the files belong to it
+    if body.canned_attachment_ids and (
+            access is None or await repo.get_canned(session, body.canned_id, access=access, manage=False) is None):
+        raise HTTPException(status_code=404, detail="Canned response not found.")
     cmd = await dispatch_command(
         session=session,
         command_type="ticket.reply",

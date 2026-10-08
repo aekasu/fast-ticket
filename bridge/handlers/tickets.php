@@ -275,7 +275,8 @@ class FastApiTicketHandler {
             'response'  => $message,
             // osTicket's signature choices are none | mine | dept
             'signature' => in_array($signature, ['none', 'mine', 'dept'], true) ? $signature : 'none',
-            'files'     => FastApiAttachments::upload((array) ($payload['attachments'] ?? [])),
+            'files'     => array_merge(FastApiAttachments::upload((array) ($payload['attachments'] ?? [])),
+                                       self::cannedFiles($payload)),
             'reply_status_id' => self::statusChoice($ticket, $payload['status_id'] ?? null),
         ];
         $errors = [];
@@ -285,6 +286,35 @@ class FastApiTicketHandler {
             throw new Exception('Reply was not posted: ' . self::errorText($errors));
         }
         return ['ticket_id' => $ticket->getId(), 'entry_id' => $entry->getId()];
+    }
+
+    /**
+     * The files of the premade reply the agent picked, attached to the reply the way osTicket's reply box does (its
+     * script adds the response's files to the attachment field). Each id must be a separate file of an enabled
+     * premade reply; the API has already checked the agent may use it.
+     */
+    private static function cannedFiles($payload) {
+        $ids = array_values(array_unique(array_map('intval', (array) ($payload['canned_attachment_ids'] ?? []))));
+        if (!$ids) {
+            return [];
+        }
+        require_once INCLUDE_DIR . 'class.canned.php';
+        $canned = Canned::lookup((int) ($payload['canned_id'] ?? 0));
+        if (!$canned || !$canned->isEnabled()) {
+            throw new Exception('Premade reply not found: ' . (int) ($payload['canned_id'] ?? 0));
+        }
+        $have = [];
+        foreach ($canned->getAttachedFiles(false) as $file) {
+            $have[(int) $file->id] = (string) $file->name;
+        }
+        $files = [];
+        foreach ($ids as $id) {
+            if (!isset($have[$id])) {
+                throw new Exception("File {$id} is not attached to premade reply " . (int) $canned->getId() . '.');
+            }
+            $files[] = ['id' => $id, 'name' => $have[$id]];
+        }
+        return $files;
     }
 
     public static function addNote($payload, $staff_id) {

@@ -6,6 +6,10 @@ After a backend change run `npm run api:pull && npm run api:types`, read the sna
 list below and remove the met entries from `BACKEND_REQUESTS.md`. This file is the backend's side of that handshake;
 delete an entry once the frontend has adopted it.
 
+## 2026-10-08 — a canned response's files on the reply it fills
+
+- `POST /tickets/{id}/reply` takes `canned_id` and `canned_attachment_ids` (the `id`s of `files` in `GET /tickets/{id}/canned/{canned_id}`). The listed files are attached to the reply, as osTicket's reply box does when an agent picks a premade reply; they can be mixed with `attachments` uploads. `canned_attachment_ids` without `canned_id` is a 422; a response the agent may not use is a 404; a file that is not one of that response's own files fails the command ("not attached"). Let the agent untick a file before sending and send only the ticked ids. Replies only: the task update and the notes have no premade-reply picker here.
+
 ## 2026-10-08 — a field added to a form after the record existed
 
 - A ticket's, task's, user's or organization's `custom_fields` now lists **every** enabled, agent-visible field of its forms, as osTicket's own page does. A field that was added after the record was made, or never answered, comes back with `value: null` (and `value_id: null`) instead of being missing; the same holds for `?fields=` columns on the lists. Answering it with `PATCH {custom_fields: {name: value}}` now stores the answer (before, the write was silently lost for such a field). A bool field never answered still reads `bool_value: false`. Nothing to change if the UI already renders a field with no value; delete any workaround that hid or re-fetched such fields.
