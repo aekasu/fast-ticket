@@ -77,10 +77,15 @@ After that round the frontend adopted everything (its own `notes/BACKEND_REQUEST
 `GET /settings/options` (the drop-down choices of the settings pages, via the bridge read mode) is done. Verified:
 `make test` 913, `make test-docker` 913, `make test-e2e` 97 on a rebuilt stack (oracle included).
 
-**Still open on the frontend's list, in the order I would take them:** the Overdue-queue mismatch (the API's `is_overdue`
-vs osTicket's cron-set `isoverdue`: a bug on our side, decide which one a queue should follow), a field added to a form
-after a ticket existed missing from that ticket's `custom_fields`, attaching a canned response's files to the reply it
-fills, company profile / logos in settings. Email diagnostic and mailbox/SMTP setup stay out by decision.
+**Still open on the frontend's list, in the order I would take them:** a field added to a form after a ticket existed
+missing from that ticket's `custom_fields`, attaching a canned response's files to the reply it fills, company profile /
+logos in settings. Email diagnostic and mailbox/SMTP setup stay out by decision.
+
+**Checked 2026-10-08, not a backend bug:** the frontend's failing "Overdue queue" e2e test. The API's overdue queue is
+`isoverdue = 1` on open tickets, exactly the criterion of osTicket's own Overdue queue (`ost_queue` id 4:
+`isoverdue set`, under Open), and the oracle compares the default queues' ticket sets. The dev data has 39 open tickets,
+all overdue, and the test reads osTicket's queue page 1 (25 rows) against three of ours, so it can never match. The fix
+is in the frontend test (`osticketQueueNumbers` instead of `osticketQueuePage`).
 
 ## Direction, in order
 
