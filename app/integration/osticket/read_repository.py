@@ -473,9 +473,10 @@ async def iter_file_chunks(session: AsyncSession, file_id: int):
 _CUSTOM_FIELDS_SQL = """
     SELECT ff.name, ff.label, ff.type, ev.value, ev.value_id, ff.configuration
     FROM ost_form_entry fe
-    JOIN ost_form_entry_values ev ON ev.entry_id = fe.id
-    JOIN ost_form_field ff ON ff.id = ev.field_id
+    JOIN ost_form_field ff ON ff.form_id = fe.form_id
+    LEFT JOIN ost_form_entry_values ev ON ev.entry_id = fe.id AND ev.field_id = ff.id   -- no row until first answered
     WHERE fe.object_type = :object_type AND fe.object_id = :object_id
+      AND ff.type <> 'break'        -- a section break holds no answer
       AND (ff.flags & 1) > 0        -- enabled
       AND (ff.flags & 4096) > 0     -- visible to agents (FLAG_AGENT_VIEW)
       AND ff.name <> ''
@@ -514,9 +515,10 @@ async def get_list_custom_fields(
     sql = """
         SELECT fe.object_id, ff.name, ff.label, ff.type, ev.value, ev.value_id, ff.configuration
         FROM ost_form_entry fe
-        JOIN ost_form_entry_values ev ON ev.entry_id = fe.id
-        JOIN ost_form_field ff ON ff.id = ev.field_id
+        JOIN ost_form_field ff ON ff.form_id = fe.form_id
+        LEFT JOIN ost_form_entry_values ev ON ev.entry_id = fe.id AND ev.field_id = ff.id
         WHERE fe.object_type = :object_type AND fe.object_id IN ({ids})
+          AND ff.type <> 'break'
           AND (ff.flags & 1) > 0 AND (ff.flags & 4096) > 0
           AND ff.name IN :names
           {scope}

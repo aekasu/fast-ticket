@@ -6,6 +6,10 @@ After a backend change run `npm run api:pull && npm run api:types`, read the sna
 list below and remove the met entries from `BACKEND_REQUESTS.md`. This file is the backend's side of that handshake;
 delete an entry once the frontend has adopted it.
 
+## 2026-10-08 — a field added to a form after the record existed
+
+- A ticket's, task's, user's or organization's `custom_fields` now lists **every** enabled, agent-visible field of its forms, as osTicket's own page does. A field that was added after the record was made, or never answered, comes back with `value: null` (and `value_id: null`) instead of being missing; the same holds for `?fields=` columns on the lists. Answering it with `PATCH {custom_fields: {name: value}}` now stores the answer (before, the write was silently lost for such a field). A bool field never answered still reads `bool_value: false`. Nothing to change if the UI already renders a field with no value; delete any workaround that hid or re-fetched such fields.
+
 ## 2026-10-07 — the settings drop-down choices
 
 - `GET /settings/options` (admin): `{options: {<setting key>: [{value, label}]}}`, listed by osTicket itself, for `agent_name_format`, `client_name_format`, `agent_avatar`, `client_avatar`, `agent_passwd_policy`, `client_passwd_policy` (a blank policy, "All Active Policies", has the value `" "` — a single space, as osTicket posts it), `client_registration` (`disabled|public|closed`), `log_level` (`"0"|"3"|"2"|"1"`), `ticket_lock`, `acl_backend` and `default_ticket_queue`. Send `value` back in the section's `PATCH`. Turn those settings' text/number inputs into selects. The default priority/status/department/SLA/help-topic ids are not here: they come from `/priorities`, `/ticket-statuses`, `/departments`, `/slas`, `/help-topics`.

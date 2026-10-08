@@ -113,6 +113,20 @@ class FastApiModel {
             $entry->addMissingFields();
             $entries[] = $entry;
         }
+        // addMissingFields() stores an empty answer for a field added to the form after the entry was made, but the
+        // entry's field objects stay unlinked from it, so saving would write each such field's own (empty) value
+        // over the answer set below. Read the entries again: now every field has its answer, as for a field that
+        // was always there.
+        if ($entries) {
+            ModelInstanceManager::flushCache();
+            $entries = [];
+            foreach (DynamicFormEntry::forObject($owner->getId(), $form_type)->all() as $entry) {
+                $form = $entry->getDynamicForm();
+                if ($form && $form->get('type') === $form_type) {
+                    $entries[] = $entry;
+                }
+            }
+        }
         foreach ($custom as $name => $value) {
             $errs = ["The form has no '{$name}' field"];
             foreach ($entries as $entry) {
@@ -175,6 +189,39 @@ class FastApiModel {
             throw new Exception('Custom fields rejected: ' . json_encode($errors));
         }
         return $custom;
+    }
+
+    /**
+     * The same for a ticket, after Ticket::update() has saved: update() works on forTicket()'s cached entries, whose
+     * fields are unlinked from the answers of a field added to the form after the ticket existed (see
+     * applyCustomFields), so a late field's answer is written here, on freshly read entries.
+     */
+    static function applyTicketAnswers($ticket, array $custom) {
+        if (!$custom) {
+            return;
+        }
+        ModelInstanceManager::flushCache();
+        $entries = [];
+        foreach (DynamicFormEntry::forTicket($ticket->getId(), true) as $entry) {
+            $entries[] = $entry;
+        }
+        $errors = [];
+        foreach ($custom as $name => $value) {
+            foreach ($entries as $entry) {
+                if ($entry->getField($name)) {
+                    if ($errs = self::setEntryAnswer($entry, $name, $value)) {
+                        $errors[$name] = $errs;
+                    }
+                    break;
+                }
+            }
+        }
+        if ($errors) {
+            throw new Exception('Custom fields rejected: ' . json_encode($errors));
+        }
+        foreach ($entries as $entry) {
+            $entry->save();
+        }
     }
 
     static function applyAnswers($owner, array $values, $form_type) {

@@ -1009,6 +1009,15 @@ def test_ticket_custom_fields_from_a_help_topic_form(bridge, uniq):
     got = _answers(bridge.read(url))
     assert got["memo"]["value"] == "again" and got["asset"]["value"] == "A-200"
 
+    # a field added to the form after the ticket existed is listed without an answer, and can be answered
+    bridge.command("POST", f"{furl}/fields", {"label": "Late", "type": "text", "name": "late"})
+    late = _answers(bridge.read(url))["late"]
+    assert (late["label"], late["value"], late["kind"]) == ("Late", None, "text")
+    assert _answers(bridge.read(url))["asset"]["value"] == "A-200"
+    bridge.command("PATCH", url, {"custom_fields": {"late": "answered"}})
+    got = _answers(bridge.read(url))
+    assert got["late"]["value"] == "answered" and got["asset"]["value"] == "A-200"
+
     # mass assignment: a custom field may not smuggle in a key that Ticket::create() acts on
     base = {"subject": f"ma {uniq}", "message": "m", "email": email, "name": "CF", "dept_id": 1, "topic_id": topic}
     for key in ("assignId", "staffId", "teamId", "slaId", "ccs", "statusId", "emailId", "autorespond"):
@@ -1774,3 +1783,17 @@ def test_schedule_and_entries_lifecycle(bridge, uniq):
     bridge.command("DELETE", f"/api/v1/schedules/{copy}")
     bridge.command("DELETE", f"/api/v1/schedules/{sid}")
     assert bridge.get(f"/api/v1/schedules/{sid}").status_code == 404
+
+
+def test_a_field_added_after_the_record_existed_is_listed_without_an_answer(bridge, uniq):
+    """osTicket shows every field of the form; the API used to list only the fields with a stored answer."""
+    uid = bridge.create("/api/v1/users", {"name": "E2E Late Field", "email": _email(uniq, "late")}, cleanup="/api/v1/users/{id}")
+    name = f"e2elate{uniq[:6]}"
+    fid = bridge.command("POST", "/api/v1/forms/1/fields", {"label": "E2E late", "type": "text", "name": name})["result"]["field_id"]
+    bridge._cleanups.append(("DELETE", f"/api/v1/forms/1/fields/{fid}?delete_data=true"))
+    late = _answers(bridge.read(f"/api/v1/users/{uid}"))[name]
+    assert (late["label"], late["value"], late["kind"]) == ("E2E late", None, "text")
+    listed = bridge.read(f"/api/v1/users?q=E2E Late Field&fields={name}")["items"]
+    assert [a["value"] for u in listed if u["id"] == uid for a in u["custom_fields"]] == [None]
+    bridge.command("PATCH", f"/api/v1/users/{uid}", {"custom_fields": {name: "now answered"}})
+    assert _answers(bridge.read(f"/api/v1/users/{uid}"))[name]["value"] == "now answered"

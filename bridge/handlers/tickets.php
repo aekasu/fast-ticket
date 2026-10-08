@@ -480,6 +480,7 @@ class FastApiTicketHandler {
         if (!$ticket->update($vars, $errors) || $errors) {
             throw new Exception('Ticket was not updated: ' . self::errorText($errors));
         }
+        FastApiModel::applyTicketAnswers($ticket, (array) ($payload['custom_fields'] ?? []));
         return ['ticket_id' => $ticket->getId()];
     }
 
