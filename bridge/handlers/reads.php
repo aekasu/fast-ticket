@@ -314,5 +314,109 @@ class FastApiReadHandler {
         ];
         return ['options' => (object) $options];
     }
+
+    /**
+     * The ticket as osTicket prints it (scp/tickets.php?a=print): a PDF of the thread, with the internal notes and the
+     * event history when asked. The agent must be able to open the ticket. Streams the PDF.
+     * Params: ticket_id, paper_size (Letter|Legal|A4|A3; default the agent's own), notes (bool), events (bool).
+     */
+    public static function ticketPrint($params, $staff) {
+        global $thisstaff;
+        $ticket = Ticket::lookup((int) ($params['ticket_id'] ?? 0));
+        if (!$ticket || !$ticket->checkStaffPerm($thisstaff)) {
+            throw new FastApiReadRefused(404, 'not_found', 'No such ticket.');
+        }
+        self::requirePdf();
+        $pdf = new Ticket2PDF($ticket, self::paperSize($params), !empty($params['notes']), !empty($params['events']));
+        self::sendBytes($pdf->output('Ticket-' . $ticket->getNumber() . '.pdf', 'S'), 'application/pdf');
+        return null;
+    }
+
+    /**
+     * The task as osTicket prints it (scp/tasks.php?a=print). The agent must be able to open the task.
+     * Params: task_id, paper_size. Streams the PDF.
+     */
+    public static function taskPrint($params, $staff) {
+        global $thisstaff;
+        $task = Task::lookup((int) ($params['task_id'] ?? 0));
+        if (!$task || !$task->checkStaffPerm($thisstaff)) {
+            throw new FastApiReadRefused(404, 'not_found', 'No such task.');
+        }
+        self::requirePdf();
+        $pdf = new Task2PDF($task, ['psize' => self::paperSize($params)]);
+        self::sendBytes($pdf->output('Task-' . $task->getNumber() . '.pdf', 'S'), 'application/pdf');
+        return null;
+    }
+
+    /**
+     * The ticket as a ZIP (scp/tickets.php?a=zip): a PDF of the thread and every file attached to it, optionally with
+     * the ticket's tasks the same way. Unlike osTicket, which adds every task of the ticket, only tasks the agent may
+     * open are added. Params: ticket_id, notes (bool), tasks (bool). Streams the ZIP.
+     */
+    public static function ticketZip($params, $staff) {
+        global $thisstaff;
+        $ticket = Ticket::lookup((int) ($params['ticket_id'] ?? 0));
+        if (!$ticket || !$ticket->checkStaffPerm($thisstaff)) {
+            throw new FastApiReadRefused(404, 'not_found', 'No such ticket.');
+        }
+        if (!class_exists('ZipArchive')) {
+            throw new FastApiReadRefused(501, 'unavailable', 'The ZIP extension is not installed on the osTicket server.');
+        }
+        self::requirePdf();
+        $notes = !empty($params['notes']);
+        $exporter = new TicketZipExporter($ticket);
+        $zipfile = tempnam(sys_get_temp_dir(), 'zip');
+        try {
+            $zip = new ZipArchive();
+            if ($zip->open($zipfile, ZipArchive::CREATE) !== true) {
+                throw new FastApiReadRefused(500, 'error', 'The ZIP could not be created.');
+            }
+            $prefix = (string) $ticket->getNumber();
+            $psize = self::paperSize($params);
+            $exporter->addTicket($ticket, $zip, $prefix, $notes, $psize);
+            if (!empty($params['tasks'])) {
+                foreach ($ticket->tasks as $task) {
+                    if ($task->checkStaffPerm($thisstaff)) {
+                        $exporter->addTask($task, $zip, "{$prefix}/tasks", $notes, $psize);
+                    }
+                }
+            }
+            $zip->close();
+            self::sendBytes(file_get_contents($zipfile), 'application/zip');
+        } finally {
+            foreach ($exporter->tmpfiles as $tmp) {
+                @unlink($tmp);
+            }
+            @unlink($zipfile);
+        }
+        return null;
+    }
+
+    private static function requirePdf() {
+        if (!extension_loaded('mbstring')) {
+            throw new FastApiReadRefused(501, 'unavailable', 'The mbstring extension is required to print to PDF.');
+        }
+        require_once INCLUDE_DIR . 'class.pdf.php';
+        require_once INCLUDE_DIR . 'class.export.php';
+    }
+
+    /** The requested paper size if osTicket offers it, else the agent's own default, else Letter. */
+    private static function paperSize($params) {
+        global $thisstaff;
+        $asked = (string) ($params['paper_size'] ?? '');
+        if (in_array($asked, Export::$paper_sizes, true)) {
+            return $asked;
+        }
+        return $thisstaff->getDefaultPaperSize() ?: 'Letter';
+    }
+
+    private static function sendBytes($bytes, $type) {
+        while (ob_get_level()) {
+            ob_end_clean();
+        }
+        header('Content-Type: ' . $type);
+        header('Content-Length: ' . strlen($bytes));
+        echo $bytes;
+    }
 }
 }

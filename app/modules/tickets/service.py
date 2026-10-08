@@ -760,3 +760,9 @@ async def ticket_attachment(session: AsyncSession, ticket_id: int, attachment_id
     """The attachment's file row if it is attached to this ticket's thread and the ticket may be opened, else None."""
     rows = await repo.get_ticket_attachments(session, ticket_id, access=access, attachment_id=attachment_id)
     return dict(rows[0]) if rows else None
+
+
+async def openable_ticket_number(session: AsyncSession, ticket_id: int, *, access) -> str | None:
+    """The ticket's number if it exists and ``access`` may open it, else None (a document is only generated for those)."""
+    row = await repo.get_ticket(session, ticket_id, access=access)
+    return str(row["number"]) if row else None

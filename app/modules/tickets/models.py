@@ -174,6 +174,7 @@ class TicketDetail(TicketListItem):
     custom_fields: list[CustomFieldAnswer] = []
 
 
+PaperSize = Literal["Letter", "Legal", "A4", "A3"]   # osTicket's Export::$paper_sizes
 TicketQueue = Literal["open", "unanswered", "answered", "overdue", "mine", "assigned_me", "assigned_teams", "closed"]
 TicketSort = Literal["updated", "last_activity", "created", "due_date", "number", "subject", "status", "dept", "priority", "assignee", "requester"]
 

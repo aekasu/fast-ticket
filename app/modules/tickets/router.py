@@ -19,13 +19,14 @@ per-department check when it runs the command):
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.attachments import file_response
+from app.core.attachments import bridge_download, file_response
 from app.core.custom_fields import custom_fields_query
 from app.core.db import get_session
 from app.core.security import require_perm, require_staff
 from app.modules.agents.models import AssigneeOptions
 from app.modules.tickets import service
 from app.modules.tickets.models import (
+    PaperSize,
     QueueCounts,
     TicketQueue,
     TicketSort,
@@ -142,6 +143,48 @@ async def get_ticket(
     if ticket is None:
         raise HTTPException(status_code=404, detail=f"Ticket {ticket_id} not found.")
     return ticket
+
+
+@router.get(
+    "/{ticket_id}/print",
+    summary="The ticket as a PDF (osTicket's Print)",
+    responses={200: {"content": {"application/pdf": {}}}},
+)
+async def print_ticket(
+    ticket_id: int,
+    paper_size: PaperSize | None = Query(default=None, description="Default: the agent's own paper size in osTicket"),
+    notes: bool = Query(default=False, description="Include the internal notes"),
+    events: bool = Query(default=False, description="Include the event history"),
+    current_user: dict = require_staff(),   # tickets.php?a=print: anyone who can open the ticket
+    session: AsyncSession = Depends(get_session),
+):
+    number = await service.openable_ticket_number(session, ticket_id, access=current_user["access"])
+    if number is None:
+        raise HTTPException(status_code=404, detail="Ticket not found.")
+    return await bridge_download(
+        "ticket.print", current_user["staff_id"],
+        {"ticket_id": ticket_id, "paper_size": paper_size or "", "notes": notes, "events": events},
+        filename=f"Ticket-{number}.pdf", media_type="application/pdf")
+
+
+@router.get(
+    "/{ticket_id}/zip",
+    summary="The ticket's PDF and every file attached to it, as a ZIP (osTicket's Export to ZIP)",
+    responses={200: {"content": {"application/zip": {}}}},
+)
+async def zip_ticket(
+    ticket_id: int,
+    notes: bool = Query(default=False, description="Include the internal notes in the PDF"),
+    tasks: bool = Query(default=False, description="Add the ticket's tasks (only those the agent may open)"),
+    current_user: dict = require_staff(),   # tickets.php?a=zip: anyone who can open the ticket
+    session: AsyncSession = Depends(get_session),
+):
+    number = await service.openable_ticket_number(session, ticket_id, access=current_user["access"])
+    if number is None:
+        raise HTTPException(status_code=404, detail="Ticket not found.")
+    return await bridge_download(
+        "ticket.zip", current_user["staff_id"], {"ticket_id": ticket_id, "notes": notes, "tasks": tasks},
+        filename=f"ticket-{number}.zip", media_type="application/zip")
 
 
 @router.get(

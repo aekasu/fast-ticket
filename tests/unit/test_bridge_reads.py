@@ -19,12 +19,12 @@ def registry_ops() -> set[str]:
 def called_ops() -> set[str]:
     found = set()
     for path in (ROOT / "app").rglob("*.py"):
-        found |= set(re.findall(r"""(?:bridge_json|open_bridge_stream)\(\s*["']([a-z_.]+)["']""", path.read_text()))
+        found |= set(re.findall(r"""(?:bridge_json|open_bridge_stream|bridge_download)\(\s*["']([a-z_.]+)["']""", path.read_text()))
     return found
 
 
 def test_every_registered_read_is_used_and_every_call_is_registered():
-    assert registry_ops() == called_ops() == {"canned.render", "file.stream", "system.info", "dashboard.report", "filter.options", "schedule.describe", "settings.options"}
+    assert registry_ops() == called_ops() == {"canned.render", "file.stream", "system.info", "dashboard.report", "filter.options", "schedule.describe", "settings.options", "ticket.print", "ticket.zip", "task.print"}
 
 
 def test_every_read_handler_exists_in_the_php():

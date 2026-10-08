@@ -900,3 +900,31 @@ async def test_related_tickets_reads_the_family():
     assert [c["ticket_id"] for c in parent.json()["children"]] == [2]
     assert child.json()["parent"]["ticket_id"] == 1 and child.json()["is_parent"] is False
     assert missing.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_print_and_zip_ask_osticket_for_the_document_only_for_a_ticket_the_agent_may_open():
+    from fastapi.responses import Response
+    download = AsyncMock(return_value=Response(b"%PDF", media_type="application/pdf"))
+    with patch("app.modules.tickets.router.bridge_download", new=download), \
+         patch("app.modules.tickets.service.repo.get_ticket", new=AsyncMock(return_value={"ticket_id": 9, "number": "123456"})):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            ok = await ac.get(TICKETS_URL + "/9/print?paper_size=A4&notes=true", headers=_auth([]))
+            zipped = await ac.get(TICKETS_URL + "/9/zip?tasks=true", headers=_auth([]))
+            bad_size = await ac.get(TICKETS_URL + "/9/print?paper_size=Tabloid", headers=_auth([]))
+            anon = await ac.get(TICKETS_URL + "/9/print")
+    assert (ok.status_code, zipped.status_code, bad_size.status_code, anon.status_code) == (200, 200, 422, 401)
+    first, second = download.await_args_list
+    assert first.args[0] == "ticket.print" and first.args[2] == {"ticket_id": 9, "paper_size": "A4", "notes": True, "events": False}
+    assert first.kwargs["filename"] == "Ticket-123456.pdf"
+    assert second.args[0] == "ticket.zip" and second.args[2] == {"ticket_id": 9, "notes": False, "tasks": True}
+    assert second.kwargs["filename"] == "ticket-123456.zip"
+
+    download.reset_mock()
+    with patch("app.modules.tickets.router.bridge_download", new=download), \
+         patch("app.modules.tickets.service.repo.get_ticket", new=AsyncMock(return_value=None)):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            hidden = await ac.get(TICKETS_URL + "/9/print", headers=_auth([]))
+            hidden_zip = await ac.get(TICKETS_URL + "/9/zip", headers=_auth([]))
+    assert (hidden.status_code, hidden_zip.status_code) == (404, 404)
+    download.assert_not_awaited()                      # nothing is generated for a ticket the agent may not open

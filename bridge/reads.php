@@ -18,5 +18,8 @@ return [
     'filter.options' => ['reads', 'FastApiReadHandler', 'filterOptions'],
     'schedule.describe' => ['reads', 'FastApiReadHandler', 'scheduleDescribe'],
     'settings.options' => ['reads', 'FastApiReadHandler', 'settingsOptions'],
+    'ticket.print'  => ['reads', 'FastApiReadHandler', 'ticketPrint'],
+    'ticket.zip'    => ['reads', 'FastApiReadHandler', 'ticketZip'],
+    'task.print'    => ['reads', 'FastApiReadHandler', 'taskPrint'],
     'system.info'   => ['reads', 'FastApiReadHandler', 'systemInfo'],
 ];

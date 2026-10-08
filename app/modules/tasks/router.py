@@ -17,7 +17,7 @@ Writes — permission map (role permissions):
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.attachments import file_response
+from app.core.attachments import bridge_download, file_response
 from app.core.custom_fields import custom_fields_query
 from app.core.db import get_session
 from app.core.security import require_perm, require_staff
@@ -39,7 +39,7 @@ from app.modules.tasks.models import (
     TaskReply,
     TaskTransfer,
 )
-from app.modules.tickets.models import CollaboratorList, CommandResponse, TicketCollaboratorAdd, TicketEntryEdit, TicketEntryResend
+from app.modules.tickets.models import PaperSize, CollaboratorList, CommandResponse, TicketCollaboratorAdd, TicketEntryEdit, TicketEntryResend
 
 router = APIRouter(tags=["tasks"])
 
@@ -80,6 +80,25 @@ async def list_tasks(
         page_size=page_size,
         field_names=field_names,
     )
+
+
+@router.get(
+    "/{task_id}/print",
+    summary="The task as a PDF (osTicket's Print)",
+    responses={200: {"content": {"application/pdf": {}}}},
+)
+async def print_task(
+    task_id: int,
+    paper_size: PaperSize | None = Query(default=None, description="Default: the agent's own paper size in osTicket"),
+    current_user: dict = require_staff(),   # tasks.php?a=print: anyone who can open the task
+    session: AsyncSession = Depends(get_session),
+):
+    number = await service.openable_task_number(session, task_id, access=current_user["access"])
+    if number is None:
+        raise HTTPException(status_code=404, detail="Task not found.")
+    return await bridge_download(
+        "task.print", current_user["staff_id"], {"task_id": task_id, "paper_size": paper_size or ""},
+        filename=f"Task-{number}.pdf", media_type="application/pdf")
 
 
 @router.get(

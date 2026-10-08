@@ -268,3 +268,51 @@ def test_a_canned_responses_files_can_be_attached_to_the_reply_it_fills(bridge, 
     assert bridge.client.post(f"{url}/reply", json={"message": "x", "canned_attachment_ids": [file["id"]]}).status_code == 422
     assert bridge.client.post(f"{url}/reply", json={"message": "x", "canned_id": 999999999,
                                                     "canned_attachment_ids": [file["id"]]}).status_code == 404
+
+
+def test_a_ticket_prints_to_pdf_and_exports_to_zip_with_its_files(bridge, uniq):
+    import io
+    import zipfile
+
+    tid = bridge.create("/api/v1/tickets/", {"subject": f"e2e print {uniq}", "message": "first message",
+                                             "email": f"pr.{uniq}@{DELIVERABLE_DOMAIN}", "name": "Print", "dept_id": 1, "topic_id": 1})
+    holder = bridge.read(f"/api/v1/tickets/{tid}")
+    bridge._cleanups.append(("DELETE", f"/api/v1/users/{holder['user_id']}"))
+    bridge._cleanups.append(("DELETE", f"/api/v1/tickets/{tid}"))
+    number = holder["number"]
+    url = f"/api/v1/tickets/{tid}"
+    bridge.command("POST", f"{url}/reply", {"message": "a reply", "attachments": [
+        {"name": f"e2e-print-{uniq}.txt", "content_type": "text/plain", "data": _b64(b"zip me")}]})
+    bridge.command("POST", f"{url}/note", {"title": "n", "message": "a private note"})
+
+    plain = bridge.get(f"{url}/print")
+    assert plain.status_code == 200 and plain.content.startswith(b"%PDF")
+    assert plain.headers["content-type"] == "application/pdf"
+    assert f"Ticket-{number}.pdf" in plain.headers["content-disposition"]
+    with_notes = bridge.get(f"{url}/print?paper_size=A4&notes=true&events=true")
+    assert with_notes.status_code == 200 and with_notes.content.startswith(b"%PDF")
+    assert with_notes.content != plain.content                                # other paper, notes and events
+    assert bridge.get(f"{url}/print?paper_size=Tabloid").status_code == 422
+
+    archive = bridge.get(f"{url}/zip?notes=true&tasks=true")
+    assert archive.status_code == 200 and archive.headers["content-type"] == "application/zip"
+    names = zipfile.ZipFile(io.BytesIO(archive.content)).namelist()
+    assert f"{number}.pdf" in names and any(n.endswith(f"e2e-print-{uniq}.txt") for n in names)
+    assert zipfile.ZipFile(io.BytesIO(archive.content)).read(
+        next(n for n in names if n.endswith(f"e2e-print-{uniq}.txt"))) == b"zip me"
+
+    # a task prints too
+    task = bridge.create("/api/v1/tasks/", {"title": f"e2e print task {uniq}", "description": "d", "dept_id": 1},
+                         cleanup="/api/v1/tasks/{id}")
+    pdf = bridge.get(f"/api/v1/tasks/{task}/print?paper_size=Legal")
+    assert pdf.status_code == 200 and pdf.content.startswith(b"%PDF")
+
+    # an agent who cannot open them gets a 404, and nothing is generated
+    username = f"epr{uniq}"
+    bridge.create("/api/v1/staff", {"username": username, "firstname": "E2E", "lastname": "Pr",
+                                    "email": f"{username}@{DELIVERABLE_DOMAIN}", "dept_id": 2, "role_id": 3,
+                                    "password": PASSWORD, "is_active": True, "is_admin": False}, cleanup="/api/v1/staff/{id}")
+    outsider = login_as(username, PASSWORD)
+    for path in (f"/api/v1/tickets/{tid}/print", f"/api/v1/tickets/{tid}/zip", f"/api/v1/tasks/{task}/print"):
+        assert httpx.get(f"{BASE_URL}{path}", headers=outsider).status_code == 404, path
+        assert httpx.get(f"{BASE_URL}{path}").status_code == 401

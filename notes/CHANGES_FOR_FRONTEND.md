@@ -6,6 +6,10 @@ After a backend change run `npm run api:pull && npm run api:types`, read the sna
 list below and remove the met entries from `BACKEND_REQUESTS.md`. This file is the backend's side of that handshake;
 delete an entry once the frontend has adopted it.
 
+## 2026-10-08 — Print and Export to ZIP
+
+- `GET /tickets/{id}/print?paper_size=Letter|Legal|A4|A3&notes=bool&events=bool` → the ticket as a PDF (osTicket's Print: the thread, with the internal notes and the event history when asked; the paper size defaults to the agent's own setting in osTicket). `GET /tasks/{id}/print?paper_size=` → the task as a PDF. `GET /tickets/{id}/zip?notes=bool&tasks=bool` → a ZIP with the ticket's PDF and every file attached to its thread (and its tasks, only those the agent may open, with `tasks=true`). All three answer a file download (`Content-Disposition: attachment`, filename `Ticket-<number>.pdf`, `Task-<number>.pdf`, `ticket-<number>.zip`), any agent who can open the object may ask, and a ticket or task they may not open is a 404. Fetch with the bearer token and save the blob (a plain link cannot send the header); this replaces printing the browser page. 501 if the osTicket server lacks the `mbstring` (PDF) or `zip` extension.
+
 ## 2026-10-08 — a canned response's files on the reply it fills
 
 - `POST /tickets/{id}/reply` takes `canned_id` and `canned_attachment_ids` (the `id`s of `files` in `GET /tickets/{id}/canned/{canned_id}`). The listed files are attached to the reply, as osTicket's reply box does when an agent picks a premade reply; they can be mixed with `attachments` uploads. `canned_attachment_ids` without `canned_id` is a 422; a response the agent may not use is a 404; a file that is not one of that response's own files fails the command ("not attached"). Let the agent untick a file before sending and send only the ticked ids. Replies only: the task update and the notes have no premade-reply picker here.

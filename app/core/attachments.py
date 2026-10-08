@@ -64,3 +64,14 @@ async def file_response(row: dict, *, staff_id: int, object_type: str, object_id
             "Content-Length": str(int(row["size"])),
         },
     )
+
+
+async def bridge_download(op: str, staff_id: int, params: dict, *, filename: str, media_type: str) -> StreamingResponse:
+    """Stream a document osTicket's own PHP generates (a ticket's PDF or ZIP). The caller has checked the agent may
+    open the object; the bridge checks again. A refusal becomes the response before it starts."""
+    safe = re.sub(r"[^A-Za-z0-9._-]", "_", filename) or "download"
+    client, upstream = await open_bridge_stream(op, staff_id, params)
+    headers = {"Content-Disposition": f'attachment; filename="{safe}"'}
+    if upstream.headers.get("content-length", "").isdigit():
+        headers["Content-Length"] = upstream.headers["content-length"]
+    return StreamingResponse(_bridge_chunks(client, upstream), media_type=media_type, headers=headers)

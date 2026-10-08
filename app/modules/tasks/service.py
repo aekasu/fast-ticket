@@ -449,3 +449,9 @@ async def task_attachment(session: AsyncSession, task_id: int, attachment_id: in
     """The attachment's file row if it is attached to this task's thread and the task may be opened, else None."""
     rows = await repo.get_task_attachments(session, task_id, access=access, attachment_id=attachment_id)
     return dict(rows[0]) if rows else None
+
+
+async def openable_task_number(session: AsyncSession, task_id: int, *, access) -> str | None:
+    """The task's number if it exists and ``access`` may open it, else None."""
+    row = await repo.get_task(session, task_id, access=access)
+    return str(row["number"]) if row else None
