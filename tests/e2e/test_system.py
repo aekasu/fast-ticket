@@ -60,11 +60,13 @@ def test_the_dashboard_report_is_scoped_by_osticket_to_the_agent(bridge, uniq):
                   cleanup="/api/v1/staff/{id}")
     headers = login_as(username, "E2e-Pass-9x!Qz")
     mine = httpx.get(f"{BASE_URL}/api/v1/dashboard/report?start=2020-01-01&period=one_quarter&group=department", headers=headers)
-    assert mine.status_code == 200
+    assert mine.status_code == 200, f"{mine.status_code} {mine.text[:200]}"
     names = {r[0].split(" - ")[0] for r in mine.json()["table"]["rows"]}
     all_names = {r[0].split(" - ")[0] for r in admin_rows["table"]["rows"]}
     assert names <= all_names and len(names) <= 1
-    agents = httpx.get(f"{BASE_URL}/api/v1/dashboard/report?start=2020-01-01&period=one_quarter&group=agent", headers=headers).json()
+    agents_resp = httpx.get(f"{BASE_URL}/api/v1/dashboard/report?start=2020-01-01&period=one_quarter&group=agent", headers=headers)
+    assert agents_resp.status_code == 200, f"{agents_resp.status_code} {agents_resp.text[:200]}"
+    agents = agents_resp.json()
     assert all(r[0] == "Dash Board" for r in agents["table"]["rows"])
 
 

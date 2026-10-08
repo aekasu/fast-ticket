@@ -80,10 +80,14 @@ After that round the frontend adopted everything (its own `notes/BACKEND_REQUEST
 **Still open on the frontend's list, in the order I would take them:** attaching a canned response's files to the reply
 it fills, company profile / logos in settings. Email diagnostic and mailbox/SMTP setup stay out by decision.
 
-**Unexplained e2e flakes (2026-10-08):** after the custom-fields change two full `make test-e2e` runs ended 97/98 (the
-failing test not captured) and 96/98 (a 401 in `test_read_scoping`, a `KeyError: 'table'` from the dashboard report in
-`test_system`). Each failed test passes alone, and the touched code is not on those paths; the frontend reports the same
-kind of run-to-run failure. Find the cause (login throttle? the bridge read timing out under load?) before trusting a red run.
+**Unexplained e2e flakes (2026-10-08), not reproduced:** after the custom-fields change one full `make test-e2e` run
+failed 1 test (not captured) and another 2 (a 401 on a fresh agent's second request in `test_read_scoping`, and a
+`KeyError: 'table'` in `test_system` that was the same 401); each passed alone, and two more full runs were 98/98. Both
+401s hit a just-created agent seconds after a successful first request. The API now logs why it refuses a token
+(`token refused: staff N is gone|disabled`, or the two timestamps for a password change) and those two tests print the
+response on a bad status, so the next red run names its cause: grep `docker compose logs api` for `token refused`. Looking
+for: a password-change stamp one second after the token (`passwdreset` vs `iat`; the comparison is to the second, see
+KNOWN_LIMITS). Rapid logins in a loop hit the login rate limit (429) — not the same thing.
 
 **Checked 2026-10-08, not a backend bug:** the frontend's failing "Overdue queue" e2e test. The API's overdue queue is
 `isoverdue = 1` on open tickets, exactly the criterion of osTicket's own Overdue queue (`ost_queue` id 4:

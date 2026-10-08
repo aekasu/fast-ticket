@@ -90,7 +90,7 @@ def test_tickets_are_visible_by_department_assignment_and_team(bridge, uniq):
     # the page: 200 with its thread when visible; 404 (existence not disclosed) when not
     for visible in (own, mine, teams):
         got = _get(agent_a, f"/api/v1/tickets/{visible}")
-        assert got.status_code == 200 and got.json()["thread"], visible
+        assert got.status_code == 200 and got.json()["thread"], f"{visible}: {got.status_code} {got.text[:200]}"
     assert _get(agent_a, f"/api/v1/tickets/{other}").status_code == 404
     # `gone` is off A's list and search (an assignment stops counting once the ticket closes), but osTicket
     # refers a closing ticket's thread to its previously assigned agent (autoReferTicketsOnClose), and
@@ -125,13 +125,17 @@ def test_tasks_follow_osticket_including_its_closed_task_quirk(bridge, uniq):
     assert closed_mine not in listed and closed_other not in listed   # the list shows my open work and my departments
 
     # the page: 404 for an open task that is not theirs...
-    assert _get(agent_a, f"/api/v1/tasks/{other}").status_code == 404
-    assert _get(agent_a, f"/api/v1/tasks/{own}").status_code == 200
+    _r = _get(agent_a, f"/api/v1/tasks/{other}")
+    assert _r.status_code == 404, f"{_r.status_code} {_r.text[:200]}"
+    _r = _get(agent_a, f"/api/v1/tasks/{own}")
+    assert _r.status_code == 200, f"{_r.status_code} {_r.text[:200]}"
     got = _get(agent_a, f"/api/v1/tasks/{mine}")
-    assert got.status_code == 200 and got.json()["thread"]
+    assert got.status_code == 200 and got.json()["thread"], f"{got.status_code} {got.text[:200]}"
     # ...but Task::checkStaffPerm lets any agent open a CLOSED task, and its assignee open it in any state
-    assert _get(agent_a, f"/api/v1/tasks/{closed_mine}").status_code == 200
-    assert _get(agent_a, f"/api/v1/tasks/{closed_other}").status_code == 200
+    _r = _get(agent_a, f"/api/v1/tasks/{closed_mine}")
+    assert _r.status_code == 200, f"{_r.status_code} {_r.text[:200]}"
+    _r = _get(agent_a, f"/api/v1/tasks/{closed_other}")
+    assert _r.status_code == 200, f"{_r.status_code} {_r.text[:200]}"
 
 
 def _titles(headers, path, key="title"):

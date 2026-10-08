@@ -171,12 +171,15 @@ async def get_current_user(
     claims = decode_access_token(token)
     access = await load_access_context(session, int(claims["staff_id"]))
     if access is None or not access.is_active:
+        logger.warning("token refused: staff %s is %s", claims["staff_id"], "gone" if access is None else "disabled")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="This account is no longer active.",
             headers={"WWW-Authenticate": "Bearer"},
         )
     if not access.token_is_current(claims.get("iat", 0)):
+        logger.warning("token refused: staff %s, token issued %s, password changed %s",
+                       claims["staff_id"], claims.get("iat", 0), access.password_changed_at)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="The password changed after this token was issued; log in again.",
