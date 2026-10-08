@@ -109,6 +109,9 @@ class Settings(BaseSettings):
         default=20_000_000, ge=1_000,
         description="Most attachment bytes (decoded) in one request. Routes that take files accept bodies up to this plus a third, plus MAX_REQUEST_BYTES.",
     )
+    EXPORT_MAX_ROWS: int = Field(
+        default=10_000, ge=1, le=1_000_000,
+        description="Most rows a CSV export (tickets, tasks, users, organizations) writes; a longer result is cut here.")
     CSV_IMPORT_MAX_BYTES: int = Field(default=1_000_000, ge=1_000, description="Largest CSV a user import accepts.")
 
     # ── Security ──────────────────────────────────────────────────────────────

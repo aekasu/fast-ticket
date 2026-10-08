@@ -9,9 +9,12 @@ Permissions (global permissions on the staff member — ``Staff::hasPerm($key)``
   organizations  org.create    org.edit    org.delete
 """
 
+from datetime import UTC, datetime
+
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.csv_export import csv_response
 from app.core.custom_fields import custom_fields_query
 from app.core.db import get_session
 from app.core.security import require_perm
@@ -36,6 +39,39 @@ from app.modules.users.models import (
 router = APIRouter(tags=["users"])
 
 # ── Organizations ─────────────────────────────────────────────────────────────
+
+@router.get("/orgs/export", summary="Export the organization directory as CSV",
+            responses={200: {"content": {"text/csv": {}}}})
+async def export_organizations(
+    q: str | None = Query(default=None, max_length=100, description="Name contains (as osTicket's Organizations page)"),
+    sort: OrgSort = Query(default="name"),
+    descending: bool = Query(default=False),
+    columns: str | None = Query(default=None, max_length=300, description="Comma-separated columns (default all): name, users, created, updated"),
+    current_user: dict = require_perm("user.dir"),   # as the directory list: any org perm is fine
+    field_names: list[str] | None = Depends(custom_fields_query),
+):
+    headers, rows = await service.export_organizations(
+        columns=[c.strip() for c in columns.split(",") if c.strip()] if columns else None,
+        field_names=field_names, q=q, sort=sort, descending=descending)
+    return csv_response(f"organizations-{datetime.now(UTC):%Y%m%d}.csv", headers, rows)
+
+
+@router.get("/users/export", summary="Export the user directory as CSV",
+            responses={200: {"content": {"text/csv": {}}}})
+async def export_users(
+    org_id: int | None = Query(default=None, description="Filter by organization ID"),
+    q: str | None = Query(default=None, max_length=100, description="Name, any email address, organization name or phone contains"),
+    sort: UserSort = Query(default="name"),
+    descending: bool = Query(default=False),
+    columns: str | None = Query(default=None, max_length=300, description="Comma-separated columns (default all): name, email, organization, status, tickets, created, updated"),
+    current_user: dict = require_perm("user.dir"),   # as the directory list: any user perm is fine
+    field_names: list[str] | None = Depends(custom_fields_query),
+):
+    headers, rows = await service.export_users(
+        columns=[c.strip() for c in columns.split(",") if c.strip()] if columns else None,
+        field_names=field_names, org_id=org_id, q=q, sort=sort, descending=descending)
+    return csv_response(f"users-{datetime.now(UTC):%Y%m%d}.csv", headers, rows)
+
 
 @router.get("/orgs", response_model=OrganizationListResponse, summary="List organizations")
 async def list_organizations(

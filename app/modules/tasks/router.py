@@ -14,10 +14,13 @@ Writes — permission map (role permissions):
   task.reply   — add notes and post updates; edit and resend thread entries (the bridge applies osTicket's exact edit rule)
 """
 
+from datetime import UTC, datetime
+
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.attachments import bridge_download, file_response
+from app.core.csv_export import csv_response
 from app.core.custom_fields import custom_fields_query
 from app.core.db import get_session
 from app.core.security import require_perm, require_staff
@@ -131,6 +134,34 @@ async def task_assignees(
     if result is None:
         raise HTTPException(status_code=404, detail=f"Task {task_id} not found.")
     return result
+
+
+@router.get(
+    "/export",
+    summary="Export the task list as CSV (osTicket's Export on the task list)",
+    responses={200: {"content": {"text/csv": {}}}},
+)
+async def export_tasks(
+    status_id: int | None = Query(default=None, description="Filter by status ID"),
+    dept_id: int | None = Query(default=None, description="Filter by department ID"),
+    assignee_staff_id: int | None = Query(default=None, description="Filter by assigned staff"),
+    ticket_id: int | None = Query(default=None, description="Filter to tasks linked to a ticket"),
+    q: str | None = Query(default=None, max_length=100, description="Task number or title (contains)"),
+    queue: TaskQueue | None = Query(default=None, description="One of osTicket's task queues (see GET /tasks/queues)"),
+    sort: TaskSort = Query(default="updated"),
+    descending: bool = Query(default=True),
+    columns: str | None = Query(default=None, max_length=300, description="Comma-separated columns to write (default all): "
+                                "number, title, status, department, assigned_agent, assigned_team, ticket, overdue, created, "
+                                "due_date, closed"),
+    current_user: dict = require_staff(),   # no permission in osTicket: an agent exports what the list shows
+    field_names: list[str] | None = Depends(custom_fields_query),
+):
+    """The rows ``GET /tasks/`` would list for the same filters (all pages, at most ``EXPORT_MAX_ROWS``), as CSV."""
+    headers, rows = await service.export_tasks(
+        access=current_user["access"], columns=[c.strip() for c in columns.split(",") if c.strip()] if columns else None,
+        field_names=field_names, status_id=status_id, dept_id=dept_id, assignee_staff_id=assignee_staff_id,
+        ticket_id=ticket_id, q=q, queue=queue, sort=sort, descending=descending)
+    return csv_response(f"tasks-{datetime.now(UTC):%Y%m%d}.csv", headers, rows)
 
 
 @router.get("/queues", response_model=TaskQueueCounts, summary="Task counts for osTicket's queues")

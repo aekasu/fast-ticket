@@ -338,3 +338,50 @@ async def delete_user(
         idempotency_key=idempotency_key,
     )
     return _cmd_resp(cmd, idempotency_key)
+
+
+USER_EXPORT_COLUMNS = {
+    "name": ("Name", lambda u: u.name),
+    "email": ("Email", lambda u: u.email),
+    "organization": ("Organization", lambda u: u.org_name),
+    "status": ("Status", lambda u: u.account_status),
+    "tickets": ("Tickets", lambda u: u.ticket_count),
+    "created": ("Created", lambda u: u.created),
+    "updated": ("Updated", lambda u: u.updated),
+}
+
+ORG_EXPORT_COLUMNS = {
+    "name": ("Name", lambda o: o.name),
+    "users": ("Users", lambda o: o.user_count),
+    "created": ("Created", lambda o: o.created),
+    "updated": ("Updated", lambda o: o.updated),
+}
+
+
+async def _export(known: dict, lister, columns, field_names, **filters):
+    from app.core.csv_export import answer_cell, cell, rows_of
+    from app.core.db import AsyncSessionLocal
+    from app.modules.tickets.service import export_columns
+
+    keys = export_columns(known, columns)
+    customs = field_names or []
+
+    async def fetch(page: int, size: int):
+        async with AsyncSessionLocal() as session:
+            return (await lister(session, page=page, page_size=size, field_names=customs or None, **filters)).items
+
+    async def rows():
+        async for item in rows_of(fetch):
+            answers = {a.name: a for a in item.custom_fields or []}
+            yield [cell(known[k][1](item)) for k in keys] + [answer_cell(answers.get(n)) for n in customs]
+
+    return [known[k][0] for k in keys] + customs, rows()
+
+
+async def export_users(*, columns, field_names, **filters):
+    """(headers, rows) of the user directory the filters select: the rows ``GET /users`` lists, all pages."""
+    return await _export(USER_EXPORT_COLUMNS, list_users, columns, field_names, **filters)
+
+
+async def export_organizations(*, columns, field_names, **filters):
+    return await _export(ORG_EXPORT_COLUMNS, list_organizations, columns, field_names, **filters)

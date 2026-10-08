@@ -455,3 +455,39 @@ async def openable_task_number(session: AsyncSession, task_id: int, *, access) -
     """The task's number if it exists and ``access`` may open it, else None."""
     row = await repo.get_task(session, task_id, access=access)
     return str(row["number"]) if row else None
+
+
+TASK_EXPORT_COLUMNS = {
+    "number": ("Number", lambda t: t.number),
+    "title": ("Title", lambda t: t.title),
+    "status": ("Status", lambda t: t.status.name),
+    "department": ("Department", lambda t: t.dept_name),
+    "assigned_agent": ("Assigned agent", lambda t: t.assignee_name),
+    "assigned_team": ("Assigned team", lambda t: t.team_name),
+    "ticket": ("Ticket", lambda t: t.ticket_number),
+    "overdue": ("Overdue", lambda t: t.is_overdue),
+    "created": ("Created", lambda t: t.created),
+    "due_date": ("Due date", lambda t: t.due_date),
+    "closed": ("Closed", lambda t: t.closed),
+}
+
+
+async def export_tasks(*, access, columns: list[str] | None, field_names: list[str] | None, **filters):
+    """(headers, rows) of the task list the filters select: the rows ``GET /tasks/`` lists, all pages."""
+    from app.core.csv_export import answer_cell, cell, rows_of
+    from app.core.db import AsyncSessionLocal
+    from app.modules.tickets.service import export_columns
+
+    keys = export_columns(TASK_EXPORT_COLUMNS, columns)
+    customs = field_names or []
+
+    async def fetch(page: int, size: int):
+        async with AsyncSessionLocal() as session:
+            return (await list_tasks(session, access=access, page=page, page_size=size, field_names=customs or None, **filters)).items
+
+    async def rows():
+        async for t in rows_of(fetch):
+            answers = {a.name: a for a in t.custom_fields or []}
+            yield [cell(TASK_EXPORT_COLUMNS[k][1](t)) for k in keys] + [answer_cell(answers.get(n)) for n in customs]
+
+    return [TASK_EXPORT_COLUMNS[k][0] for k in keys] + customs, rows()

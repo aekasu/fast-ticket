@@ -766,3 +766,56 @@ async def openable_ticket_number(session: AsyncSession, ticket_id: int, *, acces
     """The ticket's number if it exists and ``access`` may open it, else None (a document is only generated for those)."""
     row = await repo.get_ticket(session, ticket_id, access=access)
     return str(row["number"]) if row else None
+
+
+# the columns of a ticket export, in osTicket's list order: key -> (header, value of a list item)
+TICKET_EXPORT_COLUMNS = {
+    "number": ("Ticket #", lambda t: t.number),
+    "subject": ("Subject", lambda t: t.subject),
+    "from": ("From", lambda t: t.user_name),
+    "status": ("Status", lambda t: t.status.name),
+    "priority": ("Priority", lambda t: t.priority_name),
+    "department": ("Department", lambda t: t.dept_name),
+    "topic": ("Help topic", lambda t: t.topic_name),
+    "sla": ("SLA plan", lambda t: t.sla_name),
+    "source": ("Source", lambda t: t.source),
+    "assigned_agent": ("Assigned agent", lambda t: t.assignee_name),
+    "assigned_team": ("Assigned team", lambda t: t.team_name),
+    "answered": ("Answered", lambda t: t.is_answered),
+    "overdue": ("Overdue", lambda t: t.is_overdue),
+    "created": ("Created", lambda t: t.created),
+    "last_activity": ("Last updated", lambda t: t.last_activity),
+    "due_date": ("Due date", lambda t: t.est_due_date),
+    "closed": ("Closed", lambda t: t.closed),
+}
+
+
+def export_columns(known: dict, wanted: list[str] | None) -> list[str]:
+    """The export's column keys: all of them, or the ones asked for (an unknown key is a 422)."""
+    if not wanted:
+        return list(known)
+    unknown = [k for k in wanted if k not in known]
+    if unknown:
+        raise HTTPException(status_code=422, detail=f"Unknown column(s): {', '.join(unknown)}. Known: {', '.join(known)}.")
+    return list(dict.fromkeys(wanted))
+
+
+async def export_tickets(*, access, columns: list[str] | None, field_names: list[str] | None, **filters):
+    """(headers, rows) of the ticket list the filters select: the same rows as ``GET /tickets/``, a page at a time in
+    sessions of their own (the request's session is closed before a streamed body is sent)."""
+    from app.core.csv_export import answer_cell, cell, rows_of
+    from app.core.db import AsyncSessionLocal
+
+    keys = export_columns(TICKET_EXPORT_COLUMNS, columns)
+    customs = field_names or []
+
+    async def fetch(page: int, size: int):
+        async with AsyncSessionLocal() as session:
+            return (await list_tickets(session, access=access, page=page, page_size=size, field_names=customs or None, **filters)).items
+
+    async def rows():
+        async for t in rows_of(fetch):
+            answers = {a.name: a for a in t.custom_fields or []}
+            yield [cell(TICKET_EXPORT_COLUMNS[k][1](t)) for k in keys] + [answer_cell(answers.get(n)) for n in customs]
+
+    return [TICKET_EXPORT_COLUMNS[k][0] for k in keys] + customs, rows()

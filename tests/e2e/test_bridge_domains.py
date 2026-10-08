@@ -1282,6 +1282,10 @@ def test_every_read_endpoint_answers_200(bridge):
         if resp.status_code != 200:
             failures.append(f"{path} -> {resp.status_code}")
             continue
+        if "text/csv" in paths[path]["get"]["responses"]["200"].get("content", {}):     # an export is a file, not JSON
+            if not resp.headers["content-type"].startswith("text/csv") or not resp.content.startswith(b"\xef\xbb\xbf"):
+                failures.append(f"{path} is not a CSV file")
+            continue
         body = resp.json()
         scan(path, body)
         rows = body.get("items") or next((v for v in body.values() if isinstance(v, list)), [])
