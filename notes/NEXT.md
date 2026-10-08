@@ -80,10 +80,9 @@ After that round the frontend adopted everything (its own `notes/BACKEND_REQUEST
 **Still open on the frontend's list, in the order I would take them:** attaching a canned response's files to the reply
 it fills, company profile / logos in settings. Email diagnostic and mailbox/SMTP setup stay out by decision.
 
-**Unexplained e2e flakes (2026-10-08):** three full `make test-e2e` runs in a row ended 97/98, 96/98, 97/98, each time
-with a *different* test failing (`test_a_protected_system_form_cannot_be_deleted`-era noise aside: a 401 in
-`test_read_scoping`, a `KeyError: 'table'` from the dashboard report in `test_system`) and each passing alone. Not tied to
-this session's changes (they pass in isolation and the touched code is not on those paths); the frontend reports the same
+**Unexplained e2e flakes (2026-10-08):** after the custom-fields change two full `make test-e2e` runs ended 97/98 (the
+failing test not captured) and 96/98 (a 401 in `test_read_scoping`, a `KeyError: 'table'` from the dashboard report in
+`test_system`). Each failed test passes alone, and the touched code is not on those paths; the frontend reports the same
 kind of run-to-run failure. Find the cause (login throttle? the bridge read timing out under load?) before trusting a red run.
 
 **Checked 2026-10-08, not a backend bug:** the frontend's failing "Overdue queue" e2e test. The API's overdue queue is
