@@ -1255,7 +1255,10 @@ def test_every_read_endpoint_answers_200(bridge):
     """
     import re
 
-    paths = bridge.read("/openapi.json")["paths"]
+    schema = bridge.get("/openapi.json")
+    if schema.status_code == 404:
+        pytest.skip("API_DOCS_ENABLED=false (the production setting) serves no schema to walk")
+    paths = schema.json()["paths"]
     getters = [p for p, ops in paths.items() if "get" in ops and "/auth/" not in p and p != "/health"]
     lists = [p for p in getters if "{" not in p and p != "/api/v1/search"]
     details = [p for p in getters if re.search(r"\{[^}/]+\}$", p)]

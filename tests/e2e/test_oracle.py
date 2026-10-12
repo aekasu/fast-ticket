@@ -14,6 +14,7 @@ Needs docker compose, and MYSQL_PASSWORD in the environment (``set -a; . ./.env;
 
 import json
 import os
+import re
 import subprocess
 from pathlib import Path
 
@@ -40,6 +41,7 @@ def _compose(*args, timeout=90):
 
 
 def sql(statement: str) -> list[list[str]]:
+    statement = re.sub(r"\bost_", os.environ.get("OSTICKET_TABLE_PREFIX", "ost_"), statement)   # the stack under test may use another prefix
     result = _compose("exec", "-T", "-e", f"MYSQL_PWD={os.environ['MYSQL_PASSWORD']}", "db",
                       "mariadb", "-uosticket", "osticket", "-N", "-B", "-e", statement)
     assert result.returncode == 0, f"SQL failed: {result.stderr[:300]}\n{statement[:200]}"
@@ -47,7 +49,8 @@ def sql(statement: str) -> list[list[str]]:
 
 
 def oracle(payload: dict) -> dict:
-    copied = subprocess.run(["docker", "cp", str(ORACLE), "fast-ticket-osticket-1:/tmp/oracle.php"], capture_output=True, text=True)
+    container = _compose("ps", "-q", "osticket").stdout.strip()      # whichever compose project is under test
+    copied = subprocess.run(["docker", "cp", str(ORACLE), f"{container}:/tmp/oracle.php"], capture_output=True, text=True)
     assert copied.returncode == 0, copied.stderr
     result = _compose("exec", "-T", "-u", "www-data", "osticket", "php", "/tmp/oracle.php", json.dumps(payload), timeout=120)
     marker = result.stdout.partition("ORACLE_JSON_BEGIN")[2].partition("ORACLE_JSON_END")[0]

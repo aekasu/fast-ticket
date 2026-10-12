@@ -13,7 +13,12 @@ def _snapshot(bridge) -> dict:
 
 
 def test_writing_a_section_back_unchanged_changes_nothing(bridge):
-    """osTicket's pages rewrite every key; the overlay must reproduce the stored state exactly."""
+    """osTicket's pages rewrite every key; the overlay must reproduce the stored state exactly.
+
+    The first save of a section writes keys osTicket had never stored (KNOWN_LIMITS), as on a fresh installation, so
+    the section is saved once before the state to compare is taken."""
+    for section in SECTIONS:
+        bridge.command("PATCH", f"/api/v1/settings/{section}", {})
     before = _snapshot(bridge)
     for section in SECTIONS:
         bridge.command("PATCH", f"/api/v1/settings/{section}", {})

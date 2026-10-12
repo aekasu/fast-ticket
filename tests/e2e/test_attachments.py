@@ -5,6 +5,7 @@ ost_attachment of type 'H' on the entry) with SQL, and removed afterwards. Needs
 """
 
 import os
+import re
 import subprocess
 from pathlib import Path
 
@@ -20,6 +21,7 @@ PASSWORD = "E2e-Pass-9x!Qz"
 
 
 def sql(statement: str) -> list[list[str]]:
+    statement = re.sub(r"\bost_", os.environ.get("OSTICKET_TABLE_PREFIX", "ost_"), statement)   # the stack under test may use another prefix
     result = subprocess.run(
         ["docker", "compose", "exec", "-T", "-e", f"MYSQL_PWD={os.environ['MYSQL_PASSWORD']}", "db",
          "mariadb", "-uosticket", "osticket", "-N", "-B", "-e", statement],
@@ -198,7 +200,8 @@ def test_a_new_ticket_takes_files_on_its_first_message_and_an_open_status(bridge
 
 def test_faq_and_canned_response_files_are_uploaded_listed_downloaded_and_removed(bridge, uniq):
     _sweep_uploaded(bridge, f"e2e-kb-{uniq}%")
-    cat = next(iter(bridge.read("/api/v1/kb/categories?page_size=1")["items"]))["id"]
+    cat = bridge.create("/api/v1/kb/categories", {"name": f"e2e kb files {uniq}", "description": "d", "is_public": True},
+                        cleanup="/api/v1/kb/categories/{id}")           # a fresh installation has none
     one, two = f"first {uniq}".encode(), bytes(range(256))
     faq = bridge.create("/api/v1/kb/faqs", {
         "category_id": cat, "question": f"e2e kb files {uniq}", "answer": "see attached",
