@@ -4,7 +4,11 @@ Things fast-ticket does not do yet, or does only partly, that someone relying on
 This is a **live list, not a changelog**: when a limit is fixed its entry is *deleted* (git history keeps
 it) and the commit that fixes it says so. Rules for keeping it honest are in `AGENTS.md` → "Known limits".
 
-Last reviewed: 2026-10-07 (partial review: this session added the settings, email-address, attachment-on-KB and custom-list entries and narrowed the custom-list and upload ones; the rest were last checked on 2026-10-04 and not re-run). Verified at the end: `make test-e2e` 96 passed.
+Last reviewed: 2026-10-12 (every entry checked against the code: the admin-only route guards in the authorization
+matrix, the registry's permission strings and the release handler, the `lastlogin` read, the unused outbox columns, the
+config defaults, `pcntl` use in the worker, and the live `make doctor`; nothing was found solved or wrong, so none was
+deleted). Verified: `make test` 955 passed, `make doctor` 0 failed (one expected warning: the dev stack's single
+all-privileges DB user). `make test-e2e` was not re-run in this review.
 
 Each entry: what is true today · what it means for you · what will resolve it (a phase from the plan, or
 "by design" if it is a deliberate trade-off).

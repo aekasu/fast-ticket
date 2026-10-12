@@ -59,6 +59,12 @@ below based on what the UI needs.
 
 ## Frontend requests (from `../fast-ticket-frontend/notes/BACKEND_REQUESTS.md`)
 
+**Re-read 2026-10-12: nothing actionable is open.** Every remaining item is already a KNOWN_LIMITS entry decided "by
+design / until a screen needs it" (company profile and logos, email diagnostic, mailbox/SMTP credentials, file-field
+and date min/max form options, a list's per-item properties, "Closed today" sub-queues and custom queues) or is on the
+frontend's side (holiday links UI; its "Overdue queue" test, see "Checked 2026-10-08" below). KNOWN_LIMITS was fully
+reviewed the same day (see its `Last reviewed`).
+
 **Everything in the frontend's list has an endpoint now** (2026-10-07; every change is in `notes/CHANGES_FOR_FRONTEND.md`,
 newest first — the frontend should `npm run api:pull` and adopt them): priority tie-break by last activity, "Completed"
 tasks, line breaks in messages, `GET /ticket-statuses`, status and files on ticket create, status on reply/note, link /
