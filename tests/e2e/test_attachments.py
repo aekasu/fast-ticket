@@ -251,6 +251,9 @@ def test_a_canned_responses_files_can_be_attached_to_the_reply_it_fills(bridge, 
     rendered = bridge.read(f"{url}/canned/{canned}")
     (file,) = rendered["files"]
     assert file["name"] == f"e2e-canned-{uniq}.txt"
+    # the plain-text box lists the same files (osTicket's own JSON listed only inline images there)
+    plain = bridge.read(f"{url}/canned/{canned}?plain=true")
+    assert plain["format"] == "text" and [(f["id"], f["name"], f["size"]) for f in plain["files"]] == [(file["id"], file["name"], file["size"])]
 
     done = bridge.command("POST", f"{url}/reply", {"message": rendered["response"], "canned_id": canned,
                                                    "canned_attachment_ids": [file["id"]]})

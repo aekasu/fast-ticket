@@ -46,10 +46,17 @@ class FastApiReadHandler {
         if (!is_array($data)) {
             throw new FastApiReadRefused(500, 'error', 'The premade reply could not be rendered.');
         }
+        // The response's own files, whatever the format asked for. osTicket's JSON lists the separate files for the
+        // HTML box but, for the plain-text box, only the *inline* ones (the images the text cannot show), so the
+        // plain call came back empty for a response with ordinary attachments: ask for both and list them once.
         $files = [];
-        foreach ((array) ($data['files'] ?? []) as $f) {
-            $files[] = ['id' => (int) $f['id'], 'name' => (string) $f['name'], 'size' => (int) $f['size']];
+        $kinds = !empty($params['plain']) ? [false, true] : [false];
+        foreach ($kinds as $inline) {
+            foreach ($canned->getAttachedFiles($inline) as $f) {
+                $files[(int) $f->id] = ['id' => (int) $f->id, 'name' => (string) $f->name, 'size' => (int) $f->size];
+            }
         }
+        $files = array_values($files);
         return ['id' => (int) $data['id'], 'title' => (string) $data['title'],
                 'response' => (string) $data['response'], 'files' => $files];
     }

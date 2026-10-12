@@ -304,8 +304,10 @@ class FastApiTicketHandler {
             throw new Exception('Premade reply not found: ' . (int) ($payload['canned_id'] ?? 0));
         }
         $have = [];
-        foreach ($canned->getAttachedFiles(false) as $file) {
-            $have[(int) $file->id] = (string) $file->name;
+        foreach ([false, true] as $inline) {      // what the HTML box lists, and the images the plain box lists
+            foreach ($canned->getAttachedFiles($inline) as $file) {
+                $have[(int) $file->id] = (string) $file->name;
+            }
         }
         $files = [];
         foreach ($ids as $id) {

@@ -6,6 +6,10 @@ After a backend change run `npm run api:pull && npm run api:types`, read the sna
 list below and remove the met entries from `BACKEND_REQUESTS.md`. This file is the backend's side of that handshake;
 delete an entry once the frontend has adopted it.
 
+## 2026-10-12 — canned response `files` with `?plain=true` (fix)
+
+- `GET /tickets/{id}/canned/{canned_id}?plain=true` returned `files: []` for a response with ordinary attachments: osTicket's own JSON lists the separate files for the HTML box but only the *inline* images for the plain-text box. `files` now lists the response's separate files whatever `plain` is (plain adds the inline images osTicket offers there), and `canned_attachment_ids` on a reply accepts any of them. Nothing to change in the UI; the workaround of asking for the HTML form to get the files can go.
+
 ## 2026-10-08 — files on a new task
 
 - `POST /tasks/` takes `attachments: [{name, content_type?, data (base64)}]` like a ticket's first message: the files are stored on the task's description (its first thread entry) and listed there. Same caps as every upload (`GET /settings/attachments`); osTicket's own size limit refuses the whole create with its wording.
