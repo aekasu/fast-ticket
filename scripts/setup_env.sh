@@ -28,6 +28,7 @@ MYSQL_ROOT_PW=$(gen_secret)
 MYSQL_PW=$(gen_secret)
 FASTAPI_KEY=$(gen_secret)
 JWT_SECRET=$(gen_secret)
+FASTAPI_DB_PW=$(openssl rand -hex 24)
 
 # Inject into .env using sed
 if [[ "$OSTYPE" == "darwin"* ]]; then
@@ -40,6 +41,7 @@ $SED_INPLACE "s/^MYSQL_ROOT_PASSWORD=.*/MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PW}/" "
 $SED_INPLACE "s/^MYSQL_PASSWORD=.*/MYSQL_PASSWORD=${MYSQL_PW}/" "$ENV_FILE"
 $SED_INPLACE "s/^FASTAPI_INTEGRATION_KEY=.*/FASTAPI_INTEGRATION_KEY=${FASTAPI_KEY}/" "$ENV_FILE"
 $SED_INPLACE "s/^JWT_SECRET_KEY=.*/JWT_SECRET_KEY=${JWT_SECRET}/" "$ENV_FILE"
+$SED_INPLACE "s/^FASTAPI_DB_PASSWORD=.*/FASTAPI_DB_PASSWORD=${FASTAPI_DB_PW}/" "$ENV_FILE"
 
 # By default, we auto-setup osTicket so users don't have to go through the web wizard.
 if ! grep -q "OSTICKET_AUTO_SETUP" "$ENV_FILE"; then

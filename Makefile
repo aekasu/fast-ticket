@@ -1,4 +1,4 @@
-.PHONY: bridge-zip doctor test test-unit test-integration test-e2e lint install
+.PHONY: bridge-zip doctor audit prod-up test test-unit test-integration test-e2e lint install
 
 PYTHON := .venv/bin/python
 
@@ -53,6 +53,15 @@ up-build:
 
 down:
 	docker compose down
+
+# Known vulnerabilities in the locked runtime dependencies (CI runs this on every push and weekly).
+audit:
+	uv export --frozen --no-dev --no-hashes --format requirements-txt -o notes/.scratch/requirements-audit.txt
+	uvx pip-audit -r notes/.scratch/requirements-audit.txt --no-deps --disable-pip
+
+# The production shape of the stack (notes/DEPLOYMENT.md): no dev override, the API as its least-privilege DB user.
+prod-up: init
+	docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 
 test-docker:
 	docker compose -f docker-compose.test.yml run --build --rm tests

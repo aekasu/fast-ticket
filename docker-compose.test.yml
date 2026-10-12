@@ -3,8 +3,8 @@ services:
     build:
       context: .
       dockerfile: docker/fastapi/Dockerfile
-    # pytest is in the `dev` extra; the image installs with --no-dev
-    command: ["uv", "run", "--extra", "dev", "pytest", "tests/", "-v", "--tb=short"]
+      target: test        # the runtime image has no dev extra and no tests
+    command: ["pytest", "tests/", "-v", "--tb=short"]
     volumes:
       # tests/unit/test_bridge_registry.py reads the PHP bridge as text; the API image
       # deliberately does not contain it.

@@ -1,0 +1,8 @@
+# Development conveniences, merged automatically by `docker compose up` (and `make start`).
+# A production deployment names its files explicitly and so does not load this one:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d      (notes/DEPLOYMENT.md)
+services:
+  api:
+    volumes:
+      - ./app:/app/app:ro       # the code is read from the working tree
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--ws-max-size", "65536", "--reload"]

@@ -66,7 +66,9 @@ TRUSTED_PROXY_COUNT=0                       # set to N only if N reverse proxies
 Agents whose accounts use two-factor authentication (or whom osTicket requires to enrol) are refused at login with a
 clear message — the API cannot complete a second factor yet. Use a non-2FA agent account for API access.
 
-Give the API a **least-privilege database user** — it reads osTicket's tables and only writes its own queue:
+Give the API a **least-privilege database user** — it reads osTicket's tables and only writes its own queue (the
+compose stack does this for you with `docker-compose.prod.yml`, `notes/DEPLOYMENT.md`; it has been run through the whole e2e
+suite):
 
 ```sql
 GRANT SELECT ON `<osticket-db>`.* TO 'fast_ticket'@'%';

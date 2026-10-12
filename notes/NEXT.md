@@ -154,15 +154,21 @@ Pick per need; each needs osTicket's rule read first (class + `scp/*.php` page),
 Reads outside its coverage rest on SQL-semantics tests only: user/org directories, KB, thread bodies, search over
 users. Add them one read at a time. Needs `MYSQL_PASSWORD` exported besides the admin login.
 
-### 3. Deployment hardening (KNOWN_LIMITS → "Hardening and deployment security")
-- Non-root API container, production compose profile (localhost-bound ports, TLS proxy note).
-- Add `pip-audit` (or equivalent) to CI.
-- Least-privilege DB users split in `docker-compose.yml` (`make doctor` prints the grants).
+### 3. Deployment hardening — DONE 2026-10-12
+Non-root, read-only API image (multi-stage, uv pinned), loopback ports by default, `docker-compose.override.yml` for
+dev and `docker-compose.prod.yml` for production (least-privilege `fast_ticket` DB user via a `db-grants` one-shot, no
+default admin password, docs off), CI (`.github/workflows/ci.yml`: tests, `pip-audit`, image check, weekly),
+`make audit` / `make prod-up`, `notes/DEPLOYMENT.md`. Verified: full e2e on the production shape (104/104; the schema
+walk skips itself because `/openapi.json` is off). Not done: TLS in the stack itself (a proxy is required; see
+DEPLOYMENT.md), hardening the osTicket containers (they are osTicket), auditing PHP / the osTicket image.
 
 ### 4. Portability still unproven
 - Install the plugin zip through osTicket's admin panel on a real instance (only the CLI installer was run).
-- Run the e2e suite against another osTicket/MySQL version, and a non-`ost_` prefix stack
-  (`docker compose -p other up`).
+- Run the e2e suite against another osTicket/MySQL version. **A non-`ost_` prefix is done** (2026-10-12: a second
+  project with `OSTICKET_TABLE_PREFIX=zz_`, 105/105 plus `make doctor` clean; to repeat: `COMPOSE_PROJECT_NAME=fastp
+  OSTICKET_TABLE_PREFIX=zz_ API_PORT=18000 OSTICKET_PORT=18080 MYSQL_PORT=23306 docker compose up -d --build`, then
+  `E2E_BASE_URL=http://localhost:18000 E2E_OSTICKET_READ_URL=http://localhost:18080/api/fast-ticket/read` with the same
+  `COMPOSE_PROJECT_NAME` and `OSTICKET_TABLE_PREFIX` exported for `make test-e2e`).
 - The bridge read mode exists (`bridge/read.php`; canned render and file streaming). The *full* "no direct DB access" mode, where every read goes through the bridge, does not: reads still query MySQL directly.
 
 ### 5. Smaller cleanups worth doing when nearby

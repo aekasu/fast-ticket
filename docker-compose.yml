@@ -24,7 +24,8 @@ services:
       context: .
       dockerfile: docker/osticket/Dockerfile
     ports:
-      - "${OSTICKET_PORT:-8080}:80"
+      # Loopback by default (put a TLS proxy in front, notes/DEPLOYMENT.md). OSTICKET_BIND=0.0.0.0 publishes it.
+      - "${OSTICKET_BIND:-127.0.0.1}:${OSTICKET_PORT:-8080}:80"
     volumes:
       # ost-config.php lives here (symlinked into osTicket by the entrypoint), not in git.
       - osticket_config:/var/osticket-config
@@ -104,10 +105,19 @@ services:
     build:
       context: .
       dockerfile: docker/fastapi/Dockerfile
+      target: runtime
     ports:
-      - "${API_PORT:-8000}:8000"
-    volumes:
-      - ./app:/app/app:ro       # hot-reload in dev; remove :ro for write access
+      # Loopback by default. API_BIND=0.0.0.0 publishes it (behind a TLS proxy, notes/DEPLOYMENT.md).
+      - "${API_BIND:-127.0.0.1}:${API_PORT:-8000}:8000"
+    # The container needs no privilege and no writable disk: it serves HTTP and talks to the database.
+    user: "10001:10001"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     environment:
       DATABASE_URL: mysql+aiomysql://osticket:${MYSQL_PASSWORD}@db:3306/osticket
       FASTAPI_INTEGRATION_KEY: ${FASTAPI_INTEGRATION_KEY}

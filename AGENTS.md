@@ -175,6 +175,7 @@ Read the relevant section **before** implementing any endpoint.
 - `notes/fast-ticket-bridge-bringup-and-testing.md` — Docker bring-up order, known footguns, testing each hop in isolation.
 - `notes/CLIENTS.md` / `notes/EVENTS.md` — the contract for anything that consumes the API: auth, the 202 command pattern, idempotency, CORS, and the WebSocket event stream.
 - `notes/KNOWN_LIMITS.md` — what fast-ticket does not do yet or does only partly (see "Known limits" below).
+- `notes/DEPLOYMENT.md` — what differs between the dev stack and one you leave running: compose files, the least-privilege DB user, TLS proxy, secrets, backups, upgrading, checklist.
 - `notes/install-on-an-existing-osticket.md` — installing the plugin zip on an existing osTicket, worker/cron, least-privilege DB user, `make doctor`.
 
 Implementation priority:
@@ -236,14 +237,16 @@ make logs         # follow osTicket logs
 make reset        # nuke all volumes (DB + persisted ost-config.php) for a clean reinstall; `make start` is idempotent on its own
 make install      # uv sync --extra dev
 make dev          # local uvicorn with reload (needs external MySQL)
-make test-docker  # isolated test suite in Docker
+make test-docker  # isolated test suite in Docker (the image's `test` stage: pinned deps, non-root)
+make audit        # pip-audit of the locked runtime dependencies (CI runs it on every push and weekly)
+make prod-up      # the production shape: docker-compose.yml + docker-compose.prod.yml (notes/DEPLOYMENT.md)
 make doctor       # preflight the osTicket instance the API points at (prefix, plugin tables, every read query, handshake, DB grants)
 make bridge-zip   # dist/fastapi_integration-<version>.zip — the plugin, for an existing osTicket
 ```
 
 The stack takes `OSTICKET_TABLE_PREFIX` and the host ports (`API_PORT`, `OSTICKET_PORT`, `MYSQL_PORT`) from the environment, so a second stack can run beside the first (`docker compose -p other up`) — that is how a non-`ost_` prefix is tested end to end. The bridge plugin creates the integration tables itself (`bridge/schema.php`); the API does not (`AUTO_CREATE_SCHEMA=false`).
 
-FastAPI: http://localhost:8000 (`/docs`) · osTicket: http://localhost:8080 (`/scp`) · MySQL on host port 13306.
+FastAPI: http://localhost:8000 (`/docs`) · osTicket: http://localhost:8080 (`/scp`) · MySQL on host port 13306 — all bound to loopback (`API_BIND`/`OSTICKET_BIND` to change). `docker-compose.override.yml` (dev: mounted source, `--reload`) is loaded automatically; a deployment names `-f docker-compose.yml -f docker-compose.prod.yml` instead.
 
 ---
 

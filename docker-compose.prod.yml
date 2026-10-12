@@ -1,0 +1,47 @@
+# Production additions to docker-compose.yml. Name both files so the development override is not loaded:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#
+# What it changes (notes/DEPLOYMENT.md has the rest: TLS proxy, secrets, backups):
+#   * the API connects as `fast_ticket`, a database user that may read osTicket's tables and write only its own two
+#     queue tables (it cannot touch tickets, staff or settings — those go through the bridge);
+#   * no default admin password: the stack refuses to start without one;
+#   * the API is not reloaded and has no source mounted (docker-compose.override.yml is what adds those).
+services:
+  # One-shot: create/refresh the API's database user once osTicket and the plugin have created their tables.
+  db-grants:
+    image: mariadb:10.11
+    depends_on:
+      db:
+        condition: service_healthy
+      osticket:
+        condition: service_healthy
+    environment:
+      MARIADB_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD in .env}
+      FASTAPI_DB_PASSWORD: ${FASTAPI_DB_PASSWORD:?Set FASTAPI_DB_PASSWORD in .env (openssl rand -hex 24)}
+      PREFIX: ${OSTICKET_TABLE_PREFIX:-ost_}
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        mariadb -h db -uroot -p"$$MARIADB_ROOT_PASSWORD" <<SQL
+        CREATE USER IF NOT EXISTS 'fast_ticket'@'%' IDENTIFIED BY '$$FASTAPI_DB_PASSWORD';
+        ALTER USER 'fast_ticket'@'%' IDENTIFIED BY '$$FASTAPI_DB_PASSWORD';
+        REVOKE ALL PRIVILEGES, GRANT OPTION FROM 'fast_ticket'@'%';
+        GRANT SELECT ON osticket.* TO 'fast_ticket'@'%';
+        GRANT INSERT, DELETE ON osticket.\`$${PREFIX}integration_inbox\` TO 'fast_ticket'@'%';
+        GRANT UPDATE, DELETE ON osticket.\`$${PREFIX}integration_outbox\` TO 'fast_ticket'@'%';
+        FLUSH PRIVILEGES;
+        SQL
+    restart: "no"
+
+  osticket:
+    environment:
+      OSTICKET_ADMIN_PASSWORD: ${OSTICKET_ADMIN_PASSWORD:?Set OSTICKET_ADMIN_PASSWORD in .env}
+
+  api:
+    depends_on:
+      db-grants:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: mysql+aiomysql://fast_ticket:${FASTAPI_DB_PASSWORD}@db:3306/osticket
+      API_DOCS_ENABLED: ${API_DOCS_ENABLED:-false}
