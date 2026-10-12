@@ -6,6 +6,11 @@ After a backend change run `npm run api:pull && npm run api:types`, read the sna
 list below and remove the met entries from `BACKEND_REQUESTS.md`. This file is the backend's side of that handshake;
 delete an entry once the frontend has adopted it.
 
+## 2026-10-12 — Manage Forms on a ticket, a user and an organization
+
+- `GET /tickets/{id}/forms`, `GET /users/{id}/forms`, `GET /orgs/{id}/forms` → `{forms:[{entry_id, form_id, title, kind: built_in|extra, sort}], available:[{form_id, title}]}`: the forms the object carries in order, and the extra forms that can still be added (osTicket's Manage Forms dialog). Needs `ticket.edit` / `user.edit` / `org.edit`, as the dialog does (404 for a ticket the agent may not open).
+- `PUT /tickets/{id}/forms`, `PUT /users/{id}/forms`, `PUT /orgs/{id}/forms` with `{form_ids: [..]}` → 202: **the whole ordered list**, built-in form(s) included (send the listed `built_in` ids back). A form left out is removed together with its answers (osTicket warns before saving — the UI should too); a form not yet there is added empty. The object's built-in form cannot be left out, only extra forms (`kind: extra`, from `available`) can be added, and an id twice or ≤ 0 is a 422. After it, the object's `custom_fields` list the new form's fields (empty) and drop the removed form's.
+
 ## 2026-10-12 — canned response `files` with `?plain=true` (fix)
 
 - `GET /tickets/{id}/canned/{canned_id}?plain=true` returned `files: []` for a response with ordinary attachments: osTicket's own JSON lists the separate files for the HTML box but only the *inline* images for the plain-text box. `files` now lists the response's separate files whatever `plain` is (plain adds the inline images osTicket offers there), and `canned_attachment_ids` on a reply accepts any of them. Nothing to change in the UI; the workaround of asking for the HTML form to get the files can go.

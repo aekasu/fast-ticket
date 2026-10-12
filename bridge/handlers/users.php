@@ -97,6 +97,20 @@ class FastApiUserHandler {
         return ['imported' => (int) $status];
     }
 
+    /**
+     * "Manage Forms" on a user (ajax.users.php updateForms): the ordered list of extra forms. A form left out is
+     * removed with its answers. Payload: user_id, form_ids.
+     */
+    public static function updateForms($payload, $staff_id) {
+        $owner = User::lookup((int) ($payload['user_id'] ?? 0));
+        if (!$owner) {
+            throw new Exception("User not found: " . ($payload['user_id'] ?? ''));
+        }
+        FastApiModel::manageForms($owner->getId(), 'U', (array) ($payload['form_ids'] ?? []),
+            function ($form, $sort) use ($owner) { $owner->addForm($form, $sort); });
+        return ['user_id' => $owner->getId()];
+    }
+
     public static function create($payload, $staff_id) {
         $email = self::requireEmail($payload['email'] ?? '');
         $name  = trim((string) ($payload['name'] ?? ''));

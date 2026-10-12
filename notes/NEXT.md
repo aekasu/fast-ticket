@@ -75,12 +75,12 @@ CSV export of the dashboard report (the frontend builds it from `table`).
 
 After that round the frontend adopted everything (its own `notes/BACKEND_REQUESTS.md` lists what is left). Since then:
 `GET /settings/options` (the drop-down choices of the settings pages, via the bridge read mode) is done. Verified:
-`make test` 944, `make test-docker` 944, `make test-e2e` 104 on a rebuilt stack (oracle included).
+`make test` 955, `make test-docker` 955, `make test-e2e` 105 on a rebuilt stack (oracle included).
 
 **Breadth added 2026-10-08 at the user's request ("expand the breadth slightly, in depth, as general osTicket
 functionality"):** ticket and task Print (PDF), ticket Export to ZIP, CSV export of the ticket / task / user / organization
-lists, ticket-status create/edit/delete, files on a new task (see `CHANGES_FOR_FRONTEND.md`). Candidates for the next
-round, none started: managing the extra forms on a ticket, custom queues (read-only; the query builder itself stays
+lists, ticket-status create/edit/delete, files on a new task (see `CHANGES_FOR_FRONTEND.md`). Managing the extra forms on a ticket / user / organization is
+done too. Candidates for the next round, none started: custom queues (read-only; the query builder itself stays
 unexposed per AGENTS.md), exporting agents / department members, canned files on task updates. **Not worth doing:**
 staff CSV import (osTicket has `Staff::importCsv` but no page uses it, and it creates agents without a department, role
 or password). Company profile / logos in settings

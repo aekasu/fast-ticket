@@ -289,6 +289,22 @@ class FastApiTicketHandler {
     }
 
     /**
+     * "Manage Forms" on a ticket (ajax.tickets.php updateForms): the ordered list of extra forms. Needs ticket.edit.
+     * Payload: ticket_id, form_ids. A form left out is removed with its answers.
+     */
+    public static function updateForms($payload, $staff_id) {
+        $ticket = self::requireTicket($payload['ticket_id'] ?? 0);
+        self::requirePerm($ticket, Ticket::PERM_EDIT, 'edit the forms of');
+        $id = $ticket->getId();
+        FastApiModel::manageForms($id, 'T', (array) ($payload['form_ids'] ?? []), function ($form, $sort) use ($id) {
+            $entry = $form->instanciate($sort);
+            $entry->setTicketId($id);
+            $entry->save();
+        });
+        return ['ticket_id' => $id];
+    }
+
+    /**
      * The files of the premade reply the agent picked, attached to the reply the way osTicket's reply box does (its
      * script adds the response's files to the attachment field). Each id must be a separate file of an enabled
      * premade reply; the API has already checked the agent may use it.

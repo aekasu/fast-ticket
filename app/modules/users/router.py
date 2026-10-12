@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.csv_export import csv_response
 from app.core.custom_fields import custom_fields_query
+from app.core.object_forms import ObjectForms, ObjectFormsUpdate
 from app.core.db import get_session
 from app.core.security import require_perm
 from app.modules.users import service
@@ -87,6 +88,52 @@ async def list_organizations(
     return await service.list_organizations(
         session, page=page, page_size=page_size,
         field_names=field_names, q=q, sort=sort, descending=descending)
+
+
+@router.get("/users/{user_id}/forms", response_model=ObjectForms, summary="The forms on a user and the extra forms that can be added")
+async def user_forms(
+    user_id: int,
+    current_user: dict = require_perm("user.edit"),   # ajax.users.php manageForms(): User::PERM_EDIT
+    session: AsyncSession = Depends(get_session),
+):
+    found = await service.user_forms(session, user_id)
+    if found is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    return found
+
+
+@router.put("/users/{user_id}/forms", response_model=CommandResponse, status_code=202, summary="Set the forms a user carries and their order")
+async def update_user_forms(
+    user_id: int,
+    body: ObjectFormsUpdate,
+    current_user: dict = require_perm("user.edit"),
+    session: AsyncSession = Depends(get_session),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    return await service.update_user_forms(session, user_id, body.form_ids, current_user["staff_id"], idempotency_key)
+
+
+@router.get("/orgs/{org_id}/forms", response_model=ObjectForms, summary="The forms on an organization and the extra forms that can be added")
+async def organization_forms(
+    org_id: int,
+    current_user: dict = require_perm("org.edit"),   # ajax.orgs.php manageForms(): Organization::PERM_EDIT
+    session: AsyncSession = Depends(get_session),
+):
+    found = await service.organization_forms(session, org_id)
+    if found is None:
+        raise HTTPException(status_code=404, detail="Organization not found")
+    return found
+
+
+@router.put("/orgs/{org_id}/forms", response_model=CommandResponse, status_code=202, summary="Set the forms an organization carries and their order")
+async def update_organization_forms(
+    org_id: int,
+    body: ObjectFormsUpdate,
+    current_user: dict = require_perm("org.edit"),
+    session: AsyncSession = Depends(get_session),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    return await service.update_organization_forms(session, org_id, body.form_ids, current_user["staff_id"], idempotency_key)
 
 
 @router.get("/orgs/{org_id}", response_model=OrganizationDetail, summary="Get organization")

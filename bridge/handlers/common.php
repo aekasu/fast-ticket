@@ -224,6 +224,48 @@ class FastApiModel {
         }
     }
 
+    /**
+     * Set which extra forms an object carries and in what order (osTicket's "Manage Forms" dialog:
+     * ajax.tickets.php / ajax.users.php / ajax.orgs.php updateForms). $wanted is the whole ordered list of form ids; a
+     * form left out is removed *with its answers*, a form not yet there is added empty. osTicket's own handler lets the
+     * dialog's list say anything; here the built-in form of the object must stay, and only extra forms (type "G"
+     * and not deleted) may be added. $add($dynamicForm, $sort) adds one to the object.
+     */
+    static function manageForms($object_id, $object_type, array $wanted, $add) {
+        $wanted = array_values(array_unique(array_map('intval', $wanted)));
+        $entries = DynamicFormEntry::forObject($object_id, $object_type)->all();
+        $present = [];
+        foreach ($entries as $entry) {
+            $form = $entry->getDynamicForm();
+            $present[(int) $entry->get('form_id')] = $entry;
+            if ($form && $form->get('type') !== 'G' && !in_array((int) $entry->get('form_id'), $wanted, true)) {
+                throw new Exception("The '" . $form->getTitle() . "' form is built in and cannot be removed.");
+            }
+        }
+        foreach ($wanted as $id) {
+            if (isset($present[$id])) {
+                continue;
+            }
+            $form = DynamicForm::lookup($id);
+            if (!$form || $form->get('type') !== 'G' || $form->isDeleted()) {
+                throw new Exception("Form not found or not an extra form: {$id}");
+            }
+        }
+        foreach ($wanted as $sort => $id) {
+            if (isset($present[$id])) {
+                $present[$id]->set('sort', $sort);
+                $present[$id]->save();
+            } else {
+                $add(DynamicForm::lookup($id), $sort);
+            }
+        }
+        foreach ($present as $id => $entry) {
+            if (!in_array($id, $wanted, true)) {
+                $entry->delete();
+            }
+        }
+    }
+
     static function applyAnswers($owner, array $values, $form_type) {
         $errors = [];
         $entries = [];

@@ -68,7 +68,7 @@ POLICY = {
     "DELETE /api/v1/canned/{canned_id}": "perm:canned.manage",
 
     # ── directory ──────────────────────────────────────────────────────────
-    "GET /api/v1/users": "perm:user.dir", "GET /api/v1/users/export": "perm:user.dir", "GET /api/v1/orgs/export": "perm:user.dir", "GET /api/v1/users/{user_id}": "perm:user.dir",
+    "GET /api/v1/users": "perm:user.dir", "GET /api/v1/users/{user_id}/forms": "perm:user.edit", "PUT /api/v1/users/{user_id}/forms": "perm:user.edit", "GET /api/v1/orgs/{org_id}/forms": "perm:org.edit", "PUT /api/v1/orgs/{org_id}/forms": "perm:org.edit", "GET /api/v1/tickets/{ticket_id}/forms": "perm:ticket.edit", "PUT /api/v1/tickets/{ticket_id}/forms": "perm:ticket.edit", "GET /api/v1/users/export": "perm:user.dir", "GET /api/v1/orgs/export": "perm:user.dir", "GET /api/v1/users/{user_id}": "perm:user.dir",
     "POST /api/v1/users": "perm:user.create", "PATCH /api/v1/users/{user_id}": "perm:user.edit",
     "DELETE /api/v1/users/{user_id}": "perm:user.delete",
     "GET /api/v1/orgs": "perm:user.dir", "GET /api/v1/orgs/{org_id}": "perm:user.dir",

@@ -1857,3 +1857,63 @@ def test_ticket_status_lifecycle_and_osticket_refusals(bridge, uniq):
 
     bridge.command("DELETE", url)
     assert bridge.get(url).status_code == 404
+
+
+def test_manage_the_forms_on_a_ticket_a_user_and_an_organization(bridge, uniq):
+    form = bridge.create("/api/v1/forms", {"title": f"e2e-extra-{uniq}", "type": "G"}, cleanup="/api/v1/forms/{id}")
+    name = f"xtra{uniq[:6]}"
+    bridge.command("POST", f"/api/v1/forms/{form}/fields", {"label": "Extra note", "type": "text", "name": name})
+    tk = bridge.create("/api/v1/tickets/", {"subject": f"e2e forms {uniq}", "message": "m", "email": _email(uniq, "mf"),
+                                            "name": "MF", "dept_id": 1, "topic_id": 1})
+    holder = bridge.read(f"/api/v1/tickets/{tk}")
+    bridge._cleanups.append(("DELETE", f"/api/v1/users/{holder['user_id']}"))
+    bridge._cleanups.append(("DELETE", f"/api/v1/tickets/{tk}"))
+    url = f"/api/v1/tickets/{tk}/forms"
+
+    before = bridge.read(url)
+    core = [f["form_id"] for f in before["forms"]]
+    assert core and all(f["kind"] == "built_in" for f in before["forms"])
+    assert form in [f["form_id"] for f in before["available"]] and not set(core) & {f["form_id"] for f in before["available"]}
+    assert name not in {a["name"] for a in bridge.read(f"/api/v1/tickets/{tk}")["custom_fields"]}
+
+    # add it: listed, its field appears on the ticket (empty), and can be answered
+    bridge.command("PUT", url, {"form_ids": core + [form]})
+    after = bridge.read(url)
+    assert [f["form_id"] for f in after["forms"]] == core + [form] and after["forms"][-1]["kind"] == "extra"
+    assert form not in [f["form_id"] for f in after["available"]]
+    assert _answers(bridge.read(f"/api/v1/tickets/{tk}"))[name]["value"] in (None, "")
+    bridge.command("PATCH", f"/api/v1/tickets/{tk}", {"custom_fields": {name: "kept for a while"}})
+    assert _answers(bridge.read(f"/api/v1/tickets/{tk}"))[name]["value"] == "kept for a while"
+
+    # re-sending the same list changes nothing (and keeps the answer)
+    bridge.command("PUT", url, {"form_ids": core + [form]})
+    assert _answers(bridge.read(f"/api/v1/tickets/{tk}"))[name]["value"] == "kept for a while"
+
+    # osTicket's rules, tightened where its dialog trusted the browser
+    bridge.refuses("PUT", url, {"form_ids": [form]}, because="built in and cannot be removed")
+    bridge.refuses("PUT", url, {"form_ids": core + [form, 999999]}, because="not found or not an extra form")
+    bridge.refuses("PUT", url, {"form_ids": core + [form, 1]}, because="not found or not an extra form")   # the user form
+    assert bridge.client.put(url, json={"form_ids": core + [form, form]}).status_code == 422
+    assert bridge.client.put(url, json={"form_ids": [0]}).status_code == 422
+    assert [f["form_id"] for f in bridge.read(url)["forms"]] == core + [form]                              # nothing changed
+
+    # remove it: the form and its answers go
+    bridge.command("PUT", url, {"form_ids": core})
+    assert [f["form_id"] for f in bridge.read(url)["forms"]] == core
+    assert name not in {a["name"] for a in bridge.read(f"/api/v1/tickets/{tk}")["custom_fields"]}
+    assert bridge.get("/api/v1/tickets/999999/forms").status_code == 404
+
+    # a user and an organization the same way
+    for kind, create, key in (("users", {"name": "E2E Forms User", "email": _email(uniq, "mfu")}, "users"),
+                              ("orgs", {"name": f"e2e forms org {uniq}"}, "orgs")):
+        oid = bridge.create(f"/api/v1/{kind}", create, cleanup=f"/api/v1/{key}/" + "{id}")
+        ourl = f"/api/v1/{kind}/{oid}/forms"
+        got = bridge.read(ourl)
+        base = [f["form_id"] for f in got["forms"]]
+        assert base and form in [f["form_id"] for f in got["available"]]
+        bridge.command("PUT", ourl, {"form_ids": base + [form]})
+        assert [f["form_id"] for f in bridge.read(ourl)["forms"]] == base + [form]
+        bridge.refuses("PUT", ourl, {"form_ids": [form]}, because="built in and cannot be removed")
+        bridge.command("PUT", ourl, {"form_ids": base})
+        assert [f["form_id"] for f in bridge.read(ourl)["forms"]] == base
+        assert bridge.get(f"/api/v1/{kind}/999999/forms").status_code == 404

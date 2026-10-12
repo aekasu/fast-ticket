@@ -34,6 +34,7 @@ return [
     'ticket.refer'            => ['tickets', 'FastApiTicketHandler', 'refer', 'ticket.referred', 'role:ticket.assign'],
     'ticket.transfer'         => ['tickets', 'FastApiTicketHandler', 'transfer', 'ticket.transferred', 'role:ticket.transfer'],
     'ticket.update'           => ['tickets', 'FastApiTicketHandler', 'update', 'ticket.updated', 'role:ticket.edit'],
+    'ticket.forms.update'     => ['tickets', 'FastApiTicketHandler', 'updateForms', 'ticket.forms_updated', 'role:ticket.edit'],
     'ticket.change_owner'     => ['tickets', 'FastApiTicketHandler', 'changeOwner', 'ticket.owner_changed', 'role:ticket.edit'],
     'ticket.delete'           => ['tickets', 'FastApiTicketHandler', 'delete', 'ticket.deleted', 'role:ticket.delete'],
     'ticket.merge'            => ['tickets', 'FastApiTicketHandler', 'merge', 'ticket.merged', 'role:ticket.merge'],
@@ -66,6 +67,7 @@ return [
     'user.create'             => ['users', 'FastApiUserHandler', 'create', 'user.created', 'global:user.create'],
     'user.import'             => ['users', 'FastApiUserHandler', 'import', 'user.imported', 'global:user.create'],
     'user.update'             => ['users', 'FastApiUserHandler', 'update', 'user.updated', 'global:user.edit'],
+    'user.forms.update'       => ['users', 'FastApiUserHandler', 'updateForms', 'user.forms_updated', 'global:user.edit'],
     'user.delete'             => ['users', 'FastApiUserHandler', 'delete', 'user.deleted', 'global:user.delete'],
     'user.account.register'   => ['users', 'FastApiUserHandler', 'registerAccount', 'user.account_registered', 'global:user.manage'],
     'user.account.update'     => ['users', 'FastApiUserHandler', 'updateAccount', 'user.account_updated', 'global:user.manage'],
@@ -74,6 +76,7 @@ return [
 
     'org.create'              => ['orgs', 'FastApiOrgHandler', 'create', 'org.created', 'global:org.create'],
     'org.update'              => ['orgs', 'FastApiOrgHandler', 'update', 'org.updated', 'global:org.edit'],
+    'org.forms.update'        => ['orgs', 'FastApiOrgHandler', 'updateForms', 'org.forms_updated', 'global:org.edit'],
     'org.delete'              => ['orgs', 'FastApiOrgHandler', 'delete', 'org.deleted', 'global:org.delete'],
 
     'kb.category.create'      => ['kb', 'FastApiKbHandler', 'createCategory', 'kb.category.created', 'global:faq.manage'],

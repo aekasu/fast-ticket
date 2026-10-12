@@ -83,6 +83,7 @@ UNSCOPED_BY_DESIGN = {
     "get_help_topic_sort_mode": "an instance setting (how help topics are ordered), not agent or ticket data",
     "get_agent_name_format": "an instance setting (how agent names are written), not agent or ticket data",
     "list_priorities": "osTicket offers every priority to every agent (Priority::getPriorities)",
+    "get_user_form_entries": "user directory, not scoped (as its list)", "get_organization_form_entries": "organization directory, not scoped (as its list)", "list_attachable_forms": "reference data: the extra forms the Manage Forms dialog offers (ticket.edit / user.edit / org.edit on the routes)",
     "list_ticket_status_details": "Admin Panel (ticket statuses)", "get_ticket_status_detail": "Admin Panel (ticket statuses)",
     "list_ticket_statuses": "reference data: osTicket offers the enabled statuses to every agent (TicketStatusList::getStatuses)",
     # Knowledge base: osTicket applies no permission to viewing FAQs.

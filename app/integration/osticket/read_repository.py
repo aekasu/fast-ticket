@@ -529,6 +529,44 @@ async def get_list_custom_fields(
     return list(result.mappings().all())
 
 
+_FORM_ENTRIES_SQL = """
+    SELECT fe.id AS entry_id, fe.form_id, fe.sort, f.title, f.type
+    FROM ost_form_entry fe JOIN ost_form f ON f.id = fe.form_id
+    WHERE fe.object_type = :object_type AND fe.object_id = :object_id {visible}
+    ORDER BY fe.sort, fe.id
+"""
+
+
+async def get_ticket_form_entries(session: AsyncSession, ticket_id: int, *, access: "Scope") -> list:
+    """The forms a ticket carries, in order (nothing if the agent may not open the ticket)."""
+    sql = _FORM_ENTRIES_SQL.replace("{visible}", _visible_ticket(access))
+    result = await session.execute(_sql(sql), {"object_type": "T", "object_id": ticket_id, "ticket_id": ticket_id})
+    return list(result.mappings().all())
+
+
+async def _directory_form_entries(session: AsyncSession, object_type: str, object_id: int) -> list:
+    result = await session.execute(_sql(_FORM_ENTRIES_SQL.replace("{visible}", "")),
+                                   {"object_type": object_type, "object_id": object_id})
+    return list(result.mappings().all())
+
+
+async def get_user_form_entries(session: AsyncSession, user_id: int) -> list:
+    """The forms a user carries, in order (the directory is not scoped, as its list)."""
+    return await _directory_form_entries(session, "U", user_id)
+
+
+async def get_organization_form_entries(session: AsyncSession, org_id: int) -> list:
+    """The forms an organization carries, in order."""
+    return await _directory_form_entries(session, "O", org_id)
+
+
+async def list_attachable_forms(session: AsyncSession, limit: int = 200, offset: int = 0) -> list:
+    """The extra forms ("G", not deleted) an object may be given: what the Manage Forms dialog's Add box offers."""
+    sql = ("SELECT f.id AS form_id, f.title FROM ost_form f WHERE f.type = 'G' AND (f.flags & 2) = 0 "
+           "ORDER BY f.title ASC LIMIT :limit OFFSET :offset")
+    return list((await session.execute(_sql(sql), {"limit": limit, "offset": offset})).mappings().all())
+
+
 async def get_ticket_collaborators(session: AsyncSession, ticket_id: int, *, access: "Scope") -> list:
     """Return collaborators for a ticket (nothing if the agent may not open it)."""
     sql = """

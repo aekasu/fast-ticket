@@ -819,3 +819,20 @@ async def export_tickets(*, access, columns: list[str] | None, field_names: list
             yield [cell(TICKET_EXPORT_COLUMNS[k][1](t)) for k in keys] + [answer_cell(answers.get(n)) for n in customs]
 
     return [TICKET_EXPORT_COLUMNS[k][0] for k in keys] + customs, rows()
+
+
+async def ticket_forms(session: AsyncSession, ticket_id: int, *, access):
+    """The ticket's forms with the extra forms that can be added, or None if the agent may not open the ticket."""
+    from app.core.object_forms import present
+
+    if await repo.get_ticket(session, ticket_id, access=access) is None:
+        return None
+    return present(await repo.get_ticket_form_entries(session, ticket_id, access=access),
+                   await repo.list_attachable_forms(session))
+
+
+async def update_ticket_forms(session: AsyncSession, ticket_id: int, form_ids: list[int], staff_id: int, idempotency_key: str | None) -> CommandResponse:
+    cmd = await dispatch_command(
+        session=session, command_type="ticket.forms.update", aggregate_type="ticket", aggregate_id=str(ticket_id),
+        payload={"ticket_id": ticket_id, "form_ids": form_ids}, requested_by_staff_id=staff_id, idempotency_key=idempotency_key)
+    return _make_cmd_response(cmd, idempotency_key)

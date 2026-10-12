@@ -169,6 +169,20 @@ class FastApiOrgHandler {
         }
     }
 
+    /**
+     * "Manage Forms" on a org (ajax.orgs.php updateForms): the ordered list of extra forms. A form left out is
+     * removed with its answers. Payload: org_id, form_ids.
+     */
+    public static function updateForms($payload, $staff_id) {
+        $owner = Organization::lookup((int) ($payload['org_id'] ?? 0));
+        if (!$owner) {
+            throw new Exception("Org not found: " . ($payload['org_id'] ?? ''));
+        }
+        FastApiModel::manageForms($owner->getId(), 'O', (array) ($payload['form_ids'] ?? []),
+            function ($form, $sort) use ($owner) { $owner->addForm($form, $sort); });
+        return ['org_id' => $owner->getId()];
+    }
+
     public static function create($payload, $staff_id) {
         $name = self::uniqueName($payload['name'] ?? '');
 

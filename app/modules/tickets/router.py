@@ -23,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.attachments import bridge_download, file_response
 from app.core.csv_export import csv_response
+from app.core.object_forms import ObjectForms, ObjectFormsUpdate
 from app.core.custom_fields import custom_fields_query
 from app.core.db import get_session
 from app.core.security import require_perm, require_staff
@@ -180,6 +181,40 @@ async def get_ticket(
     if ticket is None:
         raise HTTPException(status_code=404, detail=f"Ticket {ticket_id} not found.")
     return ticket
+
+
+@router.get(
+    "/{ticket_id}/forms",
+    response_model=ObjectForms,
+    summary="The forms on a ticket, and the extra forms that can be added (osTicket's Manage Forms)",
+)
+async def ticket_forms(
+    ticket_id: int,
+    current_user: dict = require_perm("ticket.edit"),   # ajax.tickets.php manageForms(): Ticket::PERM_EDIT
+    session: AsyncSession = Depends(get_session),
+):
+    found = await service.ticket_forms(session, ticket_id, access=current_user["access"])
+    if found is None:
+        raise HTTPException(status_code=404, detail="Ticket not found.")
+    return found
+
+
+@router.put(
+    "/{ticket_id}/forms",
+    response_model=CommandResponse,
+    status_code=202,
+    summary="Set the forms a ticket carries and their order",
+)
+async def update_ticket_forms(
+    ticket_id: int,
+    body: ObjectFormsUpdate,
+    current_user: dict = require_perm("ticket.edit"),
+    session: AsyncSession = Depends(get_session),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    """The whole ordered list: the ticket's built-in form(s) must stay; an extra form left out is removed together
+    with its answers; an extra form not yet there is added empty."""
+    return await service.update_ticket_forms(session, ticket_id, body.form_ids, current_user["staff_id"], idempotency_key)
 
 
 @router.get(

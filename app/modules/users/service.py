@@ -385,3 +385,34 @@ async def export_users(*, columns, field_names, **filters):
 
 async def export_organizations(*, columns, field_names, **filters):
     return await _export(ORG_EXPORT_COLUMNS, list_organizations, columns, field_names, **filters)
+
+
+async def user_forms(session: AsyncSession, user_id: int):
+    """The forms of a user and the extra forms that can be added; None if there is no such user."""
+    from app.core.object_forms import present
+
+    if not await repo.get_user(session, user_id):
+        return None
+    return present(await repo.get_user_form_entries(session, user_id), await repo.list_attachable_forms(session))
+
+
+async def organization_forms(session: AsyncSession, org_id: int):
+    from app.core.object_forms import present
+
+    if not await repo.get_organization(session, org_id):
+        return None
+    return present(await repo.get_organization_form_entries(session, org_id), await repo.list_attachable_forms(session))
+
+
+async def update_user_forms(session: AsyncSession, user_id: int, form_ids: list[int], staff_id: int, idempotency_key: str | None):
+    cmd = await dispatch_command(
+        session=session, command_type="user.forms.update", aggregate_type="user", aggregate_id=str(user_id),
+        payload={"user_id": user_id, "form_ids": form_ids}, requested_by_staff_id=staff_id, idempotency_key=idempotency_key)
+    return CommandResponse(command_id=cmd.id, status=cmd.status, idempotency_key=idempotency_key)
+
+
+async def update_organization_forms(session: AsyncSession, org_id: int, form_ids: list[int], staff_id: int, idempotency_key: str | None):
+    cmd = await dispatch_command(
+        session=session, command_type="org.forms.update", aggregate_type="org", aggregate_id=str(org_id),
+        payload={"org_id": org_id, "form_ids": form_ids}, requested_by_staff_id=staff_id, idempotency_key=idempotency_key)
+    return CommandResponse(command_id=cmd.id, status=cmd.status, idempotency_key=idempotency_key)
