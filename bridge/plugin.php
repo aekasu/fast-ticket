@@ -504,7 +504,6 @@ class FastApiIntegrationPlugin extends Plugin {
      * Register the auth API endpoint.
      */
     function registerApiEndpoints($dispatcher) {
-        error_log("FastApiIntegrationPlugin registerApiEndpoints CALLED! " . get_class($dispatcher));
         $dispatcher->append(
             url_post("^/auth/integration", array($this, 'authenticateForFastApi'))
         );

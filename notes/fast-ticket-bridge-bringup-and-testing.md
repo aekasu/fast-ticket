@@ -1,11 +1,8 @@
 # Getting the bridge running bidirectionally — and testing it without
 # getting lost in network debugging
 
-This assumes PR 1–4 from the critical-fixes checklist are done (bridge
-actually handles all command types, inbox claim is atomic). If they aren't,
-do those first — otherwise you'll be debugging "why didn't my command run"
-issues that are actually just missing `case` statements, and you'll burn
-time chasing a network problem that isn't there.
+This assumes the bridge handles every command type in `bridge/registry.php` and that the inbox claim is atomic (both
+are done and tested). If a command stays pending, suspect a missing registry entry before suspecting the network.
 
 The core idea for testing: **the two hardest things to debug over HTTP are
 "did the other side receive it" and "did the other side finish it yet."**
